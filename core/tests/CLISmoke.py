@@ -93,7 +93,11 @@ def main() -> None:
             "sourceMime": "image/png", "sourceBase64": base64.b64encode(source_bytes).decode(),
             "sourceSHA256": source_digest, "algorithmVersion": "1.0.0", "recipe": {},
             "capture": {"originalMime": "image/png", "originalBase64": base64.b64encode(source_bytes).decode(),
-                        "originalSHA256": source_digest, "originalWidth": 16, "originalHeight": 16},
+                        "originalSHA256": source_digest, "originalWidth": 16, "originalHeight": 16,
+                        "fallbackOriginalMime": "image/png",
+                        "fallbackOriginalBase64": base64.b64encode(source_bytes).decode(),
+                        "fallbackOriginalSHA256": source_digest,
+                        "fallbackOriginalWidth": 16, "fallbackOriginalHeight": 16},
             "derived": {"height": {"mime": "image/png", "base64": base64.b64encode(height_bytes).decode(),
                                     "sha256": height_digest, "width": 16, "height": 16,
                                     "pixelFormat": "r16_unorm_png", "provenance": "authored test"},
@@ -114,6 +118,14 @@ def main() -> None:
         capture.write_text(json.dumps(envelope))
         run(cli, "--validate", str(capture), expect_success=False)
         envelope["capture"]["originalSHA256"] = source_digest
+        envelope["capture"]["fallbackOriginalSHA256"] = "0" * 64
+        capture.write_text(json.dumps(envelope))
+        run(cli, "--validate", str(capture), expect_success=False)
+        envelope["capture"]["fallbackOriginalSHA256"] = source_digest
+        envelope["capture"]["fallbackOriginalWidth"] = 15
+        capture.write_text(json.dumps(envelope))
+        run(cli, "--validate", str(capture), expect_success=False)
+        envelope["capture"]["fallbackOriginalWidth"] = 16
         envelope["derived"]["albedo"]["sha256"] = "0" * 64
         capture.write_text(json.dumps(envelope))
         run(cli, "--validate", str(capture), expect_success=False)

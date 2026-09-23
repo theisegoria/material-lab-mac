@@ -15,7 +15,7 @@ build/material-lab-core/material-lab --validate capture.pbrcapture
 
 For a reviewed batch, `--catalog catalog.json --output output` accepts either `items` or `materials`. Each record needs a catalog-relative `path` or `relative_path`, an optional `id`, and `label` or `material_label`. It is selected by `reviewed: true` or `review_status: "approved"` / `"reviewed"`. `--include-unreviewed` deliberately opts in to candidates. Duplicate IDs and unsafe relative paths fail.
 
-Optional controls include `--height-strength`, `--polarity`, `--roughness`, `--roughness-variation`, `--ao-radius`, `--no-tile`, `--bent-normal`, and `--metalness`. Raw `--relief-mask-r8` uses one byte per pixel (0 suppresses inferred relief, 255 keeps it). Raw `--height-override-r16le` uses two little-endian bytes per pixel and bypasses inference. Neither alters the source albedo. The CLI also accepts an already upscaled image as ordinary input; it does not invoke a model or network service. The previously admitted Real-ESRGAN smoke probe is not an image-upscale tool.
+Optional controls include `--height-strength`, `--polarity`, `--roughness`, `--roughness-variation`, `--ao-radius`, `--no-tile`, `--bent-normal`, and `--metalness`. Raw `--relief-mask-r8` uses one byte per pixel (0 suppresses inferred relief, 255 keeps it). Raw `--height-override-r16le` uses two little-endian bytes per pixel and bypasses inference. Neither alters the source albedo. The CLI accepts an image prepared by any external pre-upscaler as ordinary input. It does not invoke a model or network service.
 
 ## Inference contract
 

@@ -400,25 +400,30 @@ void validateCapture(const fs::path& capturePath) {
     verifyDigest(source, capture[@"sourceSHA256"], "source");
     DecodedSize sourceSize = inspectEncoded(source, "source", 4096, true, @"image/png");
     NSDictionary* metadata = capture[@"capture"];
-    NSArray* originalFields = @[@"originalMime", @"originalBase64", @"originalSHA256",
-                                @"originalWidth", @"originalHeight"];
-    bool hasOriginal = false;
-    for (NSString* key in originalFields) if (metadata[key] && metadata[key] != [NSNull null]) hasOriginal = true;
-    if (hasOriginal) {
-        NSString* mime = metadata[@"originalMime"];
-        NSString* base64 = metadata[@"originalBase64"];
+    auto verifyEmbeddedPhoto = [&](NSString* prefix) {
+        NSArray* suffixes = @[@"Mime", @"Base64", @"SHA256", @"Width", @"Height"];
+        bool present = false;
+        for (NSString* suffix in suffixes) {
+            id value = metadata[[prefix stringByAppendingString:suffix]];
+            if (value && value != [NSNull null]) present = true;
+        }
+        if (!present) return;
+        NSString* mime = metadata[[prefix stringByAppendingString:@"Mime"]];
+        NSString* base64 = metadata[[prefix stringByAppendingString:@"Base64"]];
+        NSNumber* width = metadata[[prefix stringByAppendingString:@"Width"]];
+        NSNumber* height = metadata[[prefix stringByAppendingString:@"Height"]];
         if (![mime isKindOfClass:[NSString class]] || ![base64 isKindOfClass:[NSString class]] ||
-            ![metadata[@"originalWidth"] isKindOfClass:[NSNumber class]] ||
-            ![metadata[@"originalHeight"] isKindOfClass:[NSNumber class]])
-            throw std::runtime_error("original capture fields are incomplete");
-        NSData* original = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
-        verifyDigest(original, metadata[@"originalSHA256"], "original");
-        auto originalSize = inspectEncoded(original, "original", 8192, false, mime);
-        if (originalSize.width != [metadata[@"originalWidth"] unsignedIntValue] ||
-            originalSize.height != [metadata[@"originalHeight"] unsignedIntValue] ||
-            static_cast<uint64_t>(originalSize.width) * originalSize.height > 50000000)
-            throw std::runtime_error("original capture dimensions mismatch");
-    }
+            ![width isKindOfClass:[NSNumber class]] || ![height isKindOfClass:[NSNumber class]])
+            throw std::runtime_error(str(prefix) + " embedded photo fields are incomplete");
+        NSData* photo = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
+        verifyDigest(photo, metadata[[prefix stringByAppendingString:@"SHA256"]], str(prefix));
+        auto size = inspectEncoded(photo, str(prefix), 8192, false, mime);
+        if (size.width != width.unsignedIntValue || size.height != height.unsignedIntValue ||
+            static_cast<uint64_t>(size.width) * size.height > 50000000)
+            throw std::runtime_error(str(prefix) + " embedded photo dimensions mismatch");
+    };
+    verifyEmbeddedPhoto(@"original");
+    verifyEmbeddedPhoto(@"fallbackOriginal");
     id derivedRaw = capture[@"derived"];
     if (derivedRaw && derivedRaw != [NSNull null] && ![derivedRaw isKindOfClass:[NSDictionary class]])
         throw std::runtime_error("derived maps must be an object");
