@@ -47,6 +47,8 @@ struct MaterialBundle: Codable {
         let fallbackOriginalWidth: Int?
         let fallbackOriginalHeight: Int?
         let fallbackOmissionReason: String?
+        /// Learned guide-normal provenance; present only when `recipe.guideNormalWeight > 0`.
+        var guideNormals: GuideNormalsProvenance? = nil
     }
     struct DerivedMapRecord: Codable {
         let mime: String
@@ -85,6 +87,9 @@ struct MaterialBundle: Codable {
         guard !material.isPreview, !material.sourcePNG.isEmpty else {
             throw CaptureError.derivationFailed("Derive full-resolution maps before export")
         }
+        guard recipe == material.recipe, (recipe.guideNormalWeight > 0) == (material.guideNormals != nil) else {
+            throw CaptureError.derivationFailed("The recipe changed or learned normals are missing; derive again before export")
+        }
         let original = try source.sanitizedOriginal()
         let fallback: SanitizedImage?
         var fallbackReason: String?
@@ -98,7 +103,9 @@ struct MaterialBundle: Codable {
         let maps = Dictionary(uniqueKeysWithValues: material.maps.map { kind, map in
             (kind.exportedName, DerivedMapRecord(mime: "image/png", base64: map.png.base64EncodedString(),
                                                  sha256: sha256(map.png), width: map.width, height: map.height,
-                                                 pixelFormat: map.pixelFormat, provenance: kind.provenance))
+                                                 pixelFormat: map.pixelFormat,
+                                                 provenance: kind.provenance(recipe: material.recipe,
+                                                                             guided: material.guideNormals != nil)))
         })
         let sourceBase64 = material.sourcePNG.base64EncodedString()
         let sourceHash = sha256(material.sourcePNG)
@@ -137,7 +144,8 @@ struct MaterialBundle: Codable {
                                   fallbackOriginalSHA256: includeFallback ? fallbackHash : nil,
                                   fallbackOriginalWidth: includeFallback ? fallback?.width : nil,
                                   fallbackOriginalHeight: includeFallback ? fallback?.height : nil,
-                                  fallbackOmissionReason: fallbackReason)
+                                  fallbackOmissionReason: fallbackReason,
+                                  guideNormals: material.guideNormals)
             let bundle = Self(schemaVersion: 1, bundleKind: "pbr-capture", captureId: captureId,
                               semanticLabel: label, category: category, sourceMime: "image/png",
                               sourceBase64: sourceBase64, sourceSHA256: sourceHash,

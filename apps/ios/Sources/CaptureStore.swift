@@ -39,6 +39,20 @@ final class CaptureStore {
     private(set) var deriveCount = 0
     var errorMessage: String?
 
+    /// The contract-validated learned normal model (imported via Files, else bundled); nil when none is available.
+    private(set) var learnedModel: LearnedModelInfo?
+    private(set) var learnedModelChecked = false
+    private(set) var isImportingModel = false
+    /// Tile progress while learned normals are inferred for the current source and crop; nil when idle.
+    private(set) var learnedProgress: Double?
+    /// Learned normals for `learnedGeometry`, reused by every preview and recipe edit.
+    private var learnedField: LearnedNormalField?
+    private var learnedGeometry: String?
+    private var learnedTask: Task<Void, Never>?
+    private var learnedTaskGeometry: String?
+    private var learnedControl: DerivationControl?
+    private let estimator = LearnedNormalEstimator.shared
+
     private var inputRevision = 0
     private var derivedRevision: Int?
     private var derivationControl: DerivationControl?
@@ -49,6 +63,7 @@ final class CaptureStore {
 
     init(persistenceDirectory: URL? = nil) {
         persistence = persistenceDirectory.map(CapturePersistence.init(directory:))
+        Task { await refreshLearnedModel() }
     }
 
     /// What the review screen shows: full-resolution maps when current, otherwise the live preview.
@@ -56,8 +71,22 @@ final class CaptureStore {
     var hasExportableMaps: Bool { derived != nil && derivedRevision == inputRevision }
     var trimmedLabel: String { semanticLabel.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// Learned normals depend only on the source pixels under the crop, never on the recipe.
+    private var geometryKey: String? {
+        guard let source else { return nil }
+        let q = crop
+        return "\(source.id)|\(q.topLeft.x),\(q.topLeft.y),\(q.topRight.x),\(q.topRight.y)," +
+            "\(q.bottomRight.x),\(q.bottomRight.y),\(q.bottomLeft.x),\(q.bottomLeft.y)"
+    }
+
     private func pixelInputsChanged(refreshPreview: Bool = true) {
         inputRevision += 1
+        if let task = learnedTaskGeometry, task != geometryKey {
+            learnedControl?.cancel()
+            learnedTask?.cancel()
+            learnedTaskGeometry = nil
+            learnedProgress = nil
+        }
         derived = nil
         derivedRevision = nil
         derivationControl?.cancel()
@@ -140,6 +169,12 @@ final class CaptureStore {
         derivationControl?.cancel()
         previewControl?.cancel()
         previewTask?.cancel()
+        learnedControl?.cancel()
+        learnedTask?.cancel()
+        learnedTaskGeometry = nil
+        learnedProgress = nil
+        learnedField = nil
+        learnedGeometry = nil
         source = nil
         derived = nil
         livePreview = nil
@@ -165,12 +200,15 @@ final class CaptureStore {
         let quad = crop
         let recipe = recipe
         let revision = inputRevision
+        // Until learned normals exist for this crop the preview stays analytic; inference runs alongside.
+        let guide: GuideSource? = recipe.guideNormalWeight > 0 ? currentLearnedField().map(GuideSource.field) : nil
+        if recipe.guideNormalWeight > 0 && guide == nil { startLearnedInference() }
         previewTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self else { return }
             let result = await Task.detached(priority: .userInitiated) {
                 try? MaterialProcessor.derive(image: image, quad: quad, resolution: MaterialProcessor.previewResolution,
-                                              recipe: recipe, control: control, preview: true)
+                                              recipe: recipe, control: control, preview: true, guide: guide)
             }.value
             guard !Task.isCancelled else { return }
             if let result, revision == self.inputRevision { self.livePreview = result }
@@ -181,6 +219,10 @@ final class CaptureStore {
     func derive() async {
         guard let source, !isDeriving else { return }
         guard crop.isValid else { errorMessage = CaptureError.invalidCrop.localizedDescription; return }
+        if recipe.guideNormalWeight > 0 && learnedModel == nil {
+            errorMessage = LearnedNormalError.notInstalled.localizedDescription
+            return
+        }
         previewTask?.cancel()
         previewControl?.cancel()
         isUpdatingPreview = false
@@ -199,11 +241,26 @@ final class CaptureStore {
         let recipe = recipe
         let resolution = resolution
         let revision = inputRevision
+        let geometry = geometryKey
+        var guide: GuideSource?
+        if recipe.guideNormalWeight > 0 {
+            // Reuse the preview's inference only when it ran at this resolution's working size (the tiling contract).
+            if let field = currentLearnedField(),
+               field.work == LearnedNormalEstimator.workResolution(for: resolution) {
+                guide = .field(field)
+            } else {
+                guide = .estimate(estimator)
+            }
+        }
         do {
             let result = try await Task.detached(priority: .userInitiated) {
                 try MaterialProcessor.derive(image: image, quad: quad, resolution: resolution,
-                                             recipe: recipe, control: control)
+                                             recipe: recipe, control: control, guide: guide)
             }.value
+            if let field = result.learnedField, geometry == geometryKey {
+                learnedField = field
+                learnedGeometry = geometry
+            }
             if revision == inputRevision {
                 derived = result
                 derivedRevision = revision
@@ -220,6 +277,96 @@ final class CaptureStore {
     }
 
     func cancelDerivation() { derivationControl?.cancel() }
+
+    // MARK: Learned normals
+
+    private func currentLearnedField() -> LearnedNormalField? {
+        guard let field = learnedField, learnedGeometry == geometryKey,
+              field.model.identity == learnedModel?.identity else { return nil }
+        return field
+    }
+
+    /// Infers learned normals for the current crop at the export resolution's working size, off the main actor.
+    /// The estimator caches by working-image hash, so a later full derivation at this resolution reuses it.
+    private func startLearnedInference() {
+        guard let source, crop.isValid, learnedModel != nil, let geometry = geometryKey,
+              learnedTaskGeometry != geometry else { return }
+        learnedControl?.cancel()
+        learnedTask?.cancel()
+        let control = DerivationControl()
+        learnedControl = control
+        learnedTaskGeometry = geometry
+        learnedProgress = 0
+        let image = source.selectedImage(for: crop)
+        let quad = crop
+        let resolution = resolution
+        let estimator = estimator
+        let report: @Sendable (Double) -> Void = { [weak self] value in
+            Task { @MainActor in
+                guard let self, self.learnedTaskGeometry == geometry else { return }
+                self.learnedProgress = value
+            }
+        }
+        learnedTask = Task { [weak self] in
+            let result: Result<LearnedNormalField, Error> = await Task.detached(priority: .userInitiated) {
+                Result {
+                    let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
+                    return try estimator.field(rgba: rgba, size: resolution,
+                                               shouldContinue: { !control.isCancelled },
+                                               progress: report)
+                }
+            }.value
+            guard let self, self.learnedTaskGeometry == geometry else { return }
+            self.learnedTaskGeometry = nil
+            self.learnedProgress = nil
+            switch result {
+            case .success(let field):
+                self.learnedField = field
+                self.learnedGeometry = geometry
+                self.scheduleLivePreview(after: .zero)
+            case .failure(CaptureError.cancelled):
+                break
+            case .failure(let error):
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Finds the imported or bundled model off the main actor (validating its metadata once).
+    func refreshLearnedModel() async {
+        let estimator = estimator
+        let model = await Task.detached(priority: .utility) { estimator.locateModel(refresh: true) }.value
+        setLearnedModel(model)
+        learnedModelChecked = true
+    }
+
+    func importLearnedModel(from url: URL) async {
+        isImportingModel = true
+        defer { isImportingModel = false }
+        do {
+            setLearnedModel(try await estimator.importModel(from: url))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func removeImportedLearnedModel() async {
+        let estimator = estimator
+        let model = await Task.detached(priority: .utility) { estimator.removeImportedModel() }.value
+        setLearnedModel(model)
+    }
+
+    private func setLearnedModel(_ model: LearnedModelInfo?) {
+        guard model != learnedModel else { return }
+        learnedModel = model
+        learnedField = nil
+        learnedGeometry = nil
+        learnedControl?.cancel()
+        learnedTask?.cancel()
+        learnedTaskGeometry = nil
+        learnedProgress = nil
+        if recipe.guideNormalWeight > 0 { pixelInputsChanged() }
+    }
 
     // MARK: Export
 

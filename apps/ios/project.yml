@@ -29,8 +29,31 @@ targets:
       - path: ../../core/src/PBRMaterialLab.cpp
         # The derivation kernel is ~10x slower at -O0; optimize it in every configuration.
         compilerFlags: ['-std=c++23', '-O3']
+    # The optional MoGe-2 learned-normal model (git-ignored, ~56 MB; see docs/LEARNED_NORMALS.md) is compiled into
+    # the bundle when present. A script phase rather than a source reference: Xcode fails the build on a missing
+    # .mlpackage even when XcodeGen marks the path optional, and builds without the model must still succeed.
+    postCompileScripts:
+      - name: Bundle learned normal model (optional)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          src="$SRCROOT/../../third_party/moge/build/MoGe2Normals.mlpackage"
+          dst="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          out="$dst/MoGe2Normals.mlmodelc"
+          if [ ! -d "$src" ]; then
+            echo "note: MoGe2Normals.mlpackage not found; building without the bundled learned-normal model"
+            rm -rf "$out"
+            exit 0
+          fi
+          if [ -f "$out/coremldata.bin" ] && [ -z "$(find "$src" -newer "$out/coremldata.bin" -print -quit)" ]; then
+            exit 0
+          fi
+          rm -rf "$out"
+          mkdir -p "$dst"
+          xcrun coremlcompiler compile "$src" "$dst" --platform ios --deployment-target "$IPHONEOS_DEPLOYMENT_TARGET"
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.capture
         PRODUCT_NAME: MaterialCapture
         TARGETED_DEVICE_FAMILY: '1'

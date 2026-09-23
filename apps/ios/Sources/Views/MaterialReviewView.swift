@@ -90,6 +90,9 @@ struct MaterialReviewView: View {
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationContentInteraction(.scrolls)
         }
+        // Tiling edits are judged on repeats, so show the Tiled preview while they change.
+        .onChange(of: store.recipe.seamlessBlend) { showTiledPreview() }
+        .onChange(of: store.recipe.seamlessMode) { showTiledPreview() }
         .fullScreenCover(isPresented: $showCrop) {
             if let source = store.source {
                 CropEditorView(store: store, image: source.displayImage)
@@ -105,6 +108,11 @@ struct MaterialReviewView: View {
                       defaultFilename: safeFilename(store.semanticLabel) + "_" + selectedMap.exportedName + ".png") { result in
             if case .failure(let error) = result { store.errorMessage = error.localizedDescription }
         }
+    }
+
+    private func showTiledPreview() {
+        guard previewMode != .tiled else { return }
+        withAnimation(.snappy) { previewMode = .tiled }
     }
 
     // MARK: Layout
@@ -416,8 +424,12 @@ private struct RecipeSummary: View {
         HStack(spacing: 8) {
             pill("Relief", String(format: "%.2f", recipe.heightStrength))
             pill("Rough", String(format: "%.2f", recipe.roughnessBase))
+            if recipe.guideNormalWeight > 0 { pill("Learned", String(format: "%.0f%%", recipe.guideNormalWeight * 100)) }
             pill("Normal", recipe.normalYDown ? "DirectX" : "OpenGL")
-            if recipe.seamlessBlend > 0 { pill("Seamless", String(format: "%.0f%%", recipe.seamlessBlend * 100)) }
+            if recipe.seamlessBlend > 0 {
+                pill(recipe.seamlessMode == .cut ? "Tile · cut" : "Tile · blend",
+                     String(format: "%.0f%%", recipe.seamlessBlend * 100))
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -480,6 +492,19 @@ struct MapChips: View {
                 .padding(.horizontal, 16)
             }
             .scrollIndicators(.hidden)
+            // Chips scroll under the screen edges; fade them out there so a clipped glyph never shows
+            // beside a floating sheet.
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(stops: [.init(color: .clear, location: 0.4), .init(color: .black, location: 1)],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 16)
+                    Color.black
+                    LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .clear, location: 0.6)],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 28)
+                }
+            }
             .onChange(of: selection) { _, kind in
                 withAnimation { proxy.scrollTo(kind, anchor: .center) }
             }

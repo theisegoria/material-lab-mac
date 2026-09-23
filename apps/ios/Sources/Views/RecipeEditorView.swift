@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Recipe controls grouped by intent. Every edit re-derives the live preview after a short debounce.
 struct RecipeEditorView: View {
     @Bindable var store: CaptureStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showModelImporter = false
 
     var body: some View {
         NavigationStack {
@@ -35,10 +37,15 @@ struct RecipeEditorView: View {
                     Toggle(isOn: $store.recipe.bentNormal) {
                         Label("Bent normal map", systemImage: "arrow.turn.up.right")
                     }
+                    LearnedGeometryRows(store: store, importModel: { showModelImporter = true })
                 } header: {
                     Text("Relief")
                 } footer: {
-                    Text("Height, normals and AO are estimates inferred from color, not measured geometry.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Height, normals and AO are estimates inferred from color, not measured geometry. Learned geometry blends in surface normals predicted on this iPhone by a neural network, so recessed joints read as recessed even when they are paler than the surface.")
+                        Text("MoGe-2 (Microsoft, MIT licence) with DINOv2 (Meta, Apache 2.0). Runs locally; nothing is uploaded.")
+                            .font(.caption2)
+                    }
                 }
 
                 Section("Surface") {
@@ -69,16 +76,31 @@ struct RecipeEditorView: View {
                     RecipeSlider(title: "AO radius", symbol: "circle.dashed",
                                  value: $store.recipe.aoRadiusPixels,
                                  range: MaterialRecipe.aoRadiusRange, step: 1, format: "%.0f px")
-                    RecipeSlider(title: "Make seamless", symbol: "square.grid.3x3",
-                                 value: $store.recipe.seamlessBlend,
-                                 range: MaterialRecipe.seamlessBlendRange, step: 0.01, format: "%.0f%%", percent: true)
+                    VStack(alignment: .leading, spacing: 10) {
+                        RecipeSlider(title: "Make tileable", symbol: "square.grid.3x3",
+                                     value: $store.recipe.seamlessBlend,
+                                     range: MaterialRecipe.seamlessBlendRange, step: 0.01, format: "%.0f%%", percent: true)
+                            .accessibilityIdentifier("make-tileable")
+                        Picker("Seam method", selection: $store.recipe.seamlessMode) {
+                            ForEach(SeamlessMode.allCases) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(store.recipe.seamlessBlend <= 0)
+                        .accessibilityIdentifier("seamless-mode")
+                        Text(store.recipe.seamlessMode == .cut
+                             ? "Cuts along the least visible path. Best for brick, tiles, planks and most photos."
+                             : "Cross-fades while keeping contrast. For fine noise, sand and grain.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .opacity(store.recipe.seamlessBlend > 0 ? 1 : 0.5)
+                    }
                     Toggle(isOn: $store.recipe.tileWrap) {
                         Label("Wrap filters at edges", systemImage: "arrow.left.and.right.square")
                     }
                 } header: {
                     Text("Lighting & Tiling")
                 } footer: {
-                    Text("Remove lighting evens out low-frequency shading in the photo. Make seamless cross-fades opposite edges so the material tiles; check the Tiled preview.")
+                    Text("Remove lighting evens out low-frequency shading in the photo. Make tileable joins opposite edges so the material repeats; the preview switches to Tiled while you adjust it.")
                 }
 
                 Section {
@@ -96,6 +118,12 @@ struct RecipeEditorView: View {
                     Text(store.recipe.normalYDown
                          ? "Green-down normals for Unreal Engine and DirectX tools."
                          : "Green-up normals for glTF, Blender, Unity, Godot and RealityKit.")
+                }
+            }
+            .fileImporter(isPresented: $showModelImporter, allowedContentTypes: UTType.coreMLModels) { result in
+                switch result {
+                case .success(let url): Task { await store.importLearnedModel(from: url) }
+                case .failure(let error): store.errorMessage = error.localizedDescription
                 }
             }
             .navigationTitle("Recipe")
@@ -142,4 +170,89 @@ struct RecipeSlider: View {
     }
 
     private var display: String { String(format: format, percent ? value * 100 : value) }
+}
+
+/// "Learned geometry" slider, inference progress and model management inside the Relief section.
+struct LearnedGeometryRows: View {
+    @Bindable var store: CaptureStore
+    let importModel: () -> Void
+
+    private var available: Bool { store.learnedModel != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RecipeSlider(title: "Learned geometry", symbol: "sparkles",
+                         value: $store.recipe.guideNormalWeight, range: 0...1, step: 0.05,
+                         format: "%.0f%%", percent: true)
+                .disabled(!available)
+                .accessibilityIdentifier("learned-geometry")
+            if let progress = store.learnedProgress, store.recipe.guideNormalWeight > 0 {
+                HStack(spacing: 10) {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .tint(.accentColor)
+                    Text(progress <= 0 ? "Loading model" : String(format: "Estimating %.0f%%", progress * 100))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                        .fixedSize()
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Estimating learned geometry")
+                .accessibilityValue(String(format: "%.0f percent", progress * 100))
+            } else if !available && store.learnedModelChecked {
+                Text("Import the MoGe-2 normal model (.mlpackage) to enable learned geometry.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .animation(.snappy, value: store.learnedProgress == nil)
+        HStack {
+            Label {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Normal model")
+                    Text(modelSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            } icon: {
+                Image(systemName: available ? "cpu" : "arrow.down.circle")
+            }
+            Spacer(minLength: 8)
+            if store.isImportingModel {
+                ProgressView().controlSize(.small)
+            } else if available {
+                Menu {
+                    Button("Import Model…", systemImage: "square.and.arrow.down", action: importModel)
+                    if store.learnedModel?.origin == .imported {
+                        Button("Remove Imported Model", systemImage: "trash", role: .destructive) {
+                            Task { await store.removeImportedLearnedModel() }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel("Model options")
+            } else {
+                Button("Import", systemImage: "square.and.arrow.down", action: importModel)
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("import-learned-model")
+            }
+        }
+    }
+
+    private var modelSummary: String {
+        guard let model = store.learnedModel else {
+            return store.learnedModelChecked ? "Not installed" : "Checking…"
+        }
+        let origin = model.origin == .bundled ? "Built in" : "Imported"
+        return "MoGe-2 ViT-S · \(origin) · on device"
+    }
 }

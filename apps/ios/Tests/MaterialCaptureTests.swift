@@ -351,6 +351,153 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertFalse(map.score(in: left).adequate)
     }
 
+    // MARK: Learned normals
+
+    func testLearnedTilingFollowsTheContract() {
+        XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 256), 518)
+        XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 800), 800)
+        XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 4096), 1036)
+        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(518), [0])
+        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(800), [0, 259, 282])
+        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(1036), [0, 259, 518])
+        // A +Z field encodes to (128, 128, 255) and resamples without drift.
+        let model = LearnedModelInfo(compiledURL: URL(filePath: "/dev/null"), modelFile: "m.mlpackage",
+                                     weightsSHA256: "w", mogeCommit: "c", origin: .bundled)
+        var flat = [Float](repeating: 0, count: 518 * 518 * 3)
+        for i in 0..<(518 * 518) { flat[i * 3 + 2] = 1 }
+        let guide = LearnedNormalField(work: 518, tiles: 1, normals: flat, model: model, computeUnits: "all").guide(size: 64)
+        XCTAssertEqual(guide.rgba8.count, 64 * 64 * 4)
+        XCTAssertEqual(Array(guide.rgba8.prefix(4)), [128, 128, 255, 255])
+        XCTAssertEqual(guide.provenance.workResolution, 518)
+        XCTAssertEqual(guide.provenance.contract, "tangent_normals_plus_y_v1")
+    }
+
+    func testRecipeGuideNormalWeightRoundTripsAndSurvivesPresetChange() throws {
+        var recipe = MaterialRecipe(preset: .stone)
+        recipe.guideNormalWeight = 0.6
+        let decoded = try JSONDecoder().decode(MaterialRecipe.self, from: try JSONEncoder().encode(recipe))
+        XCTAssertEqual(decoded.guideNormalWeight, 0.6, accuracy: 1e-6)
+        XCTAssertEqual(recipe.applyingPreset(.fabric).guideNormalWeight, 0.6, accuracy: 1e-6)
+        XCTAssertEqual(recipe.cValue.guide_normal_weight, 0.6, accuracy: 1e-6)
+        // Make tileable defaults to the core's seam cut, is always emitted, and survives a prior switch.
+        XCTAssertEqual(recipe.seamlessMode, .cut)
+        XCTAssertEqual(recipe.cValue.seamless_mode, 1)
+        recipe.seamlessMode = .blend
+        XCTAssertEqual(recipe.cValue.seamless_mode, 0)
+        XCTAssertEqual(recipe.applyingPreset(.organic).seamlessMode, .blend)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try JSONEncoder().encode(MaterialRecipe(preset: .flat))) as? [String: Any])
+        XCTAssertEqual(json["seamlessMode"] as? String, "cut")
+        let legacy = Data(#"{"preset":"stone","heightStrength":0.2,"heightPolarity":1,"roughnessBase":0.7,"roughnessVariation":0.1,"aoRadiusPixels":10,"tileWrap":true,"bentNormal":false}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(MaterialRecipe.self, from: legacy).seamlessMode, .blend)
+    }
+
+    func testLearnedEstimatorProducesUnitNormalsAndChangesDerivation() throws {
+        let estimator = LearnedNormalEstimator.shared
+        try XCTSkipIf(estimator.locateModel() == nil, "MoGe2Normals model is not bundled in this build")
+        let image = syntheticBricks(size: 256)
+        let source = try SourceImage(origin: .files, data: try XCTUnwrap(image.pngData()))
+        let quad = PerspectiveQuad.centeredSquare(for: source.size)
+        let rgba = try PerspectiveCropper.correctedRGBA8(source.image, quad: quad, pixels: 256)
+        var progress: [Double] = []
+        let field = try estimator.field(rgba: rgba, size: 256, progress: { progress.append($0) })
+        XCTAssertEqual(field.work, 518)
+        XCTAssertEqual(field.tiles, 1)
+        XCTAssertEqual(progress.last, 1)
+        var unit = 0, facingOut = 0
+        let pixels = field.work * field.work
+        for i in 0..<pixels {
+            let x = field.normals[i * 3], y = field.normals[i * 3 + 1], z = field.normals[i * 3 + 2]
+            if abs((x * x + y * y + z * z).squareRoot() - 1) < 1e-3 { unit += 1 }
+            if z > 0.7 { facingOut += 1 }
+        }
+        XCTAssertEqual(unit, pixels, "Every blended normal must be unit length")
+        XCTAssertGreaterThan(Double(facingOut) / Double(pixels), 0.8, "A flat wall should face mostly +Z")
+        let guidePixels = field.guide(size: 256).rgba8
+        let greens = stride(from: 1, to: guidePixels.count, by: 4).map { Double(guidePixels[$0]) }
+        let mean = greens.reduce(0, +) / Double(greens.count)
+        let deviation = (greens.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(greens.count)).squareRoot()
+        XCTAssertGreaterThan(deviation, 2, "Joints must tilt the learned normals, not return a constant field")
+        // Recipe edits reuse the cached field instead of re-running inference.
+        XCTAssertTrue(try estimator.field(rgba: rgba, size: 256) === field)
+
+        var analyticRecipe = MaterialRecipe(preset: .stone)
+        analyticRecipe.guideNormalWeight = 0
+        var learnedRecipe = analyticRecipe
+        learnedRecipe.guideNormalWeight = 1
+        let analytic = try MaterialProcessor.derive(image: source.image, quad: quad, resolution: 256, recipe: analyticRecipe)
+        let learned = try MaterialProcessor.derive(image: source.image, quad: quad, resolution: 256,
+                                                   recipe: learnedRecipe, guide: .estimate(estimator))
+        XCTAssertNil(analytic.guideNormals)
+        let provenance = try XCTUnwrap(learned.guideNormals)
+        XCTAssertEqual(provenance.estimator, "moge-2-vits-normal")
+        XCTAssertEqual(provenance.tiles, 1)
+        XCTAssertEqual(provenance.normalsSHA256.count, 64)
+        XCTAssertNotEqual(analytic.maps[.height]?.png, learned.maps[.height]?.png,
+                          "Guided derivation must differ from the analytic height")
+
+        let encoded = try MaterialBundle.make(source: source, quad: quad, label: "brick", category: "masonry",
+                                              recipe: learnedRecipe, material: learned)
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let recipeJSON = try XCTUnwrap(document["recipe"] as? [String: Any])
+        XCTAssertEqual(recipeJSON["guideNormalWeight"] as? Double, 1)
+        let capture = try XCTUnwrap(document["capture"] as? [String: Any])
+        let guide = try XCTUnwrap(capture["guideNormals"] as? [String: Any])
+        for key in ["estimator", "contract", "weights_sha256", "moge_commit", "model_file", "compute_units",
+                    "work_resolution", "tiles", "normals_sha256"] {
+            XCTAssertNotNil(guide[key], "guideNormals.\(key) missing")
+        }
+        let derived = try XCTUnwrap(document["derived"] as? [String: Any])
+        let height = try XCTUnwrap(derived["height"] as? [String: Any])
+        XCTAssertEqual(height["provenance"] as? String, "learned_normals")
+        let fixture = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
+            .appendingPathComponent("material-capture-learned.pbrcapture")
+        try encoded.write(to: fixture, options: .atomic)
+        print("PBR_CAPTURE_LEARNED_FIXTURE_PATH=\(fixture.path)")
+    }
+
+    func testAnalyticCaptureOmitsGuideNormals() throws {
+        let image = checkerboard(size: 256)
+        let source = try SourceImage(origin: .files, data: try XCTUnwrap(image.pngData()))
+        let quad = PerspectiveQuad.centeredSquare(for: source.size)
+        var recipe = MaterialRecipe(preset: .stone)
+        recipe.guideNormalWeight = 0.5
+        // Without guide normals (e.g. a preview before inference finishes) the weight has no effect.
+        var analytic = recipe
+        analytic.guideNormalWeight = 0
+        let a = try MaterialProcessor.derive(image: source.image, quad: quad, resolution: 256, recipe: recipe)
+        let b = try MaterialProcessor.derive(image: source.image, quad: quad, resolution: 256, recipe: analytic)
+        XCTAssertNil(a.guideNormals)
+        XCTAssertEqual(a.maps[.height]?.png, b.maps[.height]?.png)
+        // An export whose weight is above 0 must carry learned provenance.
+        XCTAssertThrowsError(try MaterialBundle.make(source: source, quad: quad, label: "x", category: "y",
+                                                     recipe: recipe, material: a))
+        let encoded = try MaterialBundle.make(source: source, quad: quad, label: "x", category: "y",
+                                              recipe: analytic, material: b)
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertNil((document["capture"] as? [String: Any])?["guideNormals"])
+    }
+
+    /// Red running-bond bricks with pale mortar joints: pale recessed features the luminance heuristic reads as raised.
+    private func syntheticBricks(size: Int) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format).image { context in
+            UIColor(red: 0.78, green: 0.74, blue: 0.66, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: size, height: size))
+            let rowHeight = size / 8, brickWidth = size / 4, joint = max(2, size / 64)
+            for row in 0..<8 {
+                let offset = row.isMultiple(of: 2) ? 0 : brickWidth / 2
+                for column in -1..<5 {
+                    let shade = 0.5 + 0.08 * Double((row * 7 + column * 3) % 5) / 4
+                    UIColor(red: shade + 0.1, green: shade * 0.45, blue: shade * 0.32, alpha: 1).setFill()
+                    context.fill(CGRect(x: column * brickWidth + offset + joint / 2, y: row * rowHeight + joint / 2,
+                                        width: brickWidth - joint, height: rowHeight - joint))
+                }
+            }
+        }
+    }
+
     private func checkerboard(size: Int) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1

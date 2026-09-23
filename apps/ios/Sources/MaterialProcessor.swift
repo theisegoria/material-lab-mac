@@ -39,6 +39,17 @@ enum MaterialPreset: String, CaseIterable, Codable, Identifiable, Sendable {
     }
 }
 
+/// How Make tileable joins opposite edges (core 1.2.0 `seamless_mode`); emitted as "cut" or "blend".
+enum SeamlessMode: String, CaseIterable, Codable, Identifiable, Sendable {
+    /// Aligned minimum-error seam cut: best for brick, tiles, planks and most photos.
+    case cut
+    /// Histogram-preserving blend: fine stochastic textures such as noise, sand and grain.
+    case blend
+    var id: String { rawValue }
+    var title: String { self == .cut ? "Structured" : "Soft blend" }
+    var cValue: UInt32 { self == .cut ? 1 : 0 }
+}
+
 /// Encoded camelCase into the .pbrcapture `recipe`. Fields added in algorithm 1.1.0 are always emitted.
 struct MaterialRecipe: Codable, Equatable, Sendable {
     var preset: MaterialPreset
@@ -55,8 +66,10 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     var aoStrength: Float
     var albedoEqualize: Float
     var seamlessBlend: Float
-    /// Core 1.2.0 guide-normal blend. The iPhone supplies no guide normals yet, so this stays 0.
+    /// Core 1.2.0 blend of learned (MoGe-2) geometry over the inferred height: 0 = analytic only, 1 = learned only.
     var guideNormalWeight: Float = 0
+    /// Core 1.2.0 seam method for Make tileable; the core default is the seam cut.
+    var seamlessMode: SeamlessMode = .cut
 
     static let heightStrengthRange: ClosedRange<Float> = 0...0.5
     static let roughnessVariationRange: ClosedRange<Float> = 0...1
@@ -82,6 +95,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         aoStrength = defaults.ao_strength
         albedoEqualize = defaults.albedo_equalize
         seamlessBlend = defaults.seamless_blend
+        seamlessMode = defaults.seamless_mode == 1 ? .cut : .blend
     }
 
     /// Switch the material prior while keeping export, tiling and lighting-cleanup choices.
@@ -92,13 +106,15 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         next.bentNormal = bentNormal
         next.seamlessBlend = seamlessBlend
         next.albedoEqualize = albedoEqualize
+        next.guideNormalWeight = guideNormalWeight
+        next.seamlessMode = seamlessMode
         return next
     }
 
     private enum CodingKeys: String, CodingKey {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels
         case tileWrap, assignedMetalness, bentNormal, normalStrength, normalYDown, aoStrength
-        case albedoEqualize, seamlessBlend, guideNormalWeight
+        case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode
     }
 
     init(from decoder: Decoder) throws {
@@ -119,6 +135,8 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         albedoEqualize = try c.decodeIfPresent(Float.self, forKey: .albedoEqualize) ?? albedoEqualize
         seamlessBlend = try c.decodeIfPresent(Float.self, forKey: .seamlessBlend) ?? seamlessBlend
         guideNormalWeight = try c.decodeIfPresent(Float.self, forKey: .guideNormalWeight) ?? 0
+        // Recipes saved before the seam cut existed used the histogram blend.
+        seamlessMode = try c.decodeIfPresent(SeamlessMode.self, forKey: .seamlessMode) ?? .blend
     }
 
     func encode(to encoder: Encoder) throws {
@@ -138,6 +156,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         try c.encode(albedoEqualize, forKey: .albedoEqualize)
         try c.encode(seamlessBlend, forKey: .seamlessBlend)
         try c.encode(guideNormalWeight, forKey: .guideNormalWeight)
+        try c.encode(seamlessMode, forKey: .seamlessMode)
     }
 
     var cValue: PBRLabRecipe {
@@ -156,8 +175,9 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         value.ao_strength = aoStrength.clamped(to: Self.aoStrengthRange)
         value.albedo_equalize = albedoEqualize.clamped(to: Self.albedoEqualizeRange)
         value.seamless_blend = seamlessBlend.clamped(to: Self.seamlessBlendRange)
-        // No guide normal input is passed from the iPhone, so a nonzero weight would be rejected.
-        value.guide_normal_weight = 0
+        value.seamless_mode = seamlessMode.cValue
+        // MaterialProcessor zeroes this when no guide normals accompany the derivation.
+        value.guide_normal_weight = guideNormalWeight.clamped(to: 0...1)
         return value
     }
 }
@@ -216,6 +236,12 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         }
     }
     var exportedName: String { self == .bentNormal ? "bent_normal" : rawValue }
+    /// Height provenance names learned normals when they contributed (docs/LEARNED_NORMALS.md).
+    func provenance(recipe: MaterialRecipe, guided: Bool) -> String {
+        guard self == .height, guided else { return provenance }
+        return recipe.preset == .flat || recipe.guideNormalWeight >= 1
+            ? "learned_normals" : "estimated_from_albedo_and_learned_normals"
+    }
     var provenance: String {
         switch self {
         case .albedo: "captured or imported source, perspective-corrected"
@@ -267,6 +293,18 @@ struct DerivedMaterial: @unchecked Sendable {
     let resolution: Int
     let recipe: MaterialRecipe
     let isPreview: Bool
+    /// Provenance of the learned guide normals that fed the core; nil when the analytic path ran alone.
+    var guideNormals: GuideNormalsProvenance? = nil
+    /// The learned field behind `guideNormals`, reusable for previews at other sizes.
+    var learnedField: LearnedNormalField? = nil
+}
+
+/// Where a derivation gets learned guide normals when `recipe.guideNormalWeight > 0`.
+enum GuideSource: @unchecked Sendable {
+    /// A field already inferred for this source and crop; resampled to the derivation size.
+    case field(LearnedNormalField)
+    /// Run (or reuse from the estimator's cache) inference on the corrected crop.
+    case estimate(LearnedNormalEstimator)
 }
 
 /// Thread-safe progress sink and cancellation flag passed to the C callback through its context pointer.
@@ -274,6 +312,7 @@ final class DerivationControl: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     private var lastReported = -1.0
+    private var base = 0.0
     private let onProgress: (@Sendable (Double) -> Void)?
 
     init(onProgress: (@Sendable (Double) -> Void)? = nil) { self.onProgress = onProgress }
@@ -281,13 +320,17 @@ final class DerivationControl: @unchecked Sendable {
     func cancel() { lock.withLock { cancelled = true } }
     var isCancelled: Bool { lock.withLock { cancelled } }
 
+    /// Maps later `report` values into [offset, 1], after an earlier phase (learned inference) used [0, offset].
+    func setPhaseOffset(_ offset: Double) { lock.withLock { base = offset } }
+
     /// Returns false to cancel. Forwards at most ~100 updates per derivation.
     @discardableResult
-    func report(_ value: Double) -> Bool {
-        let (forward, stop) = lock.withLock { () -> (Bool, Bool) in
+    func report(_ value: Double, absolute: Bool = false) -> Bool {
+        let (forward, stop, value) = lock.withLock { () -> (Bool, Bool, Double) in
+            let value = absolute ? value : base + (1 - base) * value
             let forward = value >= 1 || value - lastReported >= 0.01
             if forward { lastReported = value }
-            return (forward, cancelled)
+            return (forward, cancelled, value)
         }
         if forward { onProgress?(min(1, max(0, value))) }
         return !stop
@@ -298,21 +341,42 @@ enum MaterialProcessor {
     static let previewResolution = 512
 
     static func derive(image: UIImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
-                       control: DerivationControl? = nil, preview: Bool = false) throws -> DerivedMaterial {
+                       control: DerivationControl? = nil, preview: Bool = false,
+                       guide: GuideSource? = nil) throws -> DerivedMaterial {
         guard let cgImage = image.cgImage else { throw CaptureError.invalidImage }
         return try derive(image: cgImage, quad: quad, resolution: resolution, recipe: recipe,
-                          control: control, preview: preview)
+                          control: control, preview: preview, guide: guide)
     }
 
     /// Call off the main actor. A `preview` derivation skips PNG encoding and is never exported.
+    /// With `recipe.guideNormalWeight > 0` and a `guide`, learned normals are resampled to `resolution` and blended
+    /// by the core; without a guide the weight is treated as 0 (previews only — the store always supplies one
+    /// for exportable derivations).
     static func derive(image: CGImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
-                       control: DerivationControl? = nil, preview: Bool = false) throws -> DerivedMaterial {
+                       control: DerivationControl? = nil, preview: Bool = false,
+                       guide: GuideSource? = nil) throws -> DerivedMaterial {
         let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
         let corrected = try makeImage(Data(rgba), width: resolution, height: resolution,
                                       format: PBRLabPixelFormatRGBA8SRGB, rowBytes: resolution * 4)
         if control?.isCancelled == true { throw CaptureError.cancelled }
         let quality = assessQuality(rgba, width: resolution)
+        var learnedField: LearnedNormalField?
+        var guideNormals: GuideNormals?
+        if recipe.guideNormalWeight > 0, let guide {
+            switch guide {
+            case .field(let field): learnedField = field
+            case .estimate(let estimator):
+                // Inference owns the first 35% of the progress bar; the estimator cache makes repeats free.
+                learnedField = try estimator.field(rgba: rgba, size: resolution,
+                                                   shouldContinue: { control?.isCancelled != true },
+                                                   progress: { control?.report($0 * 0.35, absolute: true) })
+                control?.setPhaseOffset(0.35)
+            }
+            guideNormals = learnedField?.guide(size: resolution)
+        }
+        if control?.isCancelled == true { throw CaptureError.cancelled }
         var cRecipe = recipe.cValue
+        if guideNormals == nil { cRecipe.guide_normal_weight = 0 }
         var maps: [MaterialMapKind: DerivedMap] = [:]
         var seam = SeamDiagnostics(heightValueDelta: 0, heightGradientDelta: 0, albedoValueDelta: 0)
         var error = [CChar](repeating: 0, count: 1024)
@@ -334,7 +398,18 @@ enum MaterialProcessor {
                 input.height_override_row_bytes = 0
                 input.width = UInt32(resolution)
                 input.height = UInt32(resolution)
-                let result = PBRLabDerive(&input, &cRecipe, callback, context, &error, error.count)
+                input.guide_normal_rgba8 = nil
+                input.guide_normal_row_bytes = 0
+                let result: OpaquePointer? = { () -> OpaquePointer? in
+                    guard let guideNormals else {
+                        return PBRLabDerive(&input, &cRecipe, callback, context, &error, error.count)
+                    }
+                    return guideNormals.rgba8.withUnsafeBufferPointer { guideBuffer in
+                        input.guide_normal_rgba8 = guideBuffer.baseAddress
+                        input.guide_normal_row_bytes = resolution * 4
+                        return PBRLabDerive(&input, &cRecipe, callback, context, &error, error.count)
+                    }
+                }()
                 guard let result else {
                     if control?.isCancelled == true { throw CaptureError.cancelled }
                     throw CaptureError.derivationFailed(String(cString: error))
@@ -373,7 +448,8 @@ enum MaterialProcessor {
         control?.report(1)
         return DerivedMaterial(maps: maps, sourcePNG: albedo.png, correctedSource: corrected, seam: seam,
                                quality: quality, algorithmVersion: String(cString: PBRLabVersion()),
-                               resolution: resolution, recipe: recipe, isPreview: preview)
+                               resolution: resolution, recipe: recipe, isPreview: preview,
+                               guideNormals: guideNormals?.provenance, learnedField: learnedField)
     }
 
     private static func assessQuality(_ rgba: [UInt8], width: Int) -> ImageQualityDiagnostics {
