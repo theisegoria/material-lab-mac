@@ -32,7 +32,7 @@ static PBRLabResult* derive(const std::vector<uint8_t>& source, unsigned n, PBRL
                           const std::vector<uint8_t>* mask = nullptr) {
     PBRLabInput in{source.data(), n * 4, mask ? mask->data() : nullptr,
                  mask ? n : 0, overrideHeight ? overrideHeight->data() : nullptr,
-                 overrideHeight ? n * 2 : 0, n, n};
+                 overrideHeight ? n * 2 : 0, n, n, nullptr, 0};
     char error[256]{};
     auto* result = PBRLabDerive(&in, &recipe, nullptr, nullptr, error, sizeof(error));
     if (!result) std::cerr << error << '\n';
@@ -44,7 +44,7 @@ int main() {
     constexpr unsigned n = 32;
     auto source = solid(n, 128);
     auto recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    assert(std::strcmp(PBRLabVersion(), "1.1.0") == 0);
+    assert(std::strcmp(PBRLabVersion(), "1.2.0") == 0);
     auto* flat = derive(source, n, recipe);
     auto a = map(flat, PBRLabMapAlbedo), hm = map(flat, PBRLabMapHeight);
     auto no = map(flat, PBRLabMapNormal), ro = map(flat, PBRLabMapRoughness);
@@ -236,6 +236,59 @@ int main() {
         PBRLabFreeResult(result);
     }
 
+    // Guide normals (the learned-estimator path) integrate back to the height that produced them.
+    {
+        constexpr unsigned m = 128;
+        std::vector<uint8_t> gray(m * m * 4, 255), authored(m * m * 2);
+        for (size_t i = 0; i < m * m; ++i) gray[i * 4] = gray[i * 4 + 1] = gray[i * 4 + 2] = 128;
+        std::vector<float> truth(m * m, 0.5f);
+        const int bumps[][3] = {{30, 30, 1}, {90, 40, -1}, {60, 95, 1}, {100, 100, -1}, {20, 80, 1}};
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            float h = .5f;
+            for (auto& b : bumps) {
+                float dx = float(x) - b[0], dy = float(y) - b[1];
+                h += .12f * b[2] * std::exp(-(dx * dx + dy * dy) / (2 * 3.5f * 3.5f));
+            }
+            truth[y * m + x] = h;
+            uint16_t q = static_cast<uint16_t>(std::lround(h * 65535));
+            authored[(y * m + x) * 2] = q & 255; authored[(y * m + x) * 2 + 1] = q >> 8;
+        }
+        auto flatRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        auto* source = derive(gray, m, flatRecipe, &authored);
+        auto sourceNormal = map(source, PBRLabMapNormal);
+        std::vector<uint8_t> guide(sourceNormal.pixels, sourceNormal.pixels + sourceNormal.byte_count);
+        PBRLabFreeResult(source);
+
+        flatRecipe.guide_normal_weight = 1;
+        PBRLabInput in{gray.data(), m * 4, nullptr, 0, nullptr, 0, m, m, guide.data(), m * 4};
+        char err[256]{};
+        auto* guided = PBRLabDerive(&in, &flatRecipe, nullptr, nullptr, err, sizeof(err));
+        assert(guided);
+        auto guidedNormal = map(guided, PBRLabMapNormal), guidedHeight = map(guided, PBRLabMapHeight);
+        double normalError = 0, meanTruth = 0, meanOut = 0;
+        for (size_t i = 0; i < m * m; ++i) {
+            for (int c = 0; c < 3; ++c) normalError += std::abs(int(guidedNormal.pixels[i * 4 + c]) - int(guide[i * 4 + c]));
+            meanTruth += truth[i]; meanOut += h(guidedHeight, i % m, i / m) / 65535.0;
+        }
+        normalError /= m * m * 3.0; meanTruth /= m * m; meanOut /= m * m;
+        double cov = 0, varA = 0, varB = 0;
+        for (size_t i = 0; i < m * m; ++i) {
+            double a = truth[i] - meanTruth, b = h(guidedHeight, i % m, i / m) / 65535.0 - meanOut;
+            cov += a * b; varA += a * a; varB += b * b;
+        }
+        double correlation = cov / std::sqrt(varA * varB);
+        std::cout << "guide round trip: mean normal error " << normalError << " levels, height correlation " << correlation << "\n";
+        assert(normalError < 2.5 && correlation > .85); // High-pass tilt removal drops the lowest frequencies by design.
+        // A bump reads as a bump and a pit as a pit (no sign flip through the +Y decode).
+        assert(h(guidedHeight, 30, 30) > h(guidedHeight, 45, 30) && h(guidedHeight, 90, 40) < h(guidedHeight, 75, 40));
+        PBRLabFreeResult(guided);
+
+        flatRecipe.guide_normal_weight = 0; // Weight 0 ignores the guide entirely.
+        auto* ignored = PBRLabDerive(&in, &flatRecipe, nullptr, nullptr, err, sizeof(err));
+        assert(ignored && v(map(ignored, PBRLabMapNormal), 30, 26, 1) == 128);
+        PBRLabFreeResult(ignored);
+    }
+
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
     {
         constexpr unsigned big = 1024;
@@ -260,7 +313,7 @@ int main() {
         PBRLabFreeResult(second);
     }
 
-    PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n};
+    PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n, nullptr, 0};
     char error[64]{};
     assert(!PBRLabDerive(&in, &recipe, stop, nullptr, error, sizeof(error)));
     assert(std::string(error) == "cancelled");

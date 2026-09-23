@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-// Version 1.1 ABI. All buffers in a PBRLabResult remain owned by the result.
+// Version 1.2 ABI. All buffers in a PBRLabResult remain owned by the result.
 // Derivation uses internal worker threads; the progress callback runs only on the calling thread.
 typedef enum PBRLabPreset {
     PBRLabPresetFlat = 0,
@@ -48,6 +48,10 @@ typedef struct PBRLabInput {
     size_t height_override_row_bytes;
     uint32_t width;
     uint32_t height;
+    // Added in 1.2.0. Optional guide normals (e.g. from a learned estimator), tangent space, +Y / green-up,
+    // linear RGBA8, same size as the source. Integrated to height and blended by guide_normal_weight.
+    const uint8_t *guide_normal_rgba8;
+    size_t guide_normal_row_bytes;
 } PBRLabInput;
 
 typedef struct PBRLabRecipe {
@@ -67,6 +71,8 @@ typedef struct PBRLabRecipe {
     float ao_strength;               // Relief exaggeration seen by the GTAO horizon search, [0,4]; 0 disables occlusion.
     float albedo_equalize;           // Low-frequency lighting removal from albedo and inferred relief, [0,1]; 0 is off.
     float seamless_blend;            // Offset cross-fade width per edge as a fraction of the size, [0,0.45]; 0 is off.
+    // Added in 1.2.0.
+    float guide_normal_weight;       // Blend of guide-derived height over inferred height, [0,1]; needs guide normals.
 } PBRLabRecipe;
 
 typedef struct PBRLabMap {

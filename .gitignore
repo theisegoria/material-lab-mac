@@ -7,3 +7,6 @@ DerivedData/
 output/
 __pycache__/
 *.pyc
+third_party/moge/
+*.mlpackage
+*.mlmodelc

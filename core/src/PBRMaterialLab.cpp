@@ -180,6 +180,9 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
         (in->height_override_r16 && in->height_override_row_bytes < static_cast<size_t>(in->width) * 2)) {
         why = "input row stride is too short"; return false;
     }
+    if (in->guide_normal_rgba8 && in->guide_normal_row_bytes < static_cast<size_t>(in->width) * 4) {
+        why = "guide normal row stride is too short"; return false;
+    }
     auto in01 = [](float v, float hi) { return std::isfinite(v) && v >= 0 && v <= hi; };
     if (r->preset < PBRLabPresetFlat || r->preset > PBRLabPresetBareMetal ||
         !in01(r->height_strength, .5f) ||
@@ -187,7 +190,8 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
         !in01(r->roughness_base, 1) || !in01(r->roughness_variation, 1) ||
         !in01(r->ao_radius_pixels, 64) || !in01(r->assigned_metalness, 1) ||
         !in01(r->normal_strength, 16) || !in01(r->ao_strength, 4) ||
-        !in01(r->albedo_equalize, 1) || !in01(r->seamless_blend, .45f)) {
+        !in01(r->albedo_equalize, 1) || !in01(r->seamless_blend, .45f) ||
+        !in01(r->guide_normal_weight, 1)) {
         why = "recipe contains an invalid preset or out-of-range parameter"; return false;
     }
     return true;
@@ -254,6 +258,129 @@ struct HistogramTransform {
     }
 };
 
+// Deterministic multigrid Poisson solver for L h = f on a cell-centered grid (5-point Laplacian).
+// Periodic boundaries when tiled, Neumann (mirrored ghost cells) otherwise. The right-hand side must
+// have zero mean; the solution is returned with zero mean. Damped Jacobi keeps results independent
+// of thread scheduling.
+class PoissonSolver {
+public:
+    PoissonSolver(bool tiled) : tiled_(tiled) {}
+    std::vector<float> solve(const std::vector<float> &f, int width, int height, int cycles) {
+        std::vector<float> h(f.size(), 0.0f);
+        for (int c = 0; c < cycles; ++c) vCycle(h, f, width, height, 1.0f);
+        double mean = 0;
+        for (float v : h) mean += v;
+        mean /= static_cast<double>(h.size());
+        for (auto &v : h) v -= static_cast<float>(mean);
+        return h;
+    }
+private:
+    bool tiled_;
+    template <typename Body> void rows(int count, int width, Body &&body) {
+        if (static_cast<size_t>(count) * width >= 65536) parallelRows(count, body, nullptr, nullptr, 0, 0);
+        else body(0, count);
+    }
+    float sample(const std::vector<float> &g, int x, int y, int w, int h) const {
+        return g[at(border(x, w, tiled_), border(y, h, tiled_), w)];
+    }
+    void smooth(std::vector<float> &h, const std::vector<float> &f, int w, int ht, float spacing2, int sweeps) {
+        std::vector<float> next(h.size());
+        for (int s = 0; s < sweeps; ++s) {
+            rows(ht, w, [&](int y0, int y1) {
+                for (int y = y0; y < y1; ++y) for (int x = 0; x < w; ++x) {
+                    size_t i = at(x, y, w);
+                    float neighbors = sample(h, x - 1, y, w, ht) + sample(h, x + 1, y, w, ht) +
+                                      sample(h, x, y - 1, w, ht) + sample(h, x, y + 1, w, ht);
+                    // Neumann edges have fewer distinct neighbors; the mirrored ghost keeps the 4-point form.
+                    float jacobi = (neighbors - spacing2 * f[i]) * .25f;
+                    next[i] = h[i] + .8f * (jacobi - h[i]);
+                }
+            });
+            h.swap(next);
+        }
+    }
+    std::vector<float> residual(const std::vector<float> &h, const std::vector<float> &f, int w, int ht, float spacing2) {
+        std::vector<float> r(h.size());
+        rows(ht, w, [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y) for (int x = 0; x < w; ++x) {
+                size_t i = at(x, y, w);
+                float lap = (sample(h, x - 1, y, w, ht) + sample(h, x + 1, y, w, ht) + sample(h, x, y - 1, w, ht) +
+                             sample(h, x, y + 1, w, ht) - 4.0f * h[i]) / spacing2;
+                r[i] = f[i] - lap;
+            }
+        });
+        return r;
+    }
+    void vCycle(std::vector<float> &h, const std::vector<float> &f, int w, int ht, float spacing) {
+        const float spacing2 = spacing * spacing;
+        if (w <= 4 || ht <= 4) { smooth(h, f, w, ht, spacing2, 64); return; }
+        smooth(h, f, w, ht, spacing2, 3);
+        auto r = residual(h, f, w, ht, spacing2);
+        const int cw = (w + 1) / 2, ch = (ht + 1) / 2;
+        std::vector<float> coarseF(static_cast<size_t>(cw) * ch), coarseE(coarseF.size(), 0.0f);
+        double mean = 0;
+        for (int y = 0; y < ch; ++y) for (int x = 0; x < cw; ++x) {
+            float sum = 0; int n = 0;
+            for (int dy = 0; dy < 2; ++dy) for (int dx = 0; dx < 2; ++dx) {
+                int fx = 2 * x + dx, fy = 2 * y + dy;
+                if (fx < w && fy < ht) { sum += r[at(fx, fy, w)]; ++n; }
+            }
+            coarseF[at(x, y, cw)] = sum / static_cast<float>(n);
+            mean += coarseF[at(x, y, cw)];
+        }
+        mean /= static_cast<double>(coarseF.size());
+        for (auto &v : coarseF) v -= static_cast<float>(mean); // Keep the singular system consistent.
+        vCycle(coarseE, coarseF, cw, ch, spacing * 2.0f);
+        // Bilinear prolongation between cell centers.
+        rows(ht, w, [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y) for (int x = 0; x < w; ++x) {
+                float cx = (static_cast<float>(x) - .5f) * .5f, cy = (static_cast<float>(y) - .5f) * .5f;
+                int x0 = static_cast<int>(std::floor(cx)), y0c = static_cast<int>(std::floor(cy));
+                float tx = cx - static_cast<float>(x0), ty = cy - static_cast<float>(y0c);
+                float a = sample(coarseE, x0, y0c, cw, ch), b = sample(coarseE, x0 + 1, y0c, cw, ch);
+                float c = sample(coarseE, x0, y0c + 1, cw, ch), d = sample(coarseE, x0 + 1, y0c + 1, cw, ch);
+                h[at(x, y, w)] += (a + (b - a) * tx) + ((c + (d - c) * tx) - (a + (b - a) * tx)) * ty;
+            }
+        });
+        smooth(h, f, w, ht, spacing2, 3);
+    }
+};
+
+// Guide normals -> pixel-space pseudo-height. Normals from scene-trained estimators carry global tilt and
+// low-frequency bias on flat texture photos, so only the high-pass part of their slopes is integrated.
+std::vector<float> guideHeight(const PBRLabInput *input, int width, int height, bool tiled) {
+    const size_t count = static_cast<size_t>(width) * height;
+    std::vector<float> gx(count), gy(count);
+    for (int y = 0; y < height; ++y) {
+        const uint8_t *row = input->guide_normal_rgba8 + static_cast<size_t>(y) * input->guide_normal_row_bytes;
+        for (int x = 0; x < width; ++x) {
+            float nx = row[x * 4] / 127.5f - 1.0f, ny = row[x * 4 + 1] / 127.5f - 1.0f, nz = row[x * 4 + 2] / 127.5f - 1.0f;
+            nz = std::max(nz, .15f);
+            size_t i = at(x, y, width);
+            // +Y tangent: green-up faces decreasing image y, i.e. height increases toward the image bottom.
+            gx[i] = std::clamp(-nx / nz, -4.0f, 4.0f);
+            gy[i] = std::clamp(ny / nz, -4.0f, 4.0f);
+        }
+    }
+    const int highPass = std::max(4, width / 16);
+    auto lowX = smoothBlur(gx, width, height, highPass, tiled), lowY = smoothBlur(gy, width, height, highPass, tiled);
+    for (size_t i = 0; i < count; ++i) { gx[i] -= lowX[i]; gy[i] -= lowY[i]; }
+    std::vector<float> divergence(count);
+    double mean = 0;
+    for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+        auto G = [&](const std::vector<float> &g, int xx, int yy) {
+            return g[at(border(xx, width, tiled), border(yy, height, tiled), width)];
+        };
+        float d = (G(gx, x + 1, y) - G(gx, x - 1, y)) * .5f + (G(gy, x, y + 1) - G(gy, x, y - 1)) * .5f;
+        divergence[at(x, y, width)] = d;
+        mean += d;
+    }
+    mean /= static_cast<double>(count);
+    for (auto &d : divergence) d -= static_cast<float>(mean);
+    PoissonSolver solver(tiled);
+    return solver.solve(divergence, width, height, 10);
+}
+
 // Precomputed horizon sample for one side of one GTAO slice. Samples lie exactly on the slice line and
 // are read bilinearly, so planar surfaces of any orientation produce exact horizons.
 struct AOSample { int x0, y0; float fx, fy, distanceSquared; };
@@ -294,7 +421,7 @@ struct PBRLabResult {
     PBRLabSeamMetrics seam{};
 };
 
-extern "C" const char *PBRLabVersion(void) { return "1.1.0"; }
+extern "C" const char *PBRLabVersion(void) { return "1.2.0"; }
 
 extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     PBRLabRecipe r{};
@@ -318,6 +445,7 @@ extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     r.ao_strength = 1.0f;
     r.albedo_equalize = 0.0f;
     r.seamless_blend = 0.0f;
+    r.guide_normal_weight = 0.0f;
     return r;
 }
 
@@ -471,6 +599,13 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             checkpoint(progress, context, .20f);
             large = smoothBlur(luminance, width, height, 24, tiled);
         }
+        const bool useGuide = !input->height_override_r16 && input->guide_normal_rgba8 && recipe->guide_normal_weight > 0;
+        std::vector<float> guided;
+        if (useGuide) {
+            guided = guideHeight(input, width, height, tiled);
+            checkpoint(progress, context, .26f);
+        }
+        const float guideWeight = recipe->guide_normal_weight;
         const float polarity = static_cast<float>(recipe->height_polarity);
         for (int y = 0; y < height; ++y) {
             const uint8_t *mask = input->relief_mask_r8
@@ -482,11 +617,19 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 float signal = 0;
                 if (inferHeight) signal = presetSignal(recipe->preset,
                     luminance[i] - small[i], small[i] - medium[i], medium[i] - large[i]);
-                if (mask) signal *= static_cast<float>(mask[x]) / 255.0f;
+                const float maskScale = mask ? static_cast<float>(mask[x]) / 255.0f : 1.0f;
+                signal *= maskScale;
                 if (overrideHeight) {
                     uint16_t authored = static_cast<uint16_t>(overrideHeight[x * 2] | (overrideHeight[x * 2 + 1] << 8));
                     heights[i] = static_cast<float>(authored) / 65535.0f;
-                } else heights[i] = clamp01(.5f + polarity * recipe->height_strength * signal);
+                } else {
+                    float inferred = .5f + polarity * recipe->height_strength * signal;
+                    // Guide height is geometric (no polarity); pixel units map through the normal depth so that
+                    // at normal_strength 1 the exported normal reproduces the guide's high-pass slopes.
+                    if (useGuide)
+                        inferred += guideWeight * (.5f + maskScale * guided[i] / kNormalDepthPixels - inferred);
+                    heights[i] = clamp01(inferred);
+                }
                 uint16_t q = static_cast<uint16_t>(std::lround(heights[i] * 65535.0f));
                 heightMap.data[i * 2] = static_cast<uint8_t>(q & 255);
                 heightMap.data[i * 2 + 1] = static_cast<uint8_t>(q >> 8);
