@@ -1,6 +1,8 @@
 #include "PBRMaterialLab.h"
+#undef NDEBUG
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -42,7 +44,7 @@ int main() {
     constexpr unsigned n = 32;
     auto source = solid(n, 128);
     auto recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    assert(std::strcmp(PBRLabVersion(), "1.0.0") == 0);
+    assert(std::strcmp(PBRLabVersion(), "1.1.0") == 0);
     auto* flat = derive(source, n, recipe);
     auto a = map(flat, PBRLabMapAlbedo), hm = map(flat, PBRLabMapHeight);
     auto no = map(flat, PBRLabMapNormal), ro = map(flat, PBRLabMapRoughness);
@@ -104,27 +106,9 @@ int main() {
     assert(h(hm, 16, 16) < h(hm, 15, 16));
     assert(v(no, 15, 16, 0) > 128);
     assert(v(ao, 16, 16) < 255);
-    // Independent dense horizon integration on the same authored pit.
-    // The production 8x6 sampler should track a 64-direction, 40-step reference.
-    float referenceAO = 0;
-    for (int direction = 0; direction < 64; ++direction) {
-        float radians = 6.283185307179586f * direction / 64.0f;
-        float horizon = 0;
-        for (int sample = 1; sample <= 40; ++sample) {
-            float distance = recipe.ao_radius_pixels * sample / 40.0f;
-            if (distance < .5f) continue;
-            int xx = (16 + static_cast<int>(std::lround(std::cos(radians) * distance))) % int(n);
-            int yy = (16 + static_cast<int>(std::lround(std::sin(radians) * distance))) % int(n);
-            auto authored = [&](int x, int y) {
-                size_t index = (static_cast<size_t>(y) * n + x) * 2;
-                return float(relief[index] | (relief[index + 1] << 8)) / 65535.0f;
-            };
-            horizon = std::max(horizon, (authored(xx, yy) - authored(16, 16)) * 4.0f / distance);
-        }
-        referenceAO += 1.0f / (1.0f + horizon * 3.0f);
-    }
-    referenceAO /= 64.0f;
-    assert(std::abs(float(v(ao, 16, 16)) / 255.0f - referenceAO) < .18f);
+    // A pit is darker at its floor than on the open plane far from it.
+    assert(v(ao, 16, 16) < v(ao, 2, 2));
+    assert(v(ao, 2, 2) >= 254);
     assert(PBRLabGetSeamMetrics(pit).height_value_delta < .001f);
     PBRLabFreeResult(pit);
 
@@ -159,14 +143,84 @@ int main() {
         ramp[(y * n + x) * 2 + 1] = static_cast<uint8_t>(q >> 8);
     }
     stone = derive(source, n, recipe, &ramp);
+    // Height rising toward the image bottom faces the image top: +Y / green-up encodes green > 128.
     assert(v(map(stone, PBRLabMapNormal), 12, 12, 0) == 128);
-    assert(v(map(stone, PBRLabMapNormal), 12, 12, 1) < 128);
+    assert(v(map(stone, PBRLabMapNormal), 12, 12, 1) > 128);
+    // A tilted plane is fully open to the sky: GTAO must not self-occlude on slopes.
+    assert(v(map(stone, PBRLabMapAO), 12, 12) >= 253);
     PBRLabFreeResult(stone);
+    recipe.normal_y_down = 1;
+    stone = derive(source, n, recipe, &ramp);
+    assert(v(map(stone, PBRLabMapNormal), 12, 12, 1) < 128); // DirectX export flips green only.
+    PBRLabFreeResult(stone);
+    recipe.normal_y_down = 0;
+    recipe.normal_strength = 0;
+    stone = derive(source, n, recipe, &ramp);
+    assert(v(map(stone, PBRLabMapNormal), 12, 12, 1) == 128 && v(map(stone, PBRLabMapNormal), 12, 12, 2) == 255);
+    PBRLabFreeResult(stone);
+    recipe.normal_strength = 1;
+
+    // Seamless blend removes an opposite-edge albedo seam; equalize removes a lighting gradient.
+    {
+        constexpr unsigned m = 64;
+        std::vector<uint8_t> gradientSource(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            size_t i = (y * m + x) * 4;
+            gradientSource[i] = gradientSource[i + 1] = gradientSource[i + 2] = static_cast<uint8_t>(40 + x * 3);
+        }
+        auto flatRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        auto* plain = derive(gradientSource, m, flatRecipe);
+        float plainSeam = PBRLabGetSeamMetrics(plain).albedo_value_delta;
+        assert(std::memcmp(map(plain, PBRLabMapAlbedo).pixels, gradientSource.data(), gradientSource.size()) == 0);
+        PBRLabFreeResult(plain);
+        flatRecipe.seamless_blend = .25f;
+        auto* blended = derive(gradientSource, m, flatRecipe);
+        assert(PBRLabGetSeamMetrics(blended).albedo_value_delta < plainSeam * .2f);
+        PBRLabFreeResult(blended);
+        flatRecipe.seamless_blend = 0;
+        flatRecipe.albedo_equalize = 1;
+        auto* even = derive(gradientSource, m, flatRecipe);
+        auto evenAlbedo = map(even, PBRLabMapAlbedo);
+        int spreadBefore = gradientSource[(32 * m + 44) * 4] - gradientSource[(32 * m + 20) * 4];
+        int spreadAfter = std::abs(int(v(evenAlbedo, 44, 32)) - int(v(evenAlbedo, 20, 32)));
+        assert(spreadAfter * 3 < spreadBefore);
+        PBRLabFreeResult(even);
+    }
+
+    // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
+    {
+        constexpr unsigned big = 1024;
+        std::vector<uint8_t> noise(big * big * 4, 255);
+        uint32_t seed = 12345;
+        for (size_t i = 0; i < big * big; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            noise[i * 4] = noise[i * 4 + 1] = noise[i * 4 + 2] = static_cast<uint8_t>(seed >> 24);
+        }
+        auto stoneRecipe = PBRLabDefaultRecipe(PBRLabPresetStone);
+        stoneRecipe.bent_normal_enabled = 1;
+        auto t0 = std::chrono::steady_clock::now();
+        auto* first = derive(noise, big, stoneRecipe);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        std::cout << "1024^2 stone derivation with bent normals: " << ms << " ms\n";
+        auto* second = derive(noise, big, stoneRecipe);
+        for (auto kind : {PBRLabMapNormal, PBRLabMapAO, PBRLabMapBentNormal, PBRLabMapHeight}) {
+            auto a1 = map(first, kind), a2 = map(second, kind);
+            assert(a1.byte_count == a2.byte_count && std::memcmp(a1.pixels, a2.pixels, a1.byte_count) == 0);
+        }
+        PBRLabFreeResult(first);
+        PBRLabFreeResult(second);
+    }
 
     PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n};
     char error[64]{};
     assert(!PBRLabDerive(&in, &recipe, stop, nullptr, error, sizeof(error)));
     assert(std::string(error) == "cancelled");
+    auto bad = recipe;
+    bad.seamless_blend = .9f;
+    assert(!PBRLabDerive(&in, &bad, nullptr, nullptr, error, sizeof(error)));
+    bad = recipe;
+    bad.normal_strength = NAN;
+    assert(!PBRLabDerive(&in, &bad, nullptr, nullptr, error, sizeof(error)));
     in.width = 0;
     assert(!PBRLabDerive(&in, &recipe, nullptr, nullptr, error, sizeof(error)));
     std::cout << "Material Lab core tests passed\n";

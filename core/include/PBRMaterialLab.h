@@ -8,7 +8,8 @@
 extern "C" {
 #endif
 
-// Version 1 ABI. All buffers in an PBRLabResult remain owned by the result.
+// Version 1.1 ABI. All buffers in a PBRLabResult remain owned by the result.
+// Derivation uses internal worker threads; the progress callback runs only on the calling thread.
 typedef enum PBRLabPreset {
     PBRLabPresetFlat = 0,
     PBRLabPresetStone = 1,
@@ -60,6 +61,12 @@ typedef struct PBRLabRecipe {
     uint32_t assigned_metalness_enabled;
     float assigned_metalness;        // Artist assignment only, [0,1].
     uint32_t bent_normal_enabled;    // Nonzero emits PBRLabMapBentNormal.
+    // Added in 1.1.0. PBRLabDefaultRecipe fills these with values that leave the source untouched.
+    float normal_strength;           // Tangent normal gradient multiplier, [0,16]; 1 is the 1.0.0 response.
+    uint32_t normal_y_down;          // Nonzero encodes -Y / green-down (DirectX) normals; zero is +Y / green-up (glTF, OpenGL).
+    float ao_strength;               // Relief exaggeration seen by the GTAO horizon search, [0,4]; 0 disables occlusion.
+    float albedo_equalize;           // Low-frequency lighting removal from albedo and inferred relief, [0,1]; 0 is off.
+    float seamless_blend;            // Offset cross-fade width per edge as a fraction of the size, [0,0.45]; 0 is off.
 } PBRLabRecipe;
 
 typedef struct PBRLabMap {
