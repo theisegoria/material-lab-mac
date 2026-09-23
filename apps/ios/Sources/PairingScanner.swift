@@ -31,32 +31,51 @@ final class PairingScannerController: UIViewController, AVCaptureMetadataOutputO
                 DispatchQueue.main.async { self.onError?("Camera access is required to scan the Mac QR code. Paste the code instead.") }
                 return
             }
-            self.queue.async {
-                guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-                      let input = try? AVCaptureDeviceInput(device: camera),
-                      self.session.canAddInput(input) else {
-                    DispatchQueue.main.async { self.onError?("QR scanner camera is unavailable. Paste the code instead.") }
-                    return
-                }
-                self.session.addInput(input)
-                let output = AVCaptureMetadataOutput()
-                guard self.session.canAddOutput(output) else {
-                    DispatchQueue.main.async { self.onError?("QR scanner is unavailable.") }
-                    return
-                }
-                self.session.addOutput(output)
-                output.setMetadataObjectsDelegate(self, queue: .main)
+            self.queue.async { self.configureAndStart() }
+        }
+    }
+
+    /// Runs on `queue`. Adds input and output atomically and rolls back a partial configuration.
+    private func configureAndStart() {
+        if session.inputs.isEmpty {
+            guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                  let input = try? AVCaptureDeviceInput(device: camera) else {
+                fail("QR scanner camera is unavailable. Paste the code instead.")
+                return
+            }
+            let output = AVCaptureMetadataOutput()
+            session.beginConfiguration()
+            guard session.canAddInput(input) else {
+                session.commitConfiguration()
+                fail("QR scanner camera is unavailable. Paste the code instead.")
+                return
+            }
+            session.addInput(input)
+            guard session.canAddOutput(output) else {
+                session.removeInput(input)
+                session.commitConfiguration()
+                fail("QR scanner is unavailable. Paste the code instead.")
+                return
+            }
+            session.addOutput(output)
+            output.setMetadataObjectsDelegate(self, queue: .main)
+            if output.availableMetadataObjectTypes.contains(.qr) {
                 output.metadataObjectTypes = [.qr]
-                DispatchQueue.main.async {
-                    let preview = AVCaptureVideoPreviewLayer(session: self.session)
-                    preview.videoGravity = .resizeAspectFill
-                    preview.frame = self.view.bounds
-                    self.view.layer.insertSublayer(preview, at: 0)
-                    self.preview = preview
-                }
-                self.session.startRunning()
+            }
+            session.commitConfiguration()
+            DispatchQueue.main.async {
+                let preview = AVCaptureVideoPreviewLayer(session: self.session)
+                preview.videoGravity = .resizeAspectFill
+                preview.frame = self.view.bounds
+                self.view.layer.insertSublayer(preview, at: 0)
+                self.preview = preview
             }
         }
+        session.startRunning()
+    }
+
+    private func fail(_ message: String) {
+        DispatchQueue.main.async { self.onError?(message) }
     }
 
     override func viewDidLayoutSubviews() {

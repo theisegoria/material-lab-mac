@@ -11,18 +11,22 @@
 		11D96EC161961751BF8D93F1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BF352744C7DECF3AB1BF3A /* CameraController.swift */; };
 		2B1F4396BB33D1F513544EDA /* MaterialReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765096232A3E053B322829A /* MaterialReviewView.swift */; };
 		328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F148DAAD36AD6741A16372 /* PerspectiveCrop.swift */; };
+		329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF290546E6549B3910B141 /* RectangleDetector.swift */; };
 		4FA6555C742D47492D2C8D30 /* MaterialCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A629929F13483947C91BAFC /* MaterialCaptureUITests.swift */; };
+		6C35067BA70DC82A8DAF4D57 /* RecipeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26169906969BC485E1B6991A /* RecipeEditorView.swift */; };
 		81F680D72AF40F56E9013AE1 /* MaterialLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC12B0E010941BBABB12D03A /* MaterialLink.swift */; };
-		872A0A62F56710C2EA296695 /* MacLinkSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4CD993327AB1D5842004689 /* MacLinkSection.swift */; };
 		877B9DDC8557ADE809DCDFC4 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9455A917D38B250CC2D7872D /* CameraPreview.swift */; };
 		99882DCAAB392DEA6D6A4400 /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103EE2A60187EB25A163CA98 /* CaptureStore.swift */; };
+		AF9E8138045F2214A9BADA02 /* MacLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A8573F8A5F7205045D1540 /* MacLinkView.swift */; };
 		B8A11FA7E3A2CD4AC91480CB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CBAE56738882608A8EAA2E80 /* Assets.xcassets */; };
+		CA78AFBF6846FC75F590B990 /* CropEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F791FB494E077A9E17AA82A /* CropEditorView.swift */; };
 		D128572144CE65455BACEE2A /* MaterialProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */; };
 		D4205EFDFB5ECCB20E94FA8B /* CaptureHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */; };
 		D6C7847091972C0E635F2C72 /* MaterialCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CBC23BC3E368C89BC01EFDA /* MaterialCaptureTests.swift */; };
 		EA9579AC3F01300F229FE201 /* PairingScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */; };
 		F64824B9FFDE1720758CFA3F /* MaterialBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1C7C052AA759593FCD5189 /* MaterialBundle.swift */; };
-		FAD6ACE14D78259585B711EA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0C4F6383D7BB42D2F6DB1756 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23"; }; };
+		FAD6ACE14D78259585B711EA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0C4F6383D7BB42D2F6DB1756 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
+		FF838178C301E392ED163575 /* MaterialSphereView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,18 +52,22 @@
 		0CBC23BC3E368C89BC01EFDA /* MaterialCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialCaptureTests.swift; sourceTree = "<group>"; };
 		103EE2A60187EB25A163CA98 /* CaptureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureStore.swift; sourceTree = "<group>"; };
 		1A9509ADD2CAB213380A9DEB /* MaterialCaptureTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MaterialCaptureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		26169906969BC485E1B6991A /* RecipeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeEditorView.swift; sourceTree = "<group>"; };
 		27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialProcessor.swift; sourceTree = "<group>"; };
 		3BA4705114E89C4F767F416E /* MaterialCaptureUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MaterialCaptureUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4729EC0562C1777EAA5CAFAC /* MaterialCapture-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MaterialCapture-Bridging-Header.h"; sourceTree = "<group>"; };
 		519A027C3D145DF71CF7626D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		51A8573F8A5F7205045D1540 /* MacLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLinkView.swift; sourceTree = "<group>"; };
 		53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureHomeView.swift; sourceTree = "<group>"; };
 		64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScanner.swift; sourceTree = "<group>"; };
 		70BF352744C7DECF3AB1BF3A /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		76A9CA3C3478BEE39BEF4BDE /* MaterialCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MaterialCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialSphereView.swift; sourceTree = "<group>"; };
+		7F791FB494E077A9E17AA82A /* CropEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropEditorView.swift; sourceTree = "<group>"; };
+		8BBF290546E6549B3910B141 /* RectangleDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RectangleDetector.swift; sourceTree = "<group>"; };
 		9455A917D38B250CC2D7872D /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		CBAE56738882608A8EAA2E80 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D765096232A3E053B322829A /* MaterialReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialReviewView.swift; sourceTree = "<group>"; };
-		E4CD993327AB1D5842004689 /* MacLinkSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLinkSection.swift; sourceTree = "<group>"; };
 		EA1C7C052AA759593FCD5189 /* MaterialBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundle.swift; sourceTree = "<group>"; };
 		EC12B0E010941BBABB12D03A /* MaterialLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLink.swift; sourceTree = "<group>"; };
 		F0CCC9DCA0DDE34CD2FC5EAA /* MaterialCaptureApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialCaptureApp.swift; sourceTree = "<group>"; };
@@ -97,8 +105,11 @@
 			isa = PBXGroup;
 			children = (
 				53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */,
-				E4CD993327AB1D5842004689 /* MacLinkSection.swift */,
+				7F791FB494E077A9E17AA82A /* CropEditorView.swift */,
+				51A8573F8A5F7205045D1540 /* MacLinkView.swift */,
 				D765096232A3E053B322829A /* MaterialReviewView.swift */,
+				7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */,
+				26169906969BC485E1B6991A /* RecipeEditorView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -124,6 +135,7 @@
 				27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */,
 				64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */,
 				F7F148DAAD36AD6741A16372 /* PerspectiveCrop.swift */,
+				8BBF290546E6549B3910B141 /* RectangleDetector.swift */,
 				C18C19DDE86DA78259C39AA8 /* Bridge */,
 				7AF5A20DD75A450899E2F1B8 /* Views */,
 			);
@@ -310,15 +322,19 @@
 				877B9DDC8557ADE809DCDFC4 /* CameraPreview.swift in Sources */,
 				D4205EFDFB5ECCB20E94FA8B /* CaptureHomeView.swift in Sources */,
 				99882DCAAB392DEA6D6A4400 /* CaptureStore.swift in Sources */,
-				872A0A62F56710C2EA296695 /* MacLinkSection.swift in Sources */,
+				CA78AFBF6846FC75F590B990 /* CropEditorView.swift in Sources */,
+				AF9E8138045F2214A9BADA02 /* MacLinkView.swift in Sources */,
 				F64824B9FFDE1720758CFA3F /* MaterialBundle.swift in Sources */,
 				018D90B147C35ED5D22A825E /* MaterialCaptureApp.swift in Sources */,
 				81F680D72AF40F56E9013AE1 /* MaterialLink.swift in Sources */,
 				D128572144CE65455BACEE2A /* MaterialProcessor.swift in Sources */,
 				2B1F4396BB33D1F513544EDA /* MaterialReviewView.swift in Sources */,
+				FF838178C301E392ED163575 /* MaterialSphereView.swift in Sources */,
 				FAD6ACE14D78259585B711EA /* PBRMaterialLab.cpp in Sources */,
 				EA9579AC3F01300F229FE201 /* PairingScanner.swift in Sources */,
 				328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */,
+				6C35067BA70DC82A8DAF4D57 /* RecipeEditorView.swift in Sources */,
+				329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

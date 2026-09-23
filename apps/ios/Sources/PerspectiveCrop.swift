@@ -1,7 +1,9 @@
+import Accelerate
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-struct NormalizedPoint: Codable, Equatable {
+struct NormalizedPoint: Codable, Equatable, Sendable {
     var x: Double
     var y: Double
 
@@ -10,11 +12,14 @@ struct NormalizedPoint: Codable, Equatable {
     }
 }
 
-struct PerspectiveQuad: Codable, Equatable {
+struct PerspectiveQuad: Codable, Equatable, Sendable {
     var topLeft: NormalizedPoint
     var topRight: NormalizedPoint
     var bottomRight: NormalizedPoint
     var bottomLeft: NormalizedPoint
+
+    static let full = Self(topLeft: .init(x: 0, y: 0), topRight: .init(x: 1, y: 0),
+                           bottomRight: .init(x: 1, y: 1), bottomLeft: .init(x: 0, y: 1))
 
     static func centeredSquare(for size: CGSize) -> Self {
         let fraction = min(1, min(Double(size.width), Double(size.height)) /
@@ -57,6 +62,21 @@ struct PerspectiveQuad: Codable, Equatable {
         case .bottomLeft: bottomLeft = point
         }
     }
+
+    /// Moves each corner toward the opposite corner by `fraction` of the diagonal.
+    func inset(by fraction: Double) -> Self {
+        Self(topLeft: topLeft.interpolated(to: bottomRight, fraction: fraction),
+             topRight: topRight.interpolated(to: bottomLeft, fraction: fraction),
+             bottomRight: bottomRight.interpolated(to: topLeft, fraction: fraction),
+             bottomLeft: bottomLeft.interpolated(to: topRight, fraction: fraction))
+    }
+
+    /// Bilinear point inside the quad at (u, v) in [0,1]².
+    func interpolate(u: Double, v: Double) -> NormalizedPoint {
+        let top = topLeft.interpolated(to: topRight, fraction: u)
+        let bottom = bottomLeft.interpolated(to: bottomRight, fraction: u)
+        return top.interpolated(to: bottom, fraction: v)
+    }
 }
 
 enum CropCorner: String, CaseIterable, Identifiable {
@@ -72,49 +92,98 @@ enum CropCorner: String, CaseIterable, Identifiable {
     }
 }
 
+/// Interactive four-corner perspective editor over a display-sized copy of the source.
 struct PerspectiveCropView: View {
-    let image: UIImage
+    let image: CGImage
     @Binding var quad: PerspectiveQuad
+    var showsGrid = true
+    var interactive = true
+    @State private var activeCorner: CropCorner?
 
     var body: some View {
         GeometryReader { geometry in
-            let imageSize = image.size
-            let scale = min(geometry.size.width / imageSize.width,
-                            geometry.size.height / imageSize.height)
+            let imageSize = CGSize(width: image.width, height: image.height)
+            let scale = min(geometry.size.width / imageSize.width, geometry.size.height / imageSize.height)
             let fitted = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
             let origin = CGPoint(x: (geometry.size.width - fitted.width) / 2,
                                  y: (geometry.size.height - fitted.height) / 2)
+            let map: (NormalizedPoint) -> CGPoint = { p in
+                CGPoint(x: origin.x + fitted.width * p.x, y: origin.y + fitted.height * p.y)
+            }
             ZStack {
-                Image(uiImage: image)
+                Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: fitted.width, height: fitted.height)
                     .position(x: origin.x + fitted.width / 2, y: origin.y + fitted.height / 2)
+
+                // Dim everything outside the selected material.
                 Path { path in
-                    let points = CropCorner.allCases.map { corner -> CGPoint in
-                        let normalized = quad.point(at: corner)
-                        return CGPoint(x: origin.x + fitted.width * normalized.x,
-                                       y: origin.y + fitted.height * normalized.y)
-                    }
-                    path.addLines(points)
+                    path.addRect(CGRect(origin: origin, size: fitted))
+                    path.addLines(CropCorner.allCases.map { map(quad.point(at: $0)) })
                     path.closeSubpath()
                 }
-                .stroke(.yellow, lineWidth: 2)
-                ForEach(CropCorner.allCases) { corner in
-                    let point = quad.point(at: corner)
-                    Circle()
-                        .fill(.yellow)
-                        .stroke(.black, lineWidth: 2)
-                        .frame(width: 30, height: 30)
-                        .position(x: origin.x + fitted.width * point.x,
-                                  y: origin.y + fitted.height * point.y)
-                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("materialCrop")).onChanged { value in
-                            let x = min(1, max(0, (value.location.x - origin.x) / fitted.width))
-                            let y = min(1, max(0, (value.location.y - origin.y) / fitted.height))
-                            quad.set(.init(x: x, y: y), at: corner)
-                        })
+                .fill(.black.opacity(0.5), style: FillStyle(eoFill: true))
+                .allowsHitTesting(false)
+
+                if showsGrid {
+                    Path { path in
+                        for step in 1..<3 {
+                            let t = Double(step) / 3
+                            path.move(to: map(quad.interpolate(u: t, v: 0)))
+                            path.addLine(to: map(quad.interpolate(u: t, v: 1)))
+                            path.move(to: map(quad.interpolate(u: 0, v: t)))
+                            path.addLine(to: map(quad.interpolate(u: 1, v: t)))
+                        }
+                    }
+                    .stroke(.white.opacity(0.45), lineWidth: 0.75)
+                    .allowsHitTesting(false)
+                }
+
+                Path { path in
+                    path.addLines(CropCorner.allCases.map { map(quad.point(at: $0)) })
+                    path.closeSubpath()
+                }
+                .stroke(quad.isValid ? Color.white : Color.orange,
+                        style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                .shadow(color: .black.opacity(0.4), radius: 2)
+                .allowsHitTesting(false)
+
+                if interactive {
+                    ForEach(CropCorner.allCases) { corner in
+                        let point = map(quad.point(at: corner))
+                        ZStack {
+                            Circle().fill(.clear).frame(width: 48, height: 48).contentShape(Circle())
+                            Circle()
+                                .fill(.white)
+                                .frame(width: activeCorner == corner ? 26 : 20,
+                                       height: activeCorner == corner ? 26 : 20)
+                                .overlay(Circle().stroke(Color.accentColor, lineWidth: 3))
+                                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                        }
+                        .position(point)
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .named("materialCrop"))
+                                .onChanged { value in
+                                    activeCorner = corner
+                                    let x = min(1, max(0, (value.location.x - origin.x) / fitted.width))
+                                    let y = min(1, max(0, (value.location.y - origin.y) / fitted.height))
+                                    quad.set(.init(x: x, y: y), at: corner)
+                                }
+                                .onEnded { _ in activeCorner = nil }
+                        )
+                        .sensoryFeedback(.selection, trigger: activeCorner == corner)
+                        .accessibilityElement()
                         .accessibilityLabel("Crop \(corner.label)")
+                        .accessibilityValue(String(format: "%.0f%% across, %.0f%% down",
+                                                   quad.point(at: corner).x * 100, quad.point(at: corner).y * 100))
                         .accessibilityHint("Drag to the material corner")
+                        .accessibilityAdjustableAction { direction in
+                            var p = quad.point(at: corner)
+                            p.x = min(1, max(0, p.x + (direction == .increment ? 0.01 : -0.01)))
+                            quad.set(p, at: corner)
+                        }
+                    }
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -124,58 +193,49 @@ struct PerspectiveCropView: View {
 }
 
 enum PerspectiveCropper {
-    static func normalized(_ image: UIImage) throws -> UIImage {
-        guard let cgImage = image.cgImage,
-              cgImage.width > 0, cgImage.height > 0 else { throw CaptureError.invalidImage }
-        if image.imageOrientation == .up { return image }
-        let rotated: Bool
-        switch image.imageOrientation {
-        case .left, .right, .leftMirrored, .rightMirrored: rotated = true
-        default: rotated = false
-        }
-        let outputSize = rotated
-            ? CGSize(width: cgImage.height, height: cgImage.width)
-            : CGSize(width: cgImage.width, height: cgImage.height)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        return UIGraphicsImageRenderer(size: outputSize, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: outputSize))
-        }
-    }
+    /// Linear-light resampling; results are encoded to sRGB on output.
+    static let context = CIContext(options: [
+        .workingColorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!,
+        .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+        .cacheIntermediates: false
+    ])
 
-    static func cropped(_ image: UIImage, quad: PerspectiveQuad, pixels: Int) throws -> UIImage {
-        guard quad.isValid, pixels >= 256, pixels <= 4096,
-              let cgImage = image.cgImage else { throw CaptureError.invalidCrop }
+    /// Perspective-corrects and resamples to a `pixels`² straight-alpha sRGB RGBA8 buffer (top row first).
+    static func correctedRGBA8(_ cgImage: CGImage, quad: PerspectiveQuad, pixels: Int) throws -> [UInt8] {
+        guard quad.isValid, (256...4096).contains(pixels),
+              cgImage.width > 0, cgImage.height > 0 else { throw CaptureError.invalidCrop }
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
-        let input = CIImage(cgImage: cgImage)
-        let filter = CIFilter(name: "CIPerspectiveCorrection")!
-        filter.setValue(input, forKey: kCIInputImageKey)
-        func point(_ p: NormalizedPoint) -> CIVector {
-            CIVector(x: p.x * width, y: (1 - p.y) * height)
+        let filter = CIFilter.perspectiveCorrection()
+        filter.inputImage = CIImage(cgImage: cgImage)
+        func point(_ p: NormalizedPoint) -> CGPoint { CGPoint(x: p.x * width, y: (1 - p.y) * height) }
+        filter.topLeft = point(quad.topLeft)
+        filter.topRight = point(quad.topRight)
+        filter.bottomRight = point(quad.bottomRight)
+        filter.bottomLeft = point(quad.bottomLeft)
+        guard let corrected = filter.outputImage, !corrected.extent.isInfinite,
+              corrected.extent.width >= 1, corrected.extent.height >= 1 else { throw CaptureError.invalidCrop }
+        let extent = corrected.extent
+        let scaleX = CGFloat(pixels) / extent.width
+        let scaleY = CGFloat(pixels) / extent.height
+        let lanczos = CIFilter.lanczosScaleTransform()
+        // Clamp so edge pixels are not blended with transparent black while resampling.
+        lanczos.inputImage = corrected.clampedToExtent()
+        lanczos.scale = Float(scaleY)
+        lanczos.aspectRatio = Float(scaleX / scaleY)
+        guard let scaled = lanczos.outputImage else { throw CaptureError.invalidCrop }
+        let bounds = CGRect(x: (extent.minX * scaleX).rounded(), y: (extent.minY * scaleY).rounded(),
+                            width: CGFloat(pixels), height: CGFloat(pixels))
+        let output = scaled.cropped(to: bounds)
+        var bytes = [UInt8](repeating: 0, count: pixels * pixels * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            context.render(output, toBitmap: buffer.baseAddress!, rowBytes: pixels * 4, bounds: bounds,
+                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            var vbuffer = vImage_Buffer(data: buffer.baseAddress, height: vImagePixelCount(pixels),
+                                        width: vImagePixelCount(pixels), rowBytes: pixels * 4)
+            // Core Image renders premultiplied alpha; the core expects straight alpha.
+            vImageUnpremultiplyData_RGBA8888(&vbuffer, &vbuffer, vImage_Flags(kvImageNoFlags))
         }
-        filter.setValue(point(quad.topLeft), forKey: "inputTopLeft")
-        filter.setValue(point(quad.topRight), forKey: "inputTopRight")
-        filter.setValue(point(quad.bottomRight), forKey: "inputBottomRight")
-        filter.setValue(point(quad.bottomLeft), forKey: "inputBottomLeft")
-        guard let output = filter.outputImage,
-              !output.extent.isEmpty,
-              output.extent.width > 0,
-              output.extent.height > 0 else { throw CaptureError.invalidCrop }
-        let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
-        let context = CIContext(options: [.workingColorSpace: sRGB, .outputColorSpace: sRGB])
-        guard let corrected = context.createCGImage(output, from: output.extent,
-                                                     format: .RGBA8, colorSpace: sRGB) else {
-            throw CaptureError.invalidCrop
-        }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: CGSize(width: pixels, height: pixels),
-                                       format: format).image { context in
-            context.cgContext.interpolationQuality = .high
-            UIImage(cgImage: corrected).draw(in: CGRect(x: 0, y: 0, width: pixels, height: pixels))
-        }
+        return bytes
     }
 }

@@ -1,12 +1,17 @@
 import AVFoundation
 import CoreVideo
 import Foundation
+import ImageIO
 import UIKit
 
-struct ConfidenceMap {
+struct ConfidenceMap: Sendable {
     let width: Int
     let height: Int
     let pixels: Data
+
+    func oriented(as orientation: CGImagePropertyOrientation) -> Self {
+        oriented(as: UIImage.Orientation(orientation))
+    }
 
     func oriented(as orientation: UIImage.Orientation) -> Self {
         let rotated: Bool
@@ -47,11 +52,7 @@ struct ConfidenceMap {
         samples.reserveCapacity(32 * 32)
         for row in 0..<32 {
             for column in 0..<32 {
-                let u = (Double(column) + 0.5) / 32
-                let v = (Double(row) + 0.5) / 32
-                let top = quad.topLeft.interpolated(to: quad.topRight, fraction: u)
-                let bottom = quad.bottomLeft.interpolated(to: quad.bottomRight, fraction: u)
-                let point = top.interpolated(to: bottom, fraction: v)
+                let point = quad.interpolate(u: (Double(column) + 0.5) / 32, v: (Double(row) + 0.5) / 32)
                 let x = min(width - 1, max(0, Int(point.x * Double(width - 1))))
                 let y = min(height - 1, max(0, Int(point.y * Double(height - 1))))
                 samples.append(Double(bytes[y * width + x]) / 255)
@@ -63,7 +64,23 @@ struct ConfidenceMap {
     }
 }
 
-struct ConfidenceSummary: Codable {
+extension UIImage.Orientation {
+    init(_ orientation: CGImagePropertyOrientation) {
+        switch orientation {
+        case .up: self = .up
+        case .upMirrored: self = .upMirrored
+        case .down: self = .down
+        case .downMirrored: self = .downMirrored
+        case .left: self = .left
+        case .leftMirrored: self = .leftMirrored
+        case .right: self = .right
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
+        }
+    }
+}
+
+struct ConfidenceSummary: Codable, Sendable {
     let mean: Double
     let lowFraction: Double
     let sampleCount: Int
@@ -72,7 +89,7 @@ struct ConfidenceSummary: Codable {
     var adequate: Bool { sampleCount > 0 && mean >= 0.7 && lowFraction <= 0.15 }
 }
 
-struct CameraCapture {
+struct CameraCapture: Sendable {
     let primaryData: Data
     let fallbackData: Data?
     let confidence: ConfidenceMap?
@@ -81,18 +98,37 @@ struct CameraCapture {
     let capturedAt: Date
 }
 
-final class CameraController: NSObject, AVCapturePhotoCaptureDelegate {
+/// Live exposure reading from sparse luma samples of the preview stream.
+struct ExposureReading: Equatable, Sendable {
+    var clippedFraction: Double
+    var meanLuma: Double
+}
+
+/// All mutable capture state is confined to `queue`; callbacks are delivered on the main queue.
+final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureVideoDataOutputSampleBufferDelegate,
+                              @unchecked Sendable {
     let session = AVCaptureSession()
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
     var onReady: ((Result<Bool, Error>) -> Void)?
+    var onExposure: ((ExposureReading) -> Void)?
 
     private let queue = DispatchQueue(label: "io.materiallab.capture.camera", qos: .userInitiated)
+    private let videoQueue = DispatchQueue(label: "io.materiallab.capture.video", qos: .utility)
     private let photoOutput = AVCapturePhotoOutput()
-    private var primaryData: Data?
-    private var fallbackData: Data?
-    private var confidence: ConfidenceMap?
-    private var centerConfidence: Float = 0
-    private var constantColorRequested = false
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private var frameCounter = 0
+
+    /// Per-request accumulation keyed by `AVCaptureResolvedPhotoSettings.uniqueID`.
+    private struct InFlight {
+        var constantColorRequested: Bool
+        var primaryData: Data?
+        var fallbackData: Data?
+        var confidence: ConfidenceMap?
+        var centerConfidence: Float = 0
+        var error: Error?
+    }
+    private var inFlight: [Int64: InFlight] = [:]
+    private var requested: [Int64: Bool] = [:]
 
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
@@ -104,7 +140,7 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate {
             self.queue.async {
                 do {
                     try self.configureIfNeeded()
-                    self.session.startRunning()
+                    if !self.session.isRunning { self.session.startRunning() }
                     let supportsConstantColor = self.photoOutput.isConstantColorSupported
                     DispatchQueue.main.async { self.onReady?(.success(supportsConstantColor)) }
                 } catch {
@@ -124,18 +160,18 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate {
                 DispatchQueue.main.async { self.onCapture?(.failure(CaptureError.cameraNotReady)) }
                 return
             }
-            self.primaryData = nil
-            self.fallbackData = nil
-            self.confidence = nil
-            self.centerConfidence = 0
-            self.constantColorRequested = preferConstantColor && self.photoOutput.isConstantColorSupported
+            let constantColor = preferConstantColor && self.photoOutput.isConstantColorSupported
             let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
-            settings.photoQualityPrioritization = .quality
-            settings.flashMode = self.constantColorRequested ? (flash == .off ? .auto : flash) : flash
-            if self.constantColorRequested {
+            settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+            settings.photoQualityPrioritization = self.photoOutput.maxPhotoQualityPrioritization
+            let supportedFlash = self.photoOutput.supportedFlashModes
+            let desiredFlash = constantColor ? (flash == .off ? .auto : flash) : flash
+            settings.flashMode = supportedFlash.contains(desiredFlash) ? desiredFlash : .off
+            if constantColor {
                 settings.isConstantColorEnabled = true
                 settings.isConstantColorFallbackPhotoDeliveryEnabled = true
             }
+            self.requested[settings.uniqueID] = constantColor
             self.photoOutput.capturePhoto(with: settings, delegate: self)
         }
     }
@@ -147,48 +183,116 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate {
         }
         let input = try AVCaptureDeviceInput(device: camera)
         session.beginConfiguration()
-        defer { session.commitConfiguration() }
         session.sessionPreset = .photo
-        guard session.canAddInput(input), session.canAddOutput(photoOutput) else {
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
             throw CaptureError.cameraUnavailable
         }
         session.addInput(input)
+        guard session.canAddOutput(photoOutput) else {
+            session.removeInput(input)
+            session.commitConfiguration()
+            throw CaptureError.cameraUnavailable
+        }
         session.addOutput(photoOutput)
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+        if session.canAddOutput(videoOutput) {
+            session.addOutput(videoOutput)
+            videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
+        }
+        session.commitConfiguration()
+
+        // The preset has now selected the active format. Raise the output limits before any request
+        // asks for .quality or full resolution; exceeding them raises NSInvalidArgumentException.
+        session.beginConfiguration()
+        photoOutput.maxPhotoQualityPrioritization = .quality
+        if let largest = camera.activeFormat.supportedMaxPhotoDimensions
+            .max(by: { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }) {
+            photoOutput.maxPhotoDimensions = largest
+        }
         if photoOutput.isConstantColorSupported {
             photoOutput.isConstantColorEnabled = true
         }
+        session.commitConfiguration()
     }
+
+    // MARK: Photo delegate — hop to `queue` so state is never touched concurrently.
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        if let error {
-            DispatchQueue.main.async { self.onCapture?(.failure(error)) }
-            return
-        }
-        guard let data = photo.fileDataRepresentation() else { return }
-        if photo.isConstantColorFallbackPhoto {
-            fallbackData = data
-        } else {
-            primaryData = data
-            centerConfidence = photo.constantColorCenterWeightedMeanConfidenceLevel
-            if let buffer = photo.constantColorConfidenceMap {
-                confidence = Self.copyConfidence(buffer)
+        let id = photo.resolvedSettings.uniqueID
+        let data = error == nil ? photo.fileDataRepresentation() : nil
+        let isFallback = photo.isConstantColorFallbackPhoto
+        let center = photo.constantColorCenterWeightedMeanConfidenceLevel
+        let confidence = isFallback ? nil : photo.constantColorConfidenceMap.flatMap(Self.copyConfidence)
+        queue.async {
+            var state = self.inFlight[id] ?? InFlight(constantColorRequested: self.requested[id] ?? false)
+            if let error {
+                state.error = state.error ?? error
+            } else if let data {
+                if isFallback {
+                    state.fallbackData = data
+                } else {
+                    state.primaryData = data
+                    state.centerConfidence = center
+                    state.confidence = confidence
+                }
             }
+            self.inFlight[id] = state
         }
     }
 
-    func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
-        if let error {
-            DispatchQueue.main.async { self.onCapture?(.failure(error)) }
-            return
+    func photoOutput(_ output: AVCapturePhotoOutput,
+                     didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
+        let id = resolvedSettings.uniqueID
+        queue.async {
+            let state = self.inFlight.removeValue(forKey: id)
+            let constantColor = self.requested.removeValue(forKey: id) ?? false
+            let result: Result<CameraCapture, Error>
+            if let primary = state?.primaryData {
+                // A usable primary photo wins over a failed fallback delivery.
+                result = .success(CameraCapture(primaryData: primary, fallbackData: state?.fallbackData,
+                                                confidence: state?.confidence, constantColorRequested: constantColor,
+                                                centerConfidence: state?.centerConfidence ?? 0, capturedAt: Date()))
+            } else if let failure = error ?? state?.error {
+                result = .failure(failure)
+            } else {
+                result = .failure(CaptureError.photoUnavailable)
+            }
+            DispatchQueue.main.async { self.onCapture?(result) }
         }
-        guard let primaryData else {
-            DispatchQueue.main.async { self.onCapture?(.failure(CaptureError.photoUnavailable)) }
-            return
+    }
+
+    // MARK: Exposure guidance
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        frameCounter += 1
+        guard frameCounter % 8 == 0, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard CVPixelBufferGetPlaneCount(buffer) > 0,
+              let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return }
+        let width = CVPixelBufferGetWidthOfPlane(buffer, 0)
+        let height = CVPixelBufferGetHeightOfPlane(buffer, 0)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let luma = base.assumingMemoryBound(to: UInt8.self)
+        // Sample the centered square the user is framing.
+        let side = min(width, height)
+        let x0 = (width - side) / 2, y0 = (height - side) / 2
+        var clipped = 0, total = 0, sum = 0
+        for row in 0..<40 {
+            let y = y0 + (row * side) / 40 + side / 80
+            for column in 0..<40 {
+                let x = x0 + (column * side) / 40 + side / 80
+                let value = Int(luma[y * stride + x])
+                if value >= 250 { clipped += 1 }
+                sum += value
+                total += 1
+            }
         }
-        let capture = CameraCapture(primaryData: primaryData, fallbackData: fallbackData,
-                                    confidence: confidence, constantColorRequested: constantColorRequested,
-                                    centerConfidence: centerConfidence, capturedAt: Date())
-        DispatchQueue.main.async { self.onCapture?(.success(capture)) }
+        let reading = ExposureReading(clippedFraction: Double(clipped) / Double(total),
+                                      meanLuma: Double(sum) / Double(total) / 255)
+        DispatchQueue.main.async { self.onExposure?(reading) }
     }
 
     private static func copyConfidence(_ buffer: CVPixelBuffer) -> ConfidenceMap? {
@@ -217,9 +321,12 @@ enum CaptureError: LocalizedError {
     case cameraNotReady
     case photoUnavailable
     case invalidImage
+    case importTooLarge
     case invalidCrop
     case missingLabel
     case derivationFailed(String)
+    case cancelled
+    case metadataScrubFailed
     case bundleTooLarge
 
     var errorDescription: String? {
@@ -229,9 +336,12 @@ enum CaptureError: LocalizedError {
         case .cameraNotReady: "Camera is starting. Try again shortly."
         case .photoUnavailable: "No processed photo was delivered. Try another capture."
         case .invalidImage: "The selected image could not be decoded."
+        case .importTooLarge: "This image is larger than the 120 MB import limit."
         case .invalidCrop: "The crop corners do not form a usable square."
-        case .missingLabel: "Add a semantic material label before deriving."
+        case .missingLabel: "Add a material name before exporting."
         case .derivationFailed(let reason): "Derivation failed: \(reason)"
+        case .cancelled: "Derivation was cancelled."
+        case .metadataScrubFailed: "The original photo could not be re-encoded without private metadata."
         case .bundleTooLarge: "This material bundle exceeds the 64 MiB transfer limit."
         }
     }

@@ -27,7 +27,8 @@ targets:
       - path: Sources
       - path: Resources/Assets.xcassets
       - path: ../../core/src/PBRMaterialLab.cpp
-        compilerFlags: ['-std=c++23']
+        # The derivation kernel is ~10x slower at -O0; optimize it in every configuration.
+        compilerFlags: ['-std=c++23', '-O3']
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.capture
