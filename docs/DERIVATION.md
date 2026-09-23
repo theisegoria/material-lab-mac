@@ -64,18 +64,15 @@ The material manifest holds map and source hashes, the algorithm version, every 
 
 The source alone does not determine intrinsic roughness, metalness, specular F0, emission, opacity, thickness, physical depth, or gameplay properties. Normal-variance filtering for rendering is an engine concern and is kept separate from authored roughness.
 
-## Learned estimators: status and plan
+## Learned geometry
 
-Single-image SVBRDF estimators now lead the state of the art in *quality*. Examples are ControlMat, MaterialPicker, DualMat, and HiMat. None has permissively licensed weights, and they generate plausible maps rather than deterministic estimates.
+Single-image SVBRDF estimators lead the state of the art in *quality*: ControlMat, MaterialPicker, DualMat, HiMat. None has permissively licensed weights, and they generate plausible maps rather than deterministic estimates. Material Lab therefore uses **MoGe-2 ViT-S normals** (MIT) as an optional guide input rather than a replacement for the analytic pipeline:
 
-The most practical permissive learned stage is **MoGe-2 ViT-S normals** (MIT code and weights). It would be an optional input:
+- The converted Core ML model returns +Y tangent normals for 518² tiles; tiles are blended at a working size of up to 1036² and resampled to the source ([contract and tiling](LEARNED_NORMALS.md)).
+- The core converts the guide to slopes, removes the low-frequency tilt that scene-trained models add, integrates the slopes to height with a deterministic multigrid Poisson solver, and blends that height with the inferred height by `guide_normal_weight` (0 = analytic only, 1 = learned only). GTAO, cavity, roughness and every other map then use the blended geometry.
+- The manifest records the model hashes, compute units and tiling, because Neural Engine fp16 output can vary by chip.
 
-- Tiled Core ML inference, with only the high-pass part kept (scene-trained models add global tilt).
-- Blended with the analytic gradients.
-- Integrated to height, then fed through the same GTAO, roughness, and diagnostic stages.
-- The manifest records the model hash and compute unit, because Neural Engine fp16 output can vary by chip.
-
-Several alternatives are use-restricted or unclear and are avoided without legal review: Stable Diffusion-derived normal and delight models (OpenRAIL++ lineage), DSINE, non-commercial Depth Anything variants, and Marigold weights. This path is not implemented yet.
+Alternatives that are use-restricted or unclear are avoided without legal review: Stable Diffusion-derived normal and delight models (OpenRAIL++ lineage), DSINE, non-commercial Depth Anything variants, and Marigold weights.
 
 ## Scope of validation
 
