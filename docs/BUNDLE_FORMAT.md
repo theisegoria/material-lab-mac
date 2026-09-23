@@ -9,6 +9,21 @@ Two formats have different jobs and intentionally different extensions.
 
 A Mac import validates a .pbrcapture file, saves it in the separate camera inbox, and may re-derive/export a .pbrmaterial package. Files/AirDrop and the direct local link use the same capture schema. Only the local-link copy adds an ephemeral link token.
 
+## Algorithm versions and recipe fields
+
+Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0` and `1.2.0`. A field introduced by a version is required from that version on:
+
+| Since | `.pbrmaterial` recipe (snake_case) | `.pbrcapture` recipe (camelCase) | Range |
+| --- | --- | --- | --- |
+| 1.1.0 | `normal_strength` | `normalStrength` | 0–16 |
+| 1.1.0 | `normal_y_down` (bool) | `normalYDown` (bool) | — |
+| 1.1.0 | `ao_strength` | `aoStrength` | 0–4 |
+| 1.1.0 | `albedo_equalize` | `albedoEqualize` | 0–1 |
+| 1.1.0 | `seamless_blend` | `seamlessBlend` | 0–0.45 |
+| 1.2.0 | `guide_normal_weight` | `guideNormalWeight` | 0–1 |
+
+From 1.1.0 on, a material manifest also records `normal_convention` (`+Y` or `-Y`, matching `normal_y_down`). **Algorithm 1.0.0 normal and bent-normal maps are green-down even though they are labelled +Y.** Validators print a warning for these bundles; re-derive them or flip green. When `guide_normal_weight > 0`, the manifest has a top-level `guide_normals` provenance object ([learned normals](LEARNED_NORMALS.md)). Validators reject a guide weight without provenance, and provenance without a guide weight.
+
 ## Capture envelope, schema version 1
 
 The required JSON fields are schemaVersion, bundleKind, captureId (UUID), semanticLabel, category, sourceMime (image/png), sourceBase64 (canonical corrected square PNG), sourceSHA256 (hash of decoded PNG bytes), algorithmVersion, recipe, capture, derived, seamMetrics, and runtimeAdmitted=false. The capture metadata records orientation, color profile, capture mode, crop, quality diagnostics, and Constant Color confidence where present. An optional privacy-scrubbed primary original has originalMime, originalBase64, originalSHA256, originalWidth, and originalHeight; originalOmissionReason explains its absence when captured but too large. A Constant Color fallback photo, when captured, uses fallbackOriginalMime, fallbackOriginalBase64, fallbackOriginalSHA256, fallbackOriginalWidth, and fallbackOriginalHeight; fallbackOmissionReason explains why it could not be embedded. fallbackUsed says whether low confidence caused the fallback to supply the cropped source image. Every embedded original has its own hash and decoded dimensions. The nine required derived roles are albedo, height, normal, roughness, AO, cavity, convexity, slope, and edge; bent normal and ORM are optional. Each map records MIME, pixel encoding, dimensions, provenance, bytes, and SHA-256. No GPS metadata is exported.
