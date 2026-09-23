@@ -187,6 +187,35 @@ int main() {
         PBRLabFreeResult(even);
     }
 
+    // Histogram-preserving tiling keeps blend-zone contrast and leaves the interior byte-exact.
+    {
+        constexpr unsigned m = 128;
+        std::vector<uint8_t> noiseSource(m * m * 4, 255);
+        uint32_t seed = 777;
+        for (size_t i = 0; i < m * m; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            noiseSource[i * 4] = noiseSource[i * 4 + 1] = noiseSource[i * 4 + 2] = static_cast<uint8_t>(seed >> 24);
+        }
+        auto tileRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        tileRecipe.seamless_blend = .2f;
+        auto* tiled = derive(noiseSource, m, tileRecipe);
+        auto out = map(tiled, PBRLabMapAlbedo);
+        auto deviation = [&](const uint8_t* px, unsigned x0, unsigned x1) {
+            double sum = 0, sq = 0; unsigned k = 0;
+            for (unsigned y = 40; y < 88; ++y) for (unsigned x = x0; x < x1; ++x, ++k) {
+                double val = px[(y * m + x) * 4]; sum += val; sq += val * val;
+            }
+            double mean = sum / k; return std::sqrt(sq / k - mean * mean);
+        };
+        // Column 12 of 128 with a 26 px zone has weight ~0.5, where a linear cross-fade of independent
+        // noise loses ~30% of its standard deviation.
+        double before = deviation(noiseSource.data(), 10, 15), after = deviation(out.pixels, 10, 15);
+        assert(after > before * .85 && after < before * 1.15);
+        for (unsigned y = 40; y < 88; ++y) for (unsigned x = 40; x < 88; ++x)
+            assert(out.pixels[(y * m + x) * 4] == noiseSource[(y * m + x) * 4]);
+        PBRLabFreeResult(tiled);
+    }
+
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
     {
         constexpr unsigned big = 1024;

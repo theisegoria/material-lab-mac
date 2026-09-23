@@ -193,6 +193,67 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
     return true;
 }
 
+// Per-channel transform between linear values and a standard normal variable, from the empirical CDF.
+// 16384 bins store their mean value, so unblended values round-trip exactly when a bin holds one level.
+float inverseNormalCDF(double p) {
+    // Acklam's rational approximation, |relative error| < 1.2e-9.
+    static constexpr double a[] = {-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+                                   1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00};
+    static constexpr double b[] = {-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+                                   6.680131188771972e+01, -1.328068155288572e+01};
+    static constexpr double c[] = {-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+                                   -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00};
+    static constexpr double d[] = {7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+                                   3.754408661907416e+00};
+    constexpr double low = 0.02425;
+    if (p < low) {
+        double q = std::sqrt(-2 * std::log(p));
+        return static_cast<float>((((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                                  ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1));
+    }
+    if (p > 1 - low) {
+        double q = std::sqrt(-2 * std::log(1 - p));
+        return static_cast<float>(-(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) /
+                                  ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1));
+    }
+    double q = p - 0.5, r = q * q;
+    return static_cast<float>((((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q /
+                              (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1));
+}
+struct HistogramTransform {
+    static constexpr int kBins = 16384;
+    std::vector<float> gaussOfBin = std::vector<float>(kBins);
+    std::vector<float> knotGauss, knotValue;           // Monotonic knots over occupied bins.
+    static int bin(float v) { return std::clamp(static_cast<int>(v * kBins), 0, kBins - 1); }
+    void build(const std::vector<float> &rgb, int channel, size_t count) {
+        std::vector<uint32_t> counts(kBins);
+        std::vector<double> sums(kBins);
+        for (size_t i = 0; i < count; ++i) {
+            float v = rgb[i * 3 + channel];
+            int k = bin(v);
+            ++counts[k]; sums[k] += v;
+        }
+        double before = 0;
+        for (int k = 0; k < kBins; ++k) {
+            if (!counts[k]) continue;
+            double center = (before + counts[k] * 0.5) / static_cast<double>(count);
+            gaussOfBin[k] = inverseNormalCDF(center);
+            knotGauss.push_back(gaussOfBin[k]);
+            knotValue.push_back(static_cast<float>(sums[k] / counts[k]));
+            before += counts[k];
+        }
+    }
+    float forward(float v) const { return gaussOfBin[bin(v)]; }
+    float inverse(float g) const {
+        auto upper = std::lower_bound(knotGauss.begin(), knotGauss.end(), g);
+        if (upper == knotGauss.begin()) return knotValue.front();
+        if (upper == knotGauss.end()) return knotValue.back();
+        size_t k = static_cast<size_t>(upper - knotGauss.begin());
+        float t = (g - knotGauss[k - 1]) / std::max(knotGauss[k] - knotGauss[k - 1], 1e-12f);
+        return knotValue[k - 1] + (knotValue[k] - knotValue[k - 1]) * t;
+    }
+};
+
 // Precomputed horizon sample for one side of one GTAO slice. Samples lie exactly on the slice line and
 // are read bilinearly, so planar surfaces of any orientation produce exact horizons.
 struct AOSample { int x0, y0; float fx, fy, distanceSquared; };
@@ -318,35 +379,6 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = lut[albedo[i * 4 + c]];
             std::vector<uint8_t> alpha(count);
             for (size_t i = 0; i < count; ++i) alpha[i] = albedo[i * 4 + 3];
-            if (seamless) {
-                // Separable half-period offset cross-fade: the offset copy is continuous across the
-                // wrap and its own seam sits where the weight is zero, so each pass removes one axis'
-                // seam while the other axis stays continuous.
-                auto weight = [&](int p) {
-                    int d = std::min(p, width - 1 - p);
-                    return 1.0f - smoothstep01(static_cast<float>(d) / static_cast<float>(blendWidth));
-                };
-                const int half = width / 2;
-                std::vector<float> rgbCopy(rgb);
-                std::vector<uint8_t> alphaCopy(alpha);
-                for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
-                    float w = weight(x);
-                    if (w <= 0) continue;
-                    size_t i = at(x, y, width), j = at((x + half) % width, y, width);
-                    for (int c = 0; c < 3; ++c) rgb[i * 3 + c] += (rgbCopy[j * 3 + c] - rgbCopy[i * 3 + c]) * w;
-                    alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
-                }
-                rgbCopy = rgb; alphaCopy = alpha;
-                for (int y = 0; y < height; ++y) {
-                    float w = weight(y);
-                    if (w <= 0) continue;
-                    for (int x = 0; x < width; ++x) {
-                        size_t i = at(x, y, width), j = at(x, (y + half) % height, width);
-                        for (int c = 0; c < 3; ++c) rgb[i * 3 + c] += (rgbCopy[j * 3 + c] - rgbCopy[i * 3 + c]) * w;
-                        alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
-                    }
-                }
-            }
             if (equalize) {
                 // Divide out low-frequency illumination (a smooth luminance field ~1/8 of the tile)
                 // toward the mean, preserving hue. Wraps when tiled so the correction is tileable.
@@ -358,12 +390,62 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     mean += lum[i];
                 }
                 mean /= static_cast<double>(count);
-                auto lowFrequency = smoothBlur(lum, width, height, std::max(2, width / 8), tiled);
+                // Clamp rather than wrap when the source is about to be made tileable: its edges do not match yet.
+                auto lowFrequency = smoothBlur(lum, width, height, std::max(2, width / 8), tiled && !seamless);
                 const float target = static_cast<float>(mean);
                 for (size_t i = 0; i < count; ++i) {
                     float gain = std::pow(target / std::max(lowFrequency[i], 1e-4f), recipe->albedo_equalize);
                     gain = std::clamp(gain, .25f, 4.0f);
-                    for (int c = 0; c < 3; ++c) rgb[i * 3 + c] *= gain;
+                    for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = std::min(rgb[i * 3 + c] * gain, 1.0f);
+                }
+            }
+            if (seamless) {
+                // Histogram-preserving half-period offset blend (Heitz & Neyret 2018). The offset copy
+                // is continuous across the wrap and its own seam sits where the weight is zero, so one
+                // pass per axis removes that axis' seam while the other stays continuous. Blending in
+                // Gaussianized space with variance renormalization keeps the texture's contrast and
+                // value distribution instead of washing out the blend zone like a linear cross-fade.
+                auto weight = [&](int p) {
+                    int d = std::min(p, width - 1 - p);
+                    return 1.0f - smoothstep01(static_cast<float>(d) / static_cast<float>(blendWidth));
+                };
+                const int half = width / 2;
+                std::vector<float> gauss(count);
+                for (int c = 0; c < 3; ++c) {
+                    HistogramTransform transform;
+                    transform.build(rgb, c, count);
+                    for (size_t i = 0; i < count; ++i) gauss[i] = transform.forward(rgb[i * 3 + c]);
+                    auto blendAxis = [&](bool vertical) {
+                        std::vector<float> source(gauss);
+                        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+                            float w = weight(vertical ? y : x);
+                            if (w <= 0) continue;
+                            size_t i = at(x, y, width);
+                            size_t j = vertical ? at(x, (y + half) % height, width) : at((x + half) % width, y, width);
+                            gauss[i] = ((1.0f - w) * source[i] + w * source[j]) /
+                                       std::sqrt((1.0f - w) * (1.0f - w) + w * w);
+                        }
+                    };
+                    blendAxis(false);
+                    blendAxis(true);
+                    for (size_t i = 0; i < count; ++i) rgb[i * 3 + c] = transform.inverse(gauss[i]);
+                }
+                // Coverage is not a stochastic texture: cross-fade alpha linearly.
+                std::vector<uint8_t> alphaCopy(alpha);
+                for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+                    float w = weight(x);
+                    if (w <= 0) continue;
+                    size_t i = at(x, y, width), j = at((x + half) % width, y, width);
+                    alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
+                }
+                alphaCopy = alpha;
+                for (int y = 0; y < height; ++y) {
+                    float w = weight(y);
+                    if (w <= 0) continue;
+                    for (int x = 0; x < width; ++x) {
+                        size_t i = at(x, y, width), j = at(x, (y + half) % height, width);
+                        alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
+                    }
                 }
             }
             parallelRows(height, [&](int y0, int y1) {
