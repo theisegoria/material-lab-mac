@@ -1,0 +1,64 @@
+name: MaterialCapture
+options:
+  bundleIdPrefix: io.materiallab
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: '27.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CLANG_CXX_LANGUAGE_STANDARD: c++23
+    CLANG_CXX_LIBRARY: libc++
+    IPHONEOS_DEPLOYMENT_TARGET: '27.0'
+    TARGETED_DEVICE_FAMILY: '1'
+    DEVELOPMENT_TEAM: ''
+    CODE_SIGNING_ALLOWED: NO
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/../../core/include
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/Bridge/MaterialCapture-Bridging-Header.h
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    INFOPLIST_FILE: Sources/Info.plist
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  MaterialCapture:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources/Assets.xcassets
+      - path: ../../core/src/PBRMaterialLab.cpp
+        compilerFlags: ['-std=c++23']
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.capture
+        PRODUCT_NAME: MaterialCapture
+        TARGETED_DEVICE_FAMILY: '1'
+        SWIFT_EMIT_LOC_STRINGS: YES
+    scheme:
+      testTargets:
+        - MaterialCaptureTests
+        - MaterialCaptureUITests
+  MaterialCaptureTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: MaterialCapture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.capture.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  MaterialCaptureUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: MaterialCapture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.capture.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: '1'
