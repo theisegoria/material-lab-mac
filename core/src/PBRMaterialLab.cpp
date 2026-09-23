@@ -494,6 +494,20 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
         }
         checkpoint(progress, context, .28f);
         const auto localAverage = smoothBlur(heights, width, height, 2, tiled);
+        // Roughness variation cue: local micro-contrast of the (delit) luminance relative to the image's
+        // mean micro-contrast. Fine-grained areas read rougher and smooth areas glossier, while the
+        // image mean stays at the artist's prior. Luminance is used even for authored height or the
+        // flat preset because it describes surface finish, not relief.
+        std::vector<float> microContrast;
+        if (recipe->roughness_variation > 0) {
+            auto fine = smoothBlur(luminance, width, height, 2, tiled);
+            for (size_t i = 0; i < count; ++i) { float d = luminance[i] - fine[i]; fine[i] = d * d; }
+            microContrast = smoothBlur(fine, width, height, 4, tiled);
+            double mean = 0;
+            for (size_t i = 0; i < count; ++i) { microContrast[i] = std::sqrt(std::max(microContrast[i], 0.0f)); mean += microContrast[i]; }
+            const float inverseMean = 1.0f / std::max(static_cast<float>(mean / static_cast<double>(count)), 1e-5f);
+            for (auto &m : microContrast) m = std::clamp(m * inverseMean - 1.0f, -1.0f, 1.0f);
+        }
         checkpoint(progress, context, .32f);
 
         const auto slices = makeSlices(recipe->ao_radius_pixels);
@@ -529,8 +543,10 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     putGray(convexity, i, clamp01(localCurvature * 12.0f));
                     putGray(slope, i, clamp01(gradient * 16.0f));
                     putGray(edge, i, clamp01(std::abs(localCurvature) * 18.0f));
-                    float rough = clamp01(recipe->roughness_base +
-                        recipe->roughness_variation * std::clamp(gradient * 4.0f - .05f, -.25f, .25f));
+                    float rough = recipe->roughness_base;
+                    if (!microContrast.empty())
+                        rough += recipe->roughness_variation * .25f * microContrast[i];
+                    rough = clamp01(rough);
                     putGray(roughness, i, rough);
 
                     // GTAO (Jimenez et al. 2016) cosine-weighted slice integral on the heightfield, viewed

@@ -216,6 +216,26 @@ int main() {
         PBRLabFreeResult(tiled);
     }
 
+    // Roughness variation: grainy regions read rougher than smooth ones around the artist's prior.
+    {
+        constexpr unsigned m = 64;
+        std::vector<uint8_t> split(m * m * 4, 255);
+        uint32_t seed = 99;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            uint8_t val = x < m / 2 ? static_cast<uint8_t>(96 + ((seed >> 24) & 63)) : 128;
+            size_t i = (y * m + x) * 4;
+            split[i] = split[i + 1] = split[i + 2] = val;
+        }
+        auto roughRecipe = PBRLabDefaultRecipe(PBRLabPresetStone);
+        roughRecipe.roughness_variation = 1;
+        auto* result = derive(split, m, roughRecipe);
+        auto ro2 = map(result, PBRLabMapRoughness);
+        int base = static_cast<int>(std::lround(roughRecipe.roughness_base * 255));
+        assert(v(ro2, 16, 32) > base && v(ro2, 48, 32) < base);
+        PBRLabFreeResult(result);
+    }
+
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
     {
         constexpr unsigned big = 1024;
