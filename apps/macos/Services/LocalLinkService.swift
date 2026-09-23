@@ -18,6 +18,7 @@ struct IncomingCapture: Identifiable {
 final class LocalLinkService {
     var status = "Secure local link is stopped."
     var isListening = false
+    var isStarting = false
     var leafSHA256: String?
     var qrImage: NSImage?
     var pairingJSON: String?
@@ -34,14 +35,17 @@ final class LocalLinkService {
     @ObservationIgnored private let instanceID = UUID().uuidString.lowercased()
 
     func start() {
+        guard !isStarting else { return }
         guard listener == nil else {
             renewCode()
             return
         }
+        isStarting = true
         status = "Preparing the Mac TLS identity…"
+        let cached = identity
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                let identity = try LocalLinkIdentity.loadOrCreate()
+                let identity = try cached ?? LocalLinkIdentity.loadOrCreate()
                 await self?.activate(identity: identity)
             } catch {
                 await self?.fail(error.localizedDescription)
@@ -50,6 +54,7 @@ final class LocalLinkService {
     }
 
     func stop() {
+        isStarting = false
         listener?.cancel()
         listener = nil
         for connection in connections.values { connection.cancel() }
@@ -66,6 +71,7 @@ final class LocalLinkService {
     }
 
     func resetTrust() {
+        guard !isStarting else { return }
         stop()
         do {
             try LocalLinkIdentity.reset()
@@ -124,7 +130,8 @@ final class LocalLinkService {
         status = "Importing approved capture…"
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                let source = try MaterialBundle.importCapture(incoming.envelope)
+                // The payload was fully inspected before approval; only the write remains.
+                let source = try MaterialBundle.importInspected(incoming.inspection)
                 await self?.finishApproval(incoming, source: source)
             } catch {
                 await self?.finishRejection(incoming, message: error.localizedDescription)
@@ -147,7 +154,7 @@ final class LocalLinkService {
     }
 
     private func activate(identity: LocalLinkIdentity) {
-        guard listener == nil else { return }
+        guard isStarting, listener == nil else { return }
         self.identity = identity
         leafSHA256 = identity.leafSHA256
         let tls = NWProtocolTLS.Options()
@@ -173,6 +180,7 @@ final class LocalLinkService {
                     guard let self else { return }
                     switch state {
                     case .ready:
+                        self.isStarting = false
                         self.isListening = true
                         self.renewCode()
                     case .failed(let error):
@@ -206,8 +214,14 @@ final class LocalLinkService {
             case .waiting, .failed, .cancelled:
                 connection.cancel()
                 Task { @MainActor in
-                    self?.connections.removeValue(forKey: key)
-                    self?.deadlines.removeValue(forKey: key)?.cancel()
+                    guard let self else { return }
+                    self.connections.removeValue(forKey: key)
+                    self.deadlines.removeValue(forKey: key)?.cancel()
+                    // A capture awaiting approval is void once its sender disconnects.
+                    if let pending = self.pending, ObjectIdentifier(pending.connection) == key {
+                        self.pending = nil
+                        self.status = "The iPhone disconnected before approval. Nothing was imported."
+                    }
                 }
             default: break
             }
@@ -216,6 +230,14 @@ final class LocalLinkService {
     }
 
     private func readHeader(_ connection: NWConnection) {
+        // Completion handlers run on the network queue; MainActor state is only touched after a hop.
+        let refresh: @Sendable () -> Void = { [weak self, weak connection] in
+            Task { @MainActor in
+                guard let self, let connection,
+                      self.connections[ObjectIdentifier(connection)] != nil else { return }
+                self.scheduleDeadline(connection, seconds: 30)
+            }
+        }
         readExactly(connection, count: 4, state: LinkReceiveState()) { [weak self] result in
             switch result {
             case .failure:
@@ -223,14 +245,18 @@ final class LocalLinkService {
             case .success(let header):
                 let length = header.reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
                 guard length > 0, length <= MaterialBundle.maximumCaptureBytes else {
-                    self?.sendAcknowledgement(
-                        connection: connection, ok: false,
-                        captureID: nil, message: "Transfer size exceeds 64 MiB"
-                    )
+                    Task { @MainActor in
+                        self?.sendAcknowledgement(
+                            connection: connection, ok: false,
+                            captureID: nil, message: "Transfer size exceeds 64 MiB"
+                        )
+                    }
                     return
                 }
+                let state = LinkReceiveState()
+                state.onProgress = refresh
                 self?.readExactly(
-                    connection, count: Int(length), state: LinkReceiveState()
+                    connection, count: Int(length), state: state
                 ) { [weak self] body in
                     switch body {
                     case .failure: connection.cancel()
@@ -262,6 +288,11 @@ final class LocalLinkService {
                 completion(.failure(LinkReceiveError.closed)); return
             }
             state.bytes.append(content)
+            // Keep an actively streaming transfer alive: refresh the idle deadline every MiB.
+            if state.bytes.count - state.lastRefresh >= 1 << 20 {
+                state.lastRefresh = state.bytes.count
+                state.onProgress?()
+            }
             if state.bytes.count == count {
                 completion(.success(state.bytes))
             } else if finished {
@@ -289,13 +320,23 @@ final class LocalLinkService {
         }
         scheduleDeadline(connection, seconds: 120)
         Task.detached(priority: .userInitiated) { [weak self] in
-            do {
-                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let tokenMatches: Bool = {
+                guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let link = object["link"] as? [String: Any],
-                      let received = link["token"] as? String,
-                      secureTokenEqual(token, received)
-                else { throw MaterialBundleError.invalidCapture("pairing token mismatch") }
+                      let received = link["token"] as? String
+                else { return false }
+                return secureTokenEqual(token, received)
+            }()
+            guard tokenMatches else {
+                // A wrong token must not burn the valid pairing code for the real device.
+                await self?.refuse(connection, message: "Pairing token mismatch")
+                return
+            }
+            do {
                 let inspection = try MaterialBundle.inspectCapture(data)
+                guard !MaterialLibrary.inboxContains(inspection.captureID) else {
+                    throw MaterialBundleError.duplicateCapture
+                }
                 await self?.presentValidated(
                     inspection, data: data, connection: connection, token: token
                 )
@@ -305,6 +346,11 @@ final class LocalLinkService {
                 )
             }
         }
+    }
+
+    private func refuse(_ connection: NWConnection, message: String) {
+        sendAcknowledgement(connection: connection, ok: false, captureID: nil, message: message)
+        status = "Refused a transfer with an invalid pairing code. The current code is still valid."
     }
 
     private func presentValidated(
@@ -426,12 +472,15 @@ final class LocalLinkService {
     private func fail(_ text: String) {
         status = text
         isListening = false
+        isStarting = false
     }
 
 }
 
 private final class LinkReceiveState: @unchecked Sendable {
     var bytes = Data()
+    var lastRefresh = 0
+    var onProgress: (@Sendable () -> Void)?
 }
 
 private enum LinkReceiveError: Error {

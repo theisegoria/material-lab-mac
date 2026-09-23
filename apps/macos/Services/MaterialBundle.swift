@@ -20,7 +20,7 @@ enum MaterialBundleError: LocalizedError {
     }
 }
 
-struct CaptureInspection {
+struct CaptureInspection: Sendable {
     let captureID: UUID
     let semanticLabel: String
     let category: String
@@ -59,7 +59,7 @@ enum MaterialBundle {
               let source = Data(base64Encoded: base64),
               let expectedHash = object["sourceSHA256"] as? String
         else { throw MaterialBundleError.invalidCapture("required envelope fields are missing") }
-        try verifyRecipe(recipe)
+        try verifyRecipe(recipe, algorithmVersion: algorithmVersion)
         try verifyCaptureMetadata(capture)
         try verifySeamMetrics(seams)
         let requiredMaps: Set<String> = [
@@ -117,44 +117,60 @@ enum MaterialBundle {
         )
     }
 
+    /// Validates and imports a capture file (Files/AirDrop path).
     static func importCapture(_ data: Data) throws -> MaterialSource {
         let inspection = try inspectCapture(data)
-        try MaterialLibrary.prepareDirectories()
-        let base = MaterialLibrary.inbox.appendingPathComponent(
-            inspection.captureID.uuidString.lowercased()
-        )
-        let captureURL = base.appendingPathExtension("pbrcapture")
-        let imageURL = base.appendingPathExtension("png")
-        let fm = FileManager.default
-        guard !fm.fileExists(atPath: captureURL.path), !fm.fileExists(atPath: imageURL.path) else {
+        guard !MaterialLibrary.inboxContains(inspection.captureID) else {
             throw MaterialBundleError.duplicateCapture
         }
+        return try importInspected(inspection)
+    }
+
+    /// Writes an already-inspected capture to the inbox. The envelope and source image are
+    /// staged in one hidden directory which is renamed into place in a single move, so an
+    /// interrupted import never leaves a partially written inbox entry.
+    static func importInspected(_ inspection: CaptureInspection) throws -> MaterialSource {
+        try MaterialLibrary.prepareDirectories()
+        let fm = FileManager.default
+        let id = inspection.captureID.uuidString.lowercased()
+        guard !MaterialLibrary.inboxContains(inspection.captureID) else {
+            throw MaterialBundleError.duplicateCapture
+        }
+        let final = MaterialLibrary.inbox.appendingPathComponent(id, isDirectory: true)
         let temp = MaterialLibrary.inbox.appendingPathComponent(
-            ".\(inspection.captureID.uuidString).tmp"
+            "\(MaterialLibrary.stagingPrefix)\(UUID().uuidString.lowercased())", isDirectory: true
         )
         try fm.createDirectory(at: temp, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: temp) }
-        let tempCapture = temp.appendingPathComponent(captureURL.lastPathComponent)
-        let tempImage = temp.appendingPathComponent(imageURL.lastPathComponent)
-        try inspection.sanitizedEnvelope.write(to: tempCapture, options: .atomic)
-        try inspection.sourcePNG.write(to: tempImage, options: .atomic)
-        try fm.moveItem(at: tempCapture, to: captureURL)
+        try inspection.sanitizedEnvelope.write(
+            to: temp.appendingPathComponent(MaterialLibrary.inboxEnvelopeName), options: .atomic
+        )
+        try inspection.sourcePNG.write(
+            to: temp.appendingPathComponent(MaterialLibrary.inboxImageName), options: .atomic
+        )
         do {
-            try fm.moveItem(at: tempImage, to: imageURL)
+            try fm.moveItem(at: temp, to: final)
         } catch {
-            try? fm.removeItem(at: captureURL)
+            if fm.fileExists(atPath: final.path) { throw MaterialBundleError.duplicateCapture }
             throw error
         }
         return MaterialSource(
-            id: "capture:\(inspection.captureID.uuidString.lowercased())",
-            url: imageURL, semanticLabel: inspection.semanticLabel,
+            id: "capture:\(id)",
+            url: final.appendingPathComponent(MaterialLibrary.inboxImageName),
+            semanticLabel: inspection.semanticLabel,
             category: inspection.category, origin: .cameraInbox,
             reviewStatus: "capture estimate",
-            originalEnvelopeURL: captureURL
+            originalEnvelopeURL: final.appendingPathComponent(MaterialLibrary.inboxEnvelopeName)
         )
     }
 
-    private static func verifyRecipe(_ recipe: [String: Any]) throws {
+    /// 1.1.0 recipe fields with their accepted ranges (camelCase, as written by Material Capture).
+    static let recipeFields110: [(key: String, range: ClosedRange<Double>)] = [
+        ("normalStrength", 0...16), ("aoStrength", 0...4),
+        ("albedoEqualize", 0...1), ("seamlessBlend", 0...0.45)
+    ]
+
+    private static func verifyRecipe(_ recipe: [String: Any], algorithmVersion: String) throws {
         guard let preset = recipe["preset"] as? String, !preset.isEmpty,
               let polarity = recipe["heightPolarity"] as? Int,
               polarity == -1 || polarity == 1,
@@ -166,6 +182,53 @@ enum MaterialBundle {
                 throw MaterialBundleError.invalidCapture("recipe \(key) is missing or non-finite")
             }
         }
+        // Required from 1.1.0; a 1.0.0 capture may omit them (treated as defaults).
+        let required = algorithmVersion != "1.0.0"
+        for field in recipeFields110 {
+            guard let raw = recipe[field.key] else {
+                if required { throw MaterialBundleError.invalidCapture("recipe \(field.key) is missing") }
+                continue
+            }
+            guard let value = raw as? Double, value.isFinite, field.range.contains(value) else {
+                throw MaterialBundleError.invalidCapture("recipe \(field.key) is out of range")
+            }
+        }
+        if let raw = recipe["normalYDown"] {
+            guard raw is Bool || (raw as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() }) == true else {
+                throw MaterialBundleError.invalidCapture("recipe normalYDown must be a boolean")
+            }
+        } else if required {
+            throw MaterialBundleError.invalidCapture("recipe normalYDown is missing")
+        }
+    }
+
+    /// Reads the capture recipe back into an editable Mac recipe (absent 1.1.0 fields use defaults).
+    static func recipe(fromCaptureEnvelope url: URL) -> MaterialRecipe? {
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = object["recipe"] as? [String: Any],
+              let presetName = raw["preset"] as? String,
+              let preset = MaterialPreset(externalName: presetName)
+        else { return nil }
+        var recipe = MaterialEngine.defaultRecipe(for: preset)
+        func number(_ key: String, _ range: ClosedRange<Float>) -> Float? {
+            (raw[key] as? Double).map { min(range.upperBound, max(range.lowerBound, Float($0))) }
+        }
+        recipe.heightStrength = number("heightStrength", MaterialRecipe.Range.heightStrength) ?? recipe.heightStrength
+        recipe.roughnessBase = number("roughnessBase", MaterialRecipe.Range.roughness) ?? recipe.roughnessBase
+        recipe.roughnessVariation = number("roughnessVariation", MaterialRecipe.Range.roughness) ?? recipe.roughnessVariation
+        recipe.aoRadiusPixels = number("aoRadiusPixels", MaterialRecipe.Range.aoRadius) ?? recipe.aoRadiusPixels
+        recipe.normalStrength = number("normalStrength", MaterialRecipe.Range.normalStrength) ?? recipe.normalStrength
+        recipe.aoStrength = number("aoStrength", MaterialRecipe.Range.aoStrength) ?? recipe.aoStrength
+        recipe.albedoEqualize = number("albedoEqualize", MaterialRecipe.Range.albedoEqualize) ?? recipe.albedoEqualize
+        recipe.seamlessBlend = number("seamlessBlend", MaterialRecipe.Range.seamlessBlend) ?? recipe.seamlessBlend
+        if let polarity = raw["heightPolarity"] as? Int, polarity == 1 || polarity == -1 {
+            recipe.heightPolarity = Int32(polarity)
+        }
+        if let wrap = raw["tileWrap"] as? Bool { recipe.tileWrap = wrap }
+        if let bent = raw["bentNormal"] as? Bool { recipe.bentNormalEnabled = bent }
+        if let yDown = raw["normalYDown"] as? Bool { recipe.normalYDown = yDown }
+        return recipe
     }
 
     private static func verifyCaptureMetadata(_ capture: [String: Any]) throws {
@@ -242,13 +305,19 @@ enum MaterialBundle {
         default: throw MaterialBundleError.invalidCapture("unsupported image MIME")
         }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetStatus(source) == .statusComplete,
               (CGImageSourceGetType(source) as String?) == expectedType,
               CGImageSourceGetCount(source) == 1,
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let image = CGImageSourceCreateImageAtIndex(
+                source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
+              ),
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
               image.width >= 2, image.height >= 2,
               image.width <= maxSide, image.height <= maxSide,
               !square || image.width == image.height
         else { throw MaterialBundleError.invalidCapture("image failed full decode or dimension check") }
+        // kCGImageSourceShouldCacheImmediately forces the full pixel decode at creation, so a
+        // truncated or corrupt payload fails above instead of at first draw.
         if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
            containsGPS(properties) {
             throw MaterialBundleError.invalidCapture("embedded image location metadata is not allowed")
@@ -258,11 +327,7 @@ enum MaterialBundle {
 
     static func export(_ material: DerivedMaterial, into folder: URL) throws -> URL {
         let fm = FileManager.default
-        let slug = material.source.semanticLabel.lowercased()
-            .map { character -> Character in
-                character.isLetter || character.isNumber ? character : "-"
-            }
-        let name = String(slug).replacingOccurrences(of: "--", with: "-")
+        let name = exportSlug(material.source.semanticLabel)
         let suffix = String(UUID().uuidString.prefix(8)).lowercased()
         let final = folder.appendingPathComponent("\(name)-\(suffix).pbrmaterial", isDirectory: true)
         let temp = folder.appendingPathComponent(".material-lab-\(suffix).tmp", isDirectory: true)
@@ -297,10 +362,11 @@ enum MaterialBundle {
                 "sha256": material.sourceSHA256,
                 "color_space": "sRGB",
                 "origin": material.source.origin.rawValue,
+                "input_dimensions": [material.working.sourceWidth, material.working.sourceHeight],
                 "working_image": [
-                    "width": 1024,
-                    "height": 1024,
-                    "crop": "center_square",
+                    "width": material.working.size,
+                    "height": material.working.size,
+                    "crop": material.working.wasCropped ? "center_square" : "none",
                     "resample": "CoreGraphics_high_quality",
                     "color_conversion": "tagged_input_to_sRGB_RGBA8",
                     "alpha": "straight_after_unpremultiply"
@@ -308,32 +374,41 @@ enum MaterialBundle {
             ],
             "recipe": [
                 "preset": recipe.preset.rawValue,
-                "height_strength": recipe.heightStrength,
+                "height_strength": tidy(recipe.heightStrength),
                 "height_polarity": recipe.heightPolarity,
-                "roughness_base": recipe.roughnessBase,
-                "roughness_variation": recipe.roughnessVariation,
-                "ao_radius_pixels": recipe.aoRadiusPixels,
+                "roughness_base": tidy(recipe.roughnessBase),
+                "roughness_variation": tidy(recipe.roughnessVariation),
+                "ao_radius_pixels": tidy(recipe.aoRadiusPixels),
                 "tile_wrap": recipe.tileWrap,
                 "assigned_metalness_enabled": recipe.assignedMetalnessEnabled,
-                "assigned_metalness": recipe.assignedMetalness,
+                "assigned_metalness": tidy(recipe.assignedMetalness),
                 "bent_normal_enabled": recipe.bentNormalEnabled,
-                "relief_mask": recipe.reliefMaskURL?.lastPathComponent as Any,
-                "height_override": recipe.heightOverrideURL?.lastPathComponent as Any
+                "normal_strength": tidy(recipe.normalStrength),
+                "normal_y_down": recipe.normalYDown,
+                "ao_strength": tidy(recipe.aoStrength),
+                "albedo_equalize": tidy(recipe.albedoEqualize),
+                "seamless_blend": tidy(recipe.seamlessBlend)
             ],
+            "normal_convention": recipe.normalConvention,
             "maps": mapManifest,
             "seam_metrics": [
-                "height_value_delta": material.seams.heightValue,
-                "height_gradient_delta": material.seams.heightGradient,
-                "albedo_value_delta": material.seams.albedoValue
+                "height_value_delta": tidy(material.seams.heightValue),
+                "height_gradient_delta": tidy(material.seams.heightGradient),
+                "albedo_value_delta": tidy(material.seams.albedoValue)
             ],
             "estimation_notice": "Geometry and reflectance maps are estimates, not measured surface properties.",
             "runtime_admitted": false
         ]
         var cleanManifest = manifest
         var recipeManifest = cleanManifest["recipe"] as! [String: Any]
-        recipeManifest = recipeManifest.filter { !($0.value is NSNull) }
-        if recipe.reliefMaskURL == nil { recipeManifest.removeValue(forKey: "relief_mask") }
-        if recipe.heightOverrideURL == nil { recipeManifest.removeValue(forKey: "height_override") }
+        if let url = recipe.reliefMaskURL {
+            recipeManifest["relief_mask"] = url.lastPathComponent
+            if let digest = material.reliefMaskSHA256 { recipeManifest["relief_mask_sha256"] = digest }
+        }
+        if let url = recipe.heightOverrideURL {
+            recipeManifest["height_override"] = url.lastPathComponent
+            if let digest = material.heightOverrideSHA256 { recipeManifest["height_override_sha256"] = digest }
+        }
         cleanManifest["recipe"] = recipeManifest
         guard JSONSerialization.isValidJSONObject(cleanManifest) else {
             throw MaterialBundleError.exportFailed("manifest serialization")
@@ -396,6 +471,31 @@ enum MaterialBundle {
             ? "derived_from_estimated_pseudo_height"
             : "derived_from_authored_height_override"
         }
+    }
+
+    /// Float parameters serialized at their meaningful precision (0.22 rather than 0.2199999988).
+    private static func tidy(_ value: Float) -> Double {
+        Double(String(format: "%.6g", value)) ?? Double(value)
+    }
+
+    /// Filesystem-safe, byte-bounded bundle name derived from the semantic label.
+    static func exportSlug(_ label: String, maxBytes: Int = 80) -> String {
+        var slug = ""
+        var lastWasDash = true
+        for scalar in label.lowercased().unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                let next = slug + String(scalar)
+                guard next.utf8.count <= maxBytes else { break }
+                slug = next
+                lastWasDash = false
+            } else if !lastWasDash {
+                guard slug.utf8.count + 1 <= maxBytes else { break }
+                slug.append("-")
+                lastWasDash = true
+            }
+        }
+        while slug.hasSuffix("-") { slug.removeLast() }
+        return slug.isEmpty ? "material" : slug
     }
 
     private static func sha256(_ data: Data) -> String {

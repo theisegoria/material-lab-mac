@@ -14,6 +14,17 @@
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>NSLocalNetworkUsageDescription</key><string>Receive captured material bundles from Material Capture on your local network.</string>
 <key>NSBonjourServices</key><array><string>_materiallab._tcp</string></array>
+<key>CFBundleDocumentTypes</key>
+<array>
+<dict><key>CFBundleTypeName</key><string>Material Lab Capture</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Owner</string>
+<key>LSItemContentTypes</key><array><string>io.materiallab.capture</string></array></dict>
+<dict><key>CFBundleTypeName</key><string>Image</string>
+<key>CFBundleTypeRole</key><string>Viewer</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>LSItemContentTypes</key><array><string>public.image</string></array></dict>
+</array>
 <key>UTExportedTypeDeclarations</key>
 <array><dict>
 <key>UTTypeIdentifier</key><string>io.materiallab.capture</string>

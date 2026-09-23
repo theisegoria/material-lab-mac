@@ -30,6 +30,11 @@ enum MaterialLibrary {
     }
 
     static var inbox: URL { appSupport.appendingPathComponent("Inbox", isDirectory: true) }
+    /// Each capture lives in `Inbox/<capture-id>/` holding these two files.
+    static let inboxImageName = "source.png"
+    static let inboxEnvelopeName = "capture.pbrcapture"
+    /// Hidden staging directories renamed into place in one move.
+    static let stagingPrefix = ".incoming-"
     private static var importedFolder: URL { appSupport.appendingPathComponent("Sources", isDirectory: true) }
     private static var savedSourcesURL: URL { appSupport.appendingPathComponent("sources.json") }
     private static var metadataURL: URL { appSupport.appendingPathComponent("source-metadata.json") }
@@ -153,23 +158,68 @@ enum MaterialLibrary {
         return sources
     }
 
+    /// True when a capture with this ID is already in the inbox (directory or legacy flat layout).
+    static func inboxContains(_ captureID: UUID) -> Bool {
+        let id = captureID.uuidString.lowercased()
+        let fm = FileManager.default
+        return fm.fileExists(atPath: inbox.appendingPathComponent(id).path) ||
+               fm.fileExists(atPath: inbox.appendingPathComponent("\(id).png").path) ||
+               fm.fileExists(atPath: inbox.appendingPathComponent("\(id).pbrcapture").path)
+    }
+
+    /// Removes staging directories left behind by an interrupted import (older than a minute).
+    static func removeStaleStaging() {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: inbox, includingPropertiesForKeys: [.contentModificationDateKey], options: []
+        ) else { return }
+        let cutoff = Date().addingTimeInterval(-60)
+        for item in items {
+            let name = item.lastPathComponent
+            let isStaging = name.hasPrefix(stagingPrefix) || (name.hasPrefix(".") && name.hasSuffix(".tmp"))
+            guard isStaging else { continue }
+            let modified = (try? item.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            if modified < cutoff { try? fm.removeItem(at: item) }
+        }
+    }
+
     static func loadInbox() -> [MaterialSource] {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: inbox, includingPropertiesForKeys: nil
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(
+            at: inbox, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
         ) else { return [] }
-        return files.filter { $0.pathExtension.lowercased() == "png" }.map { url in
-            let envelope = url.deletingPathExtension().appendingPathExtension("pbrcapture")
+        var result: [MaterialSource] = []
+        for item in items {
+            let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            let image: URL
+            let envelope: URL
+            let id: String
+            if isDirectory {
+                image = item.appendingPathComponent(inboxImageName)
+                envelope = item.appendingPathComponent(inboxEnvelopeName)
+                id = item.lastPathComponent
+                guard fm.fileExists(atPath: image.path) else { continue }
+            } else if item.pathExtension.lowercased() == "png" {
+                // Legacy flat layout: <id>.png beside <id>.pbrcapture.
+                image = item
+                envelope = item.deletingPathExtension().appendingPathExtension("pbrcapture")
+                id = item.deletingPathExtension().lastPathComponent
+            } else {
+                continue
+            }
             let metadata = (try? Data(contentsOf: envelope)).flatMap {
                 try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
             }
-            let label = (metadata?["semanticLabel"] as? String) ?? url.deletingPathExtension().lastPathComponent
-            let category = (metadata?["category"] as? String) ?? "captured"
-            return MaterialSource(
-                id: "capture:\(url.deletingPathExtension().lastPathComponent)",
-                url: url, semanticLabel: label, category: category,
+            result.append(MaterialSource(
+                id: "capture:\(id)",
+                url: image,
+                semanticLabel: (metadata?["semanticLabel"] as? String) ?? id,
+                category: (metadata?["category"] as? String) ?? "captured",
                 origin: .cameraInbox, reviewStatus: "capture estimate",
-                originalEnvelopeURL: FileManager.default.fileExists(atPath: envelope.path) ? envelope : nil
-            )
-        }.sorted { $0.semanticLabel.localizedStandardCompare($1.semanticLabel) == .orderedAscending }
+                originalEnvelopeURL: fm.fileExists(atPath: envelope.path) ? envelope : nil
+            ))
+        }
+        return result.sorted { $0.semanticLabel.localizedStandardCompare($1.semanticLabel) == .orderedAscending }
     }
 }

@@ -43,14 +43,19 @@ struct LocalLinkIdentity {
             password = saved
         } else {
             password = try randomSecret()
-            try generateIdentity(password: password)
-            try savePassword(password)
+            // Save the passphrase before the archive becomes visible, so a crash never leaves
+            // an identity.p12 whose passphrase is missing from the Keychain.
+            try generateIdentity(password: password) { try savePassword(password) }
         }
         let bytes = try Data(contentsOf: p12URL)
         var items: CFArray?
         let status = SecPKCS12Import(
             bytes as CFData,
-            [kSecImportExportPassphrase as String: password] as CFDictionary,
+            [
+                kSecImportExportPassphrase as String: password,
+                // Keep the private key in process memory; avoids accumulating copies in the login keychain.
+                kSecImportToMemoryOnly as String: true
+            ] as CFDictionary,
             &items
         )
         guard status == errSecSuccess,
@@ -132,7 +137,7 @@ struct LocalLinkIdentity {
         }
     }
 
-    private static func generateIdentity(password: String) throws {
+    private static func generateIdentity(password: String, beforeInstall: () throws -> Void) throws {
         let fm = FileManager.default
         let temp = folder.appendingPathComponent(".create-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(
@@ -157,6 +162,7 @@ struct LocalLinkIdentity {
             "-out", archive.path, "-passout", "file:\(pass.path)"
         ])
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: archive.path)
+        try beforeInstall()
         try fm.moveItem(at: archive, to: p12URL)
     }
 

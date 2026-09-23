@@ -4,6 +4,9 @@ set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "Apple Silicon only")
 if(NOT CMAKE_Swift_FLAGS)
     set(CMAKE_Swift_FLAGS "-module-cache-path \"${CMAKE_BINARY_DIR}/swift-module-cache\"" CACHE STRING "Local Swift module cache" FORCE)
 endif()
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Material Lab build type (defaults to Release)" FORCE)
+endif()
 project(MaterialLab VERSION 0.1.0 LANGUAGES C CXX Swift)
 if(NOT APPLE OR NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
     message(FATAL_ERROR "Material Lab requires Apple Silicon macOS")
@@ -14,10 +17,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(MATERIAL_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../core")
 add_library(pbr_material_core STATIC "${MATERIAL_CORE_DIR}/src/PBRMaterialLab.cpp")
 target_include_directories(pbr_material_core PUBLIC "${MATERIAL_CORE_DIR}/include")
-target_compile_options(pbr_material_core PRIVATE -Wall -Wextra -Wpedantic)
+# The derivation core is compute-bound; always optimize it, even in Debug app builds.
+target_compile_options(pbr_material_core PRIVATE -Wall -Wextra -Wpedantic -O3)
+find_package(Threads REQUIRED)
+target_link_libraries(pbr_material_core PUBLIC Threads::Threads)
 
 set(MATERIAL_LAB_SWIFT
     App/MaterialLabApp.swift
+    App/SnapshotHarness.swift
     Models/MaterialModels.swift
     Services/MaterialEngine.swift
     Services/MaterialLibrary.swift
@@ -33,6 +40,7 @@ set(MATERIAL_LAB_SWIFT
     Views/CameraInboxView.swift
     Views/PairingView.swift
     Views/SourceMetadataEditor.swift
+    Views/Material3DPreview.swift
 )
 add_executable(MaterialLab MACOSX_BUNDLE ${MATERIAL_LAB_SWIFT})
 target_compile_options(MaterialLab PRIVATE -parse-as-library
@@ -40,7 +48,8 @@ target_compile_options(MaterialLab PRIVATE -parse-as-library
 target_link_libraries(MaterialLab PRIVATE pbr_material_core
     "-framework SwiftUI" "-framework AppKit" "-framework ImageIO"
     "-framework CoreGraphics" "-framework UniformTypeIdentifiers"
-    "-framework Security" "-framework Network")
+    "-framework Security" "-framework Network"
+    "-framework RealityKit" "-framework Metal" "-framework ScreenCaptureKit")
 set_target_properties(MaterialLab PROPERTIES
     Swift_LANGUAGE_VERSION 5
     MACOSX_BUNDLE_GUI_IDENTIFIER "io.materiallab.desktop"
