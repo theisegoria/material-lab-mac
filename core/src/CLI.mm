@@ -267,6 +267,7 @@ fs::path runPreUpscale(const fs::path& inputPath, const Options& options,
             throw std::runtime_error("pre-upscale receipt hashes do not match actual input/output bytes");
         (*provenance)[@"receipt"] = receipt;
         (*provenance)[@"receipt_sha256"] = ns(hash(receiptBytes));
+        (*provenance)[@"receipt_json_base64"] = [receiptBytes base64EncodedStringWithOptions:0];
     }
     return output;
 }
@@ -331,7 +332,10 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
         };
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
-        if (preUpscaleProvenance) sourceManifest[@"pre_upscale"] = preUpscaleProvenance;
+        if (preUpscaleProvenance) {
+            sourceManifest[@"processed_sha256"] = preUpscaleProvenance[@"output_sha256"];
+            sourceManifest[@"pre_upscale"] = preUpscaleProvenance;
+        }
         NSMutableDictionary* manifest = [@{
             @"schema_version": @1,
             @"bundle_kind": @"pbr-material-bundle",
@@ -356,6 +360,16 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
     } catch (...) { fs::remove_all(temp); throw; }
     std::cout << outputPath.string() << '\n';
 }
+bool validSHA256String(id value) {
+    if (![value isKindOfClass:[NSString class]] || [value length] != 64) return false;
+    NSString* digest = value;
+    for (NSUInteger i = 0; i < digest.length; ++i) {
+        unichar c = [digest characterAtIndex:i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F'))) return false;
+    }
+    return true;
+}
 uint32_t readBE32(const uint8_t* p) {
     return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
 }
@@ -378,7 +392,7 @@ void validate(const fs::path& bundle) {
         [manifest[@"runtime_admitted"] boolValue])
         throw std::runtime_error("invalid material bundle manifest");
     NSString* sourceHash = manifest[@"source"][@"sha256"];
-    if (![sourceHash isKindOfClass:[NSString class]] || sourceHash.length != 64 ||
+    if (!validSHA256String(sourceHash) ||
         ![manifest[@"source"][@"color_space"] isKindOfClass:[NSString class]] ||
         ![manifest[@"seam_metrics"] isKindOfClass:[NSDictionary class]] ||
         [manifest[@"material_id"] length] == 0 ||
@@ -435,6 +449,59 @@ void validate(const fs::path& bundle) {
             throw std::runtime_error("PNG decode failed: " + str(filename));
         }
         CFRelease(imageSource);
+    }
+    NSDictionary* source = manifest[@"source"];
+    id preValue = source[@"pre_upscale"];
+    if (preValue) {
+        if (![preValue isKindOfClass:[NSDictionary class]])
+            throw std::runtime_error("pre-upscale provenance must be an object");
+        NSDictionary* pre = preValue;
+        NSString* inputHash = pre[@"input_sha256"];
+        NSString* outputHash = pre[@"output_sha256"];
+        NSString* processedHash = source[@"processed_sha256"];
+        if (![pre[@"mode"] isEqual:@"external_local_argv_process"] ||
+            !validSHA256String(inputHash) || !validSHA256String(outputHash) ||
+            !validSHA256String(processedHash) || !validSHA256String(pre[@"executable_sha256"]) ||
+            ![pre[@"arguments_template"] isKindOfClass:[NSArray class]] ||
+            ![pre[@"local_argument_files"] isKindOfClass:[NSArray class]] ||
+            [inputHash caseInsensitiveCompare:sourceHash] != NSOrderedSame ||
+            [processedHash caseInsensitiveCompare:outputHash] != NSOrderedSame)
+            throw std::runtime_error("pre-upscale source or processed hash mismatch");
+        NSArray* dimensions = pre[@"output_dimensions_px"];
+        if (![dimensions isKindOfClass:[NSArray class]] || dimensions.count != 2 ||
+            ![dimensions[0] isEqual:@(bundleWidth)] || ![dimensions[1] isEqual:@(bundleHeight)])
+            throw std::runtime_error("pre-upscale output dimensions do not match exported maps");
+        id receiptValue = pre[@"receipt"];
+        id receiptHash = pre[@"receipt_sha256"];
+        id receiptText = pre[@"receipt_json_base64"];
+        if (receiptValue || receiptHash || receiptText) {
+            if (![receiptValue isKindOfClass:[NSDictionary class]] ||
+                !validSHA256String(receiptHash) ||
+                ![receiptText isKindOfClass:[NSString class]] || [receiptText length] > 1400000)
+                throw std::runtime_error("pre-upscale receipt proof is incomplete");
+            NSData* receiptBytes = [[NSData alloc] initWithBase64EncodedString:receiptText options:0];
+            if (!receiptBytes || !receiptBytes.length || receiptBytes.length > 1024 * 1024 ||
+                ![[NSString alloc] initWithData:receiptBytes encoding:NSUTF8StringEncoding] ||
+                [ns(hash(receiptBytes)) caseInsensitiveCompare:receiptHash] != NSOrderedSame)
+                throw std::runtime_error("pre-upscale receipt SHA-256 mismatch");
+            NSError* receiptError = nil;
+            NSDictionary* parsed = [NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError];
+            if (![parsed isKindOfClass:[NSDictionary class]] || ![parsed isEqualToDictionary:receiptValue])
+                throw std::runtime_error("pre-upscale receipt bytes do not match embedded object");
+            NSString* receiptInput = parsed[@"sourceSHA256"];
+            NSString* receiptOutput = parsed[@"outputSHA256"];
+            if (![receiptInput isKindOfClass:[NSString class]] || ![receiptOutput isKindOfClass:[NSString class]] ||
+                [receiptInput caseInsensitiveCompare:inputHash] != NSOrderedSame ||
+                [receiptOutput caseInsensitiveCompare:outputHash] != NSOrderedSame)
+                throw std::runtime_error("pre-upscale receipt source/output hashes disagree");
+            id receiptSize = parsed[@"outputSize"];
+            if (receiptSize && (![receiptSize isKindOfClass:[NSArray class]] || [receiptSize count] != 2 ||
+                                ![receiptSize[0] isEqual:@(bundleWidth)] ||
+                                ![receiptSize[1] isEqual:@(bundleHeight)]))
+                throw std::runtime_error("pre-upscale receipt output dimensions disagree");
+        }
+    } else if (source[@"processed_sha256"]) {
+        throw std::runtime_error("processed source hash has no pre-upscale provenance");
     }
     std::cout << "valid: " << bundle.string() << " (" << maps.count << " maps)\n";
 }

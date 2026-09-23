@@ -169,14 +169,40 @@ def main() -> None:
         scaled_source = scaled_manifest["source"]
         assert scaled_source["sha256"] == source_digest
         assert scaled_source["pre_upscale"]["input_sha256"] == source_digest
+        assert scaled_source["processed_sha256"] == scaled_source["pre_upscale"]["output_sha256"]
         assert scaled_source["pre_upscale"]["output_dimensions_px"] == [32, 32]
         assert len(scaled_source["pre_upscale"]["output_sha256"]) == 64
         assert len(scaled_source["pre_upscale"]["executable_sha256"]) == 64
         assert scaled_source["pre_upscale"]["receipt"]["model"] == "nearest-neighbor-test-stub"
         assert len(scaled_source["pre_upscale"]["receipt_sha256"]) == 64
+        assert hashlib.sha256(base64.b64decode(scaled_source["pre_upscale"]["receipt_json_base64"])).hexdigest() == scaled_source["pre_upscale"]["receipt_sha256"]
         assert any(item["path"] == str(stub) and len(item["sha256"]) == 64
                    for item in scaled_source["pre_upscale"]["local_argument_files"])
         assert scaled_manifest["maps"]["height"]["width"] == 32
+        manifest_path = upscaled_bundle / "manifest.json"
+        for key_path, forged in (
+            (("source", "processed_sha256"), "0" * 64),
+            (("source", "pre_upscale", "input_sha256"), "0" * 64),
+            (("source", "pre_upscale", "output_sha256"), "0" * 64),
+            (("source", "pre_upscale", "output_dimensions_px"), [999, 999]),
+            (("source", "pre_upscale", "receipt", "sourceSHA256"), "0" * 64),
+            (("source", "pre_upscale", "receipt", "outputSHA256"), "0" * 64),
+            (("source", "pre_upscale", "receipt_sha256"), "0" * 64),
+            (("source", "pre_upscale", "receipt_json_base64"), base64.b64encode(b"{}").decode()),
+        ):
+            tampered = json.loads(json.dumps(scaled_manifest))
+            current = tampered
+            for key in key_path[:-1]:
+                current = current[key]
+            current[key_path[-1]] = forged
+            manifest_path.write_text(json.dumps(tampered))
+            run(cli, "--validate", str(upscaled_bundle), expect_success=False)
+        missing_receipt_proof = json.loads(json.dumps(scaled_manifest))
+        del missing_receipt_proof["source"]["pre_upscale"]["receipt_json_base64"]
+        manifest_path.write_text(json.dumps(missing_receipt_proof))
+        run(cli, "--validate", str(upscaled_bundle), expect_success=False)
+        manifest_path.write_text(json.dumps(scaled_manifest))
+        run(cli, "--validate", str(upscaled_bundle))
         run(cli, "--input", str(image), "--output", str(root / "bad-receipt"),
             "--pre-upscale-exec", sys.executable,
             "--pre-upscale-arg", str(stub),
