@@ -13,9 +13,23 @@ build/material-lab-core/material-lab --validate output/surface.pbrmaterial
 build/material-lab-core/material-lab --validate capture.pbrcapture
 ```
 
-For a reviewed batch, `--catalog catalog.json --output output` accepts either `items` or `materials`. Each record needs a catalog-relative `path` or `relative_path`, an optional `id`, and `label` or `material_label`. It is selected by `reviewed: true` or `review_status: "approved"` / `"reviewed"`. `--include-unreviewed` deliberately opts in to candidates. Duplicate IDs and unsafe relative paths fail.
+For a reviewed batch, `--catalog catalog.json --output output` accepts `items`, `materials`, or `assets`. Each record needs a catalog-relative `path` or `relative_path`, an optional `id`, and `label` or `material_label`. It is selected by `reviewed: true` or `review_status: "approved"` / `"reviewed"`. `--include-unreviewed` deliberately opts in to candidates. Duplicate IDs and unsafe relative paths fail.
 
-Optional controls include `--height-strength`, `--polarity`, `--roughness`, `--roughness-variation`, `--ao-radius`, `--no-tile`, `--bent-normal`, and `--metalness`. Raw `--relief-mask-r8` uses one byte per pixel (0 suppresses inferred relief, 255 keeps it). Raw `--height-override-r16le` uses two little-endian bytes per pixel and bypasses inference. Neither alters the source albedo. The CLI accepts an image prepared by any external pre-upscaler as ordinary input. It does not invoke a model or network service.
+Optional controls include `--height-strength`, `--polarity`, `--roughness`, `--roughness-variation`, `--ao-radius`, `--no-tile`, `--bent-normal`, and `--metalness`. Raw `--relief-mask-r8` uses one byte per pixel (0 suppresses inferred relief, 255 keeps it). Raw `--height-override-r16le` uses two little-endian bytes per pixel and bypasses inference. Neither alters the source albedo. The CLI accepts an image prepared by any external pre-upscaler as ordinary input. It can also run an explicitly selected local executable **before** derivation with repeated `--pre-upscale-arg` tokens. Both `{input}` and `{output}` placeholders are required; each token is passed directly through `posix_spawn`, without a shell. The executable may have its own network behavior, so choose a trusted offline tool. The bundle records original and processed SHA-256 hashes, executable hash, argument template, dimensions, hashes of local argument files, and a verified optional `{output}.upscale.json` receipt. No upscaler is linked into the core or run by default.
+
+For the sibling offline pinned Real-ESRGAN helper, set `PINNED_PYTHON` to its pinned Python 3.11 virtualenv interpreter and `VENDOR_PROJECT_ROOT` to the project that owns the verified model and dependency tree:
+
+```sh
+build/material-lab-core/material-lab --input surface.png --output output/upscaled.pbrmaterial --preset stone \
+  --pre-upscale-exec "$PINNED_PYTHON" \
+  --pre-upscale-arg "$PWD/scripts/pinned_realesrgan.py" \
+  --pre-upscale-arg --vendor-project-root --pre-upscale-arg "$VENDOR_PROJECT_ROOT" \
+  --pre-upscale-arg --input --pre-upscale-arg '{input}' \
+  --pre-upscale-arg --output --pre-upscale-arg '{output}' \
+  --pre-upscale-arg --scale --pre-upscale-arg 2
+```
+
+The helper verifies its external pinned tree and writes a model/backend receipt; Material Lab checks the receipt hashes and embeds it as provenance. The bundled CLI test uses a small local resize stub to verify the hook without model dependencies.
 
 ## Inference contract
 

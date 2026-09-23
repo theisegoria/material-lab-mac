@@ -17,7 +17,13 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstring>
 
+extern char **environ;
 namespace fs = std::filesystem;
 namespace {
 NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()]; }
@@ -78,7 +84,8 @@ std::vector<uint8_t> rawFile(const fs::path& path, size_t expected) {
                                 static_cast<const uint8_t*>(data.bytes) + data.length);
 }
 struct Options {
-    fs::path input, output, catalog, validate, mask, heightOverride;
+    fs::path input, output, catalog, validate, mask, heightOverride, preUpscaleExec;
+    std::vector<std::string> preUpscaleArgs;
     std::string label, id;
     PBRLabRecipe recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
     bool includeUnreviewed = false;
@@ -131,17 +138,36 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--relief-mask-r8") o.mask = value();
         else if (flag == "--height-override-r16le") o.heightOverride = value();
         else if (flag == "--include-unreviewed") o.includeUnreviewed = true;
+        else if (flag == "--pre-upscale-exec") o.preUpscaleExec = value();
+        else if (flag == "--pre-upscale-arg") o.preUpscaleArgs.push_back(value());
         else if (flag == "--help") {
             std::cout << "material-lab --input IMAGE --output BUNDLE_DIR [--label TEXT --id ID --preset flat|stone|fabric|organic|coated-metal|bare-metal] [--height-strength 0..0.5 --polarity -1|1 --roughness 0..1 --roughness-variation 0..1 --ao-radius 0..64 --no-tile --bent-normal --metalness 0..1 --relief-mask-r8 RAW --height-override-r16le RAW]\n"
                          "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed]\n"
-                         "material-lab --validate BUNDLE_DIR\n";
+                         "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
+                         "Optional local pre-upscale: --pre-upscale-exec ABSOLUTE_EXECUTABLE --pre-upscale-arg ARG (repeat; include {input} and {output} placeholders). No shell or network is invoked by Material Lab.\n";
             std::exit(0);
         } else throw std::runtime_error("unknown option: " + flag);
     }
     if (!o.validate.empty()) {
-        if (!o.input.empty() || !o.catalog.empty() || !o.output.empty()) throw std::runtime_error("--validate cannot be combined with derive options");
+        if (!o.input.empty() || !o.catalog.empty() || !o.output.empty() ||
+            !o.preUpscaleExec.empty() || !o.preUpscaleArgs.empty())
+            throw std::runtime_error("--validate cannot be combined with derive options");
     } else if (o.output.empty() || (o.input.empty() == o.catalog.empty()))
         throw std::runtime_error("provide exactly one of --input or --catalog, plus --output");
+    if (o.preUpscaleExec.empty() != o.preUpscaleArgs.empty())
+        throw std::runtime_error("pre-upscale executable and repeated arguments must be supplied together");
+    if (!o.preUpscaleExec.empty()) {
+        if (!o.preUpscaleExec.is_absolute() || !fs::is_regular_file(o.preUpscaleExec) ||
+            access(o.preUpscaleExec.c_str(), X_OK) != 0)
+            throw std::runtime_error("pre-upscale executable must be an executable absolute file path");
+        bool hasInput = false, hasOutput = false;
+        for (const auto& arg : o.preUpscaleArgs) {
+            hasInput |= arg.find("{input}") != std::string::npos;
+            hasOutput |= arg.find("{output}") != std::string::npos;
+        }
+        if (!hasInput || !hasOutput)
+            throw std::runtime_error("pre-upscale arguments must contain both {input} and {output}");
+    }
     return o;
 }
 NSArray<NSDictionary*>* mapDefinitions() {
@@ -159,9 +185,99 @@ NSArray<NSDictionary*>* mapDefinitions() {
         @{@"kind": @(PBRLabMapORM), @"name": @"orm", @"provenance": @"estimated_ao_artist_roughness_artist_assigned_metalness"}
     ];
 }
+struct ScratchDirectory {
+    fs::path path;
+    ~ScratchDirectory() {
+        if (!path.empty()) { std::error_code ignored; fs::remove_all(path, ignored); }
+    }
+};
+std::string replaceToken(std::string value, const std::string& token, const std::string& replacement) {
+    size_t at = 0;
+    while ((at = value.find(token, at)) != std::string::npos) {
+        value.replace(at, token.size(), replacement);
+        at += replacement.size();
+    }
+    return value;
+}
+fs::path runPreUpscale(const fs::path& inputPath, const Options& options,
+                       ScratchDirectory& scratch, NSMutableDictionary* __strong *provenance) {
+    scratch.path = fs::temp_directory_path() / ("material-lab-pre-upscale-" + str([[NSUUID UUID] UUIDString]));
+    fs::create_directory(scratch.path);
+    fs::path input = fs::absolute(inputPath);
+    fs::path output = scratch.path / "upscaled.png";
+    std::vector<std::string> arguments;
+    arguments.push_back(options.preUpscaleExec.string());
+    NSMutableArray* templates = [NSMutableArray array];
+    NSMutableArray* localFileHashes = [NSMutableArray array];
+    for (const auto& arg : options.preUpscaleArgs) {
+        [templates addObject:ns(arg)];
+        if (arg.find('{') == std::string::npos) {
+            std::error_code ec;
+            fs::path candidate = fs::absolute(arg, ec);
+            if (!ec && fs::is_regular_file(candidate, ec) && !ec &&
+                fs::file_size(candidate, ec) <= 128ull * 1024 * 1024 && !ec) {
+                NSData* bytes = dataAt(candidate);
+                if (bytes) [localFileHashes addObject:@{@"path": ns(candidate.string()), @"sha256": ns(hash(bytes))}];
+            }
+        }
+        auto expanded = replaceToken(arg, "{input}", input.string());
+        arguments.push_back(replaceToken(expanded, "{output}", output.string()));
+    }
+    std::vector<char*> argv;
+    for (auto& arg : arguments) argv.push_back(arg.data());
+    argv.push_back(nullptr);
+    pid_t child = 0;
+    int spawned = posix_spawn(&child, options.preUpscaleExec.c_str(), nullptr, nullptr, argv.data(), environ);
+    if (spawned != 0) throw std::runtime_error("pre-upscale spawn failed: " + std::string(std::strerror(spawned)));
+    int status = 0;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        throw std::runtime_error("pre-upscale wait failed");
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+        throw std::runtime_error("pre-upscale process failed with status " + std::to_string(status));
+    if (!fs::is_regular_file(output) || fs::is_symlink(output) || fs::file_size(output) == 0 ||
+        fs::file_size(output) > 128ull * 1024 * 1024)
+        throw std::runtime_error("pre-upscale process did not produce a bounded regular output image");
+    NSData* original = dataAt(input), *processed = dataAt(output), *tool = dataAt(options.preUpscaleExec);
+    if (!original || !processed || !tool) throw std::runtime_error("cannot hash pre-upscale input, output, or executable");
+    NSString* inputHash = ns(hash(original));
+    NSString* outputHash = ns(hash(processed));
+    *provenance = [@{
+        @"mode": @"external_local_argv_process",
+        @"executable": ns(options.preUpscaleExec.string()),
+        @"executable_sha256": ns(hash(tool)),
+        @"arguments_template": templates,
+        @"local_argument_files": localFileHashes,
+        @"input_sha256": inputHash,
+        @"output_sha256": outputHash
+    } mutableCopy];
+    fs::path receiptPath = output;
+    receiptPath += ".upscale.json";
+    if (fs::exists(receiptPath)) {
+        if (!fs::is_regular_file(receiptPath) || fs::is_symlink(receiptPath) ||
+            fs::file_size(receiptPath) > 1024 * 1024)
+            throw std::runtime_error("pre-upscale receipt is not a bounded regular JSON file");
+        NSData* receiptBytes = dataAt(receiptPath);
+        NSError* receiptError = nil;
+        NSDictionary* receipt = [NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError];
+        if (![receipt isKindOfClass:[NSDictionary class]] ||
+            ![receipt[@"sourceSHA256"] isEqualToString:inputHash] ||
+            ![receipt[@"outputSHA256"] isEqualToString:outputHash])
+            throw std::runtime_error("pre-upscale receipt hashes do not match actual input/output bytes");
+        (*provenance)[@"receipt"] = receipt;
+        (*provenance)[@"receipt_sha256"] = ns(hash(receiptBytes));
+    }
+    return output;
+}
 void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std::string& id,
                const std::string& label, const Options& options, NSString* reviewStatus = nil) {
-    Image image = decodeSRGB(inputPath);
+    ScratchDirectory preUpscaleScratch;
+    NSMutableDictionary* preUpscaleProvenance = nil;
+    fs::path workingImage = options.preUpscaleExec.empty() ? inputPath :
+        runPreUpscale(inputPath, options, preUpscaleScratch, &preUpscaleProvenance);
+    Image image = decodeSRGB(workingImage);
+    if (preUpscaleProvenance) preUpscaleProvenance[@"output_dimensions_px"] = @[@(image.width), @(image.height)];
     const size_t count = static_cast<size_t>(image.width) * image.height;
     auto mask = options.mask.empty() ? std::vector<uint8_t>{} : rawFile(options.mask, count);
     auto authored = options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
@@ -199,6 +315,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                            @"height": @(map.height), @"pixel_format": format, @"provenance": provenance};
         }
         NSData* sourceData = dataAt(inputPath);
+        if (!sourceData) throw std::runtime_error("cannot read original source for provenance");
         PBRLabSeamMetrics seam = PBRLabGetSeamMetrics(result.get());
         NSDictionary* recipe = @{
             @"preset": ns(presetName(options.recipe.preset)),
@@ -212,14 +329,16 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"assigned_metalness": @(options.recipe.assigned_metalness),
             @"bent_normal_enabled": @(options.recipe.bent_normal_enabled != 0)
         };
+        NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.string()), @"sha256": ns(hash(sourceData)),
+                                                @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
+        if (preUpscaleProvenance) sourceManifest[@"pre_upscale"] = preUpscaleProvenance;
         NSMutableDictionary* manifest = [@{
             @"schema_version": @1,
             @"bundle_kind": @"pbr-material-bundle",
             @"algorithm_version": ns(PBRLabVersion()),
             @"material_id": ns(id),
             @"semantic_label": ns(label),
-            @"source": @{@"path": ns(inputPath.string()), @"sha256": ns(hash(sourceData)),
-                          @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"},
+            @"source": sourceManifest,
             @"recipe": recipe,
             @"maps": maps,
             @"seam_metrics": @{@"height_value_delta": @(seam.height_value_delta),
@@ -371,6 +490,16 @@ DecodedSize inspectEncoded(NSData* bytes, const std::string& label, uint32_t max
         throw std::runtime_error(label + " dimensions are out of range");
     return result;
 }
+bool nonemptyString(id value, NSUInteger maximum) {
+    if (![value isKindOfClass:[NSString class]]) return false;
+    NSString* trimmed = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return trimmed.length > 0 && trimmed.length <= maximum;
+}
+bool finiteNumber(id value, double minimum, double maximum) {
+    if (![value isKindOfClass:[NSNumber class]]) return false;
+    double number = [value doubleValue];
+    return std::isfinite(number) && number >= minimum && number <= maximum;
+}
 void validateCapture(const fs::path& capturePath) {
     constexpr uintmax_t maximumBytes = 64ull * 1024 * 1024;
     if (!fs::is_regular_file(capturePath) || fs::is_symlink(capturePath) ||
@@ -386,15 +515,46 @@ void validateCapture(const fs::path& capturePath) {
         [capture[@"runtimeAdmitted"] boolValue] ||
         ![capture[@"captureId"] isKindOfClass:[NSString class]] ||
         ![[NSUUID alloc] initWithUUIDString:capture[@"captureId"]] ||
-        ![capture[@"semanticLabel"] isKindOfClass:[NSString class]] ||
-        [capture[@"semanticLabel"] length] == 0 || [capture[@"semanticLabel"] length] > 240 ||
+        !nonemptyString(capture[@"semanticLabel"], 240) ||
+        !nonemptyString(capture[@"category"], 240) ||
         ![capture[@"sourceMime"] isEqual:@"image/png"] ||
         ![capture[@"sourceBase64"] isKindOfClass:[NSString class]] ||
-        ![capture[@"algorithmVersion"] isKindOfClass:[NSString class]] ||
+        !nonemptyString(capture[@"algorithmVersion"], 120) ||
         ![capture[@"recipe"] isKindOfClass:[NSDictionary class]] ||
         ![capture[@"capture"] isKindOfClass:[NSDictionary class]] ||
+        ![capture[@"derived"] isKindOfClass:[NSDictionary class]] ||
         ![capture[@"seamMetrics"] isKindOfClass:[NSDictionary class]])
         throw std::runtime_error("invalid capture envelope fields");
+    NSDictionary* recipe = capture[@"recipe"];
+    NSSet* presets = [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coatedMetal", @"bareMetal"]];
+    if (![presets containsObject:recipe[@"preset"]] ||
+        !finiteNumber(recipe[@"heightStrength"], 0, .5) ||
+        !finiteNumber(recipe[@"heightPolarity"], -1, 1) ||
+        (std::abs([recipe[@"heightPolarity"] intValue]) != 1) ||
+        !finiteNumber(recipe[@"roughnessBase"], 0, 1) ||
+        !finiteNumber(recipe[@"roughnessVariation"], 0, 1) ||
+        !finiteNumber(recipe[@"aoRadiusPixels"], 0, 64) ||
+        ![recipe[@"tileWrap"] isKindOfClass:[NSNumber class]] ||
+        ![recipe[@"bentNormal"] isKindOfClass:[NSNumber class]] ||
+        (recipe[@"assignedMetalness"] && recipe[@"assignedMetalness"] != [NSNull null] &&
+         !finiteNumber(recipe[@"assignedMetalness"], 0, 1)))
+        throw std::runtime_error("capture recipe is missing or out of range");
+    NSDictionary* captureMetadata = capture[@"capture"];
+    if (!nonemptyString(captureMetadata[@"capturedAt"], 80) ||
+        !nonemptyString(captureMetadata[@"orientation"], 120) ||
+        !nonemptyString(captureMetadata[@"colorProfile"], 120) ||
+        !nonemptyString(captureMetadata[@"captureMode"], 120) ||
+        ![captureMetadata[@"crop"] isKindOfClass:[NSDictionary class]] ||
+        ![captureMetadata[@"imageQuality"] isKindOfClass:[NSDictionary class]] ||
+        ![captureMetadata[@"fallbackUsed"] isKindOfClass:[NSNumber class]] ||
+        (captureMetadata[@"constantColorCenterConfidence"] &&
+         captureMetadata[@"constantColorCenterConfidence"] != [NSNull null] &&
+         !finiteNumber(captureMetadata[@"constantColorCenterConfidence"], 0, 1)))
+        throw std::runtime_error("capture metadata is missing or invalid");
+    NSDictionary* seamMetrics = capture[@"seamMetrics"];
+    for (NSString* key in @[@"heightValueDelta", @"heightGradientDelta", @"albedoValueDelta"])
+        if (!finiteNumber(seamMetrics[key], 0, 2))
+            throw std::runtime_error("capture seam metrics are missing or invalid");
     if (hasLocationKey(capture)) throw std::runtime_error("capture contains GPS or location metadata");
     NSData* source = [[NSData alloc] initWithBase64EncodedString:capture[@"sourceBase64"] options:0];
     verifyDigest(source, capture[@"sourceSHA256"], "source");
@@ -428,6 +588,10 @@ void validateCapture(const fs::path& capturePath) {
     if (derivedRaw && derivedRaw != [NSNull null] && ![derivedRaw isKindOfClass:[NSDictionary class]])
         throw std::runtime_error("derived maps must be an object");
     NSDictionary* derived = [derivedRaw isKindOfClass:[NSDictionary class]] ? derivedRaw : @{};
+    for (NSString* required in @[@"albedo", @"height", @"normal", @"roughness", @"ao",
+                                @"cavity", @"convexity", @"slope", @"edge"])
+        if (![derived[required] isKindOfClass:[NSDictionary class]])
+            throw std::runtime_error("required capture map missing: " + str(required));
     NSSet* allowed = [NSSet setWithArray:@[@"albedo", @"height", @"normal", @"roughness", @"ao",
                                         @"cavity", @"convexity", @"slope", @"edge", @"bent_normal", @"orm"]];
     for (NSString* kind in derived) {
@@ -463,8 +627,8 @@ void batch(const Options& options) {
     NSError* error = nil;
     NSDictionary* catalog = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
     if (![catalog isKindOfClass:[NSDictionary class]]) throw std::runtime_error("catalog root must be an object");
-    NSArray* materials = catalog[@"items"] ?: catalog[@"materials"];
-    if (![materials isKindOfClass:[NSArray class]]) throw std::runtime_error("catalog has no items or materials array");
+    NSArray* materials = catalog[@"items"] ?: catalog[@"materials"] ?: catalog[@"assets"];
+    if (![materials isKindOfClass:[NSArray class]]) throw std::runtime_error("catalog has no items, materials, or assets array");
     fs::create_directories(options.output);
     std::set<std::string> ids;
     size_t made = 0;

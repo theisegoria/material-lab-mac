@@ -17,7 +17,7 @@ Requirements: Xcode 27, Apple Silicon Mac, CMake, Ninja; XcodeGen is needed to r
     ./scripts/build_and_run.sh mac
     ./scripts/build_and_run.sh ios-sim
 
-The Mac mode builds and opens build/macos/MaterialLab.app; mac-build only builds it. The iOS simulator mode builds the app and does not need signing. The CLI mode builds and runs core tests. An actual iPhone, Developer Mode, camera permission, and local network permission are required for physical camera and device-to-device link validation.
+The Mac mode builds and opens build/macos/MaterialLab.app; mac-build only builds it. The iOS simulator mode builds the app and does not need signing. The CLI mode builds and runs core tests. The optional local pre-upscale workflow is documented in [docs/UPSCALE.md](docs/UPSCALE.md). Simulator UI and direct-link tests are recorded in [docs/verification/](docs/verification/); a real iPhone is required to validate physical camera and device permission behavior.
 
 ## Sources and limits
 
