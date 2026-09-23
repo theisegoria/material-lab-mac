@@ -301,6 +301,11 @@ private struct NotesPopover: View {
                 row("Source", "\(material.working.sourceWidth) × \(material.working.sourceHeight) px")
                 row("Working image", "\(material.working.size) px\(material.working.wasCropped ? ", center crop" : "")")
                 row("Normals", material.recipe.normalYDown ? "DirectX (−Y)" : "OpenGL (+Y)")
+                if let guide = material.guide {
+                    row("Learned geometry", "\(Int((material.recipe.guideNormalWeight * 100).rounded())) % · \(guide.model.modelFile)")
+                    row("Learned run", "\(guide.tiles) tiles at \(guide.workResolution) px · \(guide.computeUnits == .all ? "Neural Engine" : "CPU only")")
+                    row("Guide SHA-256", String(guide.sha256.prefix(16)) + "…")
+                }
                 row("Derived in", "\(Int((material.duration * 1000).rounded())) ms")
                 row("Source SHA-256", String(material.sourceSHA256.prefix(16)) + "…")
             }

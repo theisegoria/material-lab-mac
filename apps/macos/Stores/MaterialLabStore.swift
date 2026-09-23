@@ -86,6 +86,7 @@ final class MaterialLabStore {
     var includeUnreviewedBatch = false
     var metadataEditorSource: MaterialSource?
     let link = LocalLinkService()
+    let learned = LearnedModelStore()
 
     @ObservationIgnored private var started = false
     @ObservationIgnored private var recipesBySource: [String: MaterialRecipe] = [:]
@@ -156,6 +157,11 @@ final class MaterialLabStore {
     func bootstrap() {
         guard !started else { return }
         started = true
+        learned.onModelChanged = { [weak self] in
+            guard let self, self.recipe.guideNormalWeight > 0, self.selectedSource != nil else { return }
+            self.deriveSelected()
+        }
+        learned.bootstrap()
         do {
             try MaterialLibrary.prepareDirectories()
             MaterialLibrary.removeStaleStaging()
@@ -256,6 +262,7 @@ final class MaterialLabStore {
         next.reliefMaskURL = recipe.reliefMaskURL
         next.heightOverrideURL = recipe.heightOverrideURL
         next.normalYDown = recipe.normalYDown
+        next.guideNormalWeight = recipe.guideNormalWeight
         recipe = next
     }
 
@@ -286,13 +293,19 @@ final class MaterialLabStore {
         deriveGeneration += 1
         let generation = deriveGeneration
         let chosenRecipe = recipe
-        let control = DerivationControl { [weak self] value in
+        let control = DerivationControl(onProgress: { [weak self] value in
             Task { @MainActor in
                 guard let self, self.deriveGeneration == generation else { return }
                 self.progress = value
             }
-        }
+        }, onLearned: { [weak self] value in
+            Task { @MainActor in
+                guard let self, self.deriveGeneration == generation else { return }
+                self.learned.inferenceProgress = value
+            }
+        })
         deriveControl = control
+        learned.inferenceProgress = nil
         progress = 0
         isDeriving = true
         derivationError = nil
@@ -310,11 +323,13 @@ final class MaterialLabStore {
         guard generation == deriveGeneration else { return }
         isDeriving = false
         deriveControl = nil
+        learned.inferenceProgress = nil
         switch result {
         case .success(let value):
             guard selectedSourceID == source.id else { return }
             derived = value
             derivationSerial += 1
+            if let guide = value.guide, !guide.wasCached { learned.lastInferenceDuration = guide.inferenceDuration }
             progress = 1
             if !value.maps.keys.contains(selectedMap) { selectedMap = .albedo }
             let ms = Int((value.duration * 1000).rounded())

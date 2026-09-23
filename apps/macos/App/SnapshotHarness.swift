@@ -33,6 +33,24 @@ enum SnapshotHarness {
             store.recipe.normalStrength = 3
         }
         await waitForDerivation(store)
+        for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
+        print("learned model at launch:", store.learned.statusTitle, store.learned.info?.origin.rawValue ?? "-",
+              store.learned.info?.modelFile ?? "-")
+        if store.learned.info?.origin == .builtIn {
+            let learnedPrefix = environment["MATERIAL_LAB_SNAPSHOT_LEARNED_PREFIX"] ?? "macos-1.2-learned"
+            await renderStandalone(LearnedGeometrySettings(learned: store.learned), size: NSSize(width: 520, height: 620),
+                                   appearance: .aqua, to: directory.appendingPathComponent("\(learnedPrefix)-settings-builtin.png"))
+        }
+        if environment["MATERIAL_LAB_SNAPSHOT_TILING"] != nil {
+            await runTiling(store: store, directory: directory)
+        }
+        if let modelPath = environment[LearnedModelStore.environmentKey] {
+            await runLearned(store: store, modelPath: modelPath, directory: directory, prefix: prefix)
+        }
+        if environment["MATERIAL_LAB_SNAPSHOT_LEARNED_ONLY"] != nil {
+            NSApp.terminate(nil)
+            return
+        }
         if let exportPath = environment["MATERIAL_LAB_SNAPSHOT_EXPORT"], let material = store.currentMaterial {
             let folder = URL(fileURLWithPath: exportPath, isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -85,8 +103,143 @@ enum SnapshotHarness {
         NSApp.terminate(nil)
     }
 
+    /// Tile view of the source with Make tileable off, Structured (seam cut) and Soft blend, plus a
+    /// 3×3 repeat of the albedo and height maps for each, and the inspector's tiling controls.
+    private static func runTiling(store: MaterialLabStore, directory: URL) async {
+        let tilingPrefix = environment["MATERIAL_LAB_SNAPSHOT_TILING_PREFIX"] ?? "macos-1.2-tiling"
+        func file(_ name: String) -> URL { directory.appendingPathComponent("\(tilingPrefix)-\(name).png") }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        store.navigate(to: store.selectedSource.map { .source($0.id) } ?? .inbox)
+        let variants: [(String, Float, SeamlessMode)] = [("off", 0, .cut), ("cut", 0.12, .cut), ("blend", 0.12, .blend)]
+        for (name, width, mode) in variants {
+            store.recipe.seamlessBlend = width
+            store.recipe.seamlessMode = mode
+            store.deriveSelected()
+            await waitForDerivation(store)
+            guard let material = store.currentMaterial else { continue }
+            print("tiling \(name): albedo seam=\(material.seams.albedoValue) height seam=\(material.seams.heightValue)")
+            for kind in [MaterialMapKind.albedo, .height] {
+                if let image = material.previews[kind], let tiled = repeat3x3(image),
+                   let data = NSBitmapImageRep(cgImage: tiled).representation(using: .png, properties: [:]) {
+                    try? data.write(to: file("\(kind.rawValue)-3x3-\(name)"))
+                }
+            }
+            store.selectedMap = .albedo
+            store.canvasMode = .tile
+            await renderStandalone(ContentView(store: store), size: NSSize(width: 1440, height: 900),
+                                   appearance: .aqua, to: file("window-tile-\(name)"), settle: 1.5)
+            if name == "cut", let source = store.selectedSource {
+                await renderStandalone(RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 1500),
+                                       appearance: .aqua, to: file("inspector"))
+            }
+        }
+        store.canvasMode = .map
+        store.recipe.seamlessBlend = 0.12
+        store.recipe.seamlessMode = .cut
+        store.deriveSelected()
+        await waitForDerivation(store)
+    }
+
+    private static func repeat3x3(_ image: CGImage) -> CGImage? {
+        let side = 900, cell = side / 3
+        guard let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .high
+        for y in 0..<3 { for x in 0..<3 { context.draw(image, in: CGRect(x: x * cell, y: y * cell, width: cell, height: cell)) } }
+        return context.makeImage()
+    }
+
+    /// Installs the model from MATERIAL_LAB_MOGE_MODEL, then captures the inspector, settings and the
+    /// height / normal maps with learned geometry at 0 and 1, and optionally exports with weight 1.
+    private static func runLearned(store: MaterialLabStore, modelPath: String, directory: URL, prefix: String) async {
+        let learnedPrefix = environment["MATERIAL_LAB_SNAPSHOT_LEARNED_PREFIX"] ?? "macos-1.2-learned"
+        func file(_ name: String) -> URL { directory.appendingPathComponent("\(learnedPrefix)-\(name).png") }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        // The dev bootstrap may already have installed MATERIAL_LAB_MOGE_MODEL; start from a clean slate.
+        for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
+        print("learned resolved at launch:", store.learned.statusTitle, store.learned.info?.origin.rawValue ?? "-")
+        store.learned.deactivateForSnapshot()
+        store.recipe.guideNormalWeight = 0
+        if let source = store.selectedSource {
+            await renderStandalone(RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 1500),
+                                   appearance: .aqua, to: file("inspector-uninstalled"))
+        }
+        await store.learned.install(from: URL(fileURLWithPath: modelPath))
+        print("learned model:", store.learned.statusTitle, store.learned.info?.modelFile ?? "-", store.learned.lastError ?? "")
+        if environment["MATERIAL_LAB_SNAPSHOT_CPU_ONLY"] != nil { store.learned.cpuOnly = true }
+        await renderStandalone(LearnedGeometrySettings(learned: store.learned), size: NSSize(width: 520, height: 620),
+                               appearance: .aqua, to: file("settings-light"))
+        await renderStandalone(LearnedGeometrySettings(learned: store.learned), size: NSSize(width: 520, height: 620),
+                               appearance: .darkAqua, to: file("settings-dark"))
+        store.navigate(to: store.selectedSource.map { .source($0.id) } ?? .inbox)
+        store.canvasMode = .map
+        for weight: Float in [0, 1] {
+            store.recipe.guideNormalWeight = weight
+            store.deriveSelected()
+            if weight > 0, let source = store.selectedSource {
+                // Catch the inspector while inference runs (first use for this source).
+                try? await Task.sleep(for: .milliseconds(60))
+                await renderStandalone(RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 700),
+                                       appearance: .aqua, to: file("inspector-running"), settle: 0.05)
+            }
+            await waitForDerivation(store)
+            guard let material = store.currentMaterial else { continue }
+            let tag = weight == 0 ? "w0" : "w1"
+            print("learned \(tag): guide=\(material.guide != nil) inference=\(material.guide.map { Int($0.inferenceDuration * 1000) } ?? 0) ms derive=\(Int(material.duration * 1000)) ms")
+            for kind in [MaterialMapKind.height, .normal, .learnedNormal] {
+                if let image = material.previews[kind],
+                   let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                    try? data.write(to: file("map-\(kind.rawValue)-\(tag)"))
+                }
+            }
+            for kind in [MaterialMapKind.height, .normal] {
+                store.selectedMap = kind
+                try? await Task.sleep(for: .seconds(1.2))
+                await capture(file("canvas-\(kind.rawValue)-\(tag)"))
+                // Window capture needs an awake, unlocked display; also draw the workspace standalone.
+                await renderStandalone(ContentView(store: store), size: NSSize(width: 1440, height: 900),
+                                       appearance: .aqua, to: file("window-\(kind.rawValue)-\(tag)"), settle: 1.5)
+            }
+            if weight > 0 {
+                store.selectedMap = .learnedNormal
+                try? await Task.sleep(for: .seconds(1.2))
+                await capture(file("canvas-learnedNormal-w1"))
+                await renderStandalone(ContentView(store: store), size: NSSize(width: 1440, height: 900),
+                                       appearance: .darkAqua, to: file("window-learnedNormal-w1-dark"), settle: 1.5)
+                store.canvasMode = .relit
+                try? await Task.sleep(for: .seconds(1.5))
+                await capture(file("canvas-relit-w1"))
+                store.canvasMode = .map
+                if let source = store.selectedSource {
+                    for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                        await renderStandalone(RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 1500),
+                                               appearance: appearance, to: file("inspector-\(name)"))
+                    }
+                }
+                // A recipe edit must reuse the cached guide normals.
+                store.recipe.normalStrength += 0.5
+                store.deriveSelected()
+                await waitForDerivation(store)
+                print("learned edit: cached=\(store.currentMaterial?.guide?.wasCached ?? false) derive=\(Int((store.currentMaterial?.duration ?? 0) * 1000)) ms")
+                store.recipe.normalStrength -= 0.5
+                // Warm (model already loaded) inference timing.
+                LearnedNormalEstimator.shared.clearCache()
+                store.deriveSelected()
+                await waitForDerivation(store)
+                print("learned warm: inference=\(Int((store.currentMaterial?.guide?.inferenceDuration ?? 0) * 1000)) ms derive=\(Int((store.currentMaterial?.duration ?? 0) * 1000)) ms")
+                if let exportPath = environment["MATERIAL_LAB_SNAPSHOT_EXPORT"], let current = store.currentMaterial {
+                    let folder = URL(fileURLWithPath: exportPath, isDirectory: true)
+                    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    do { print("exported learned:", try MaterialBundle.export(current, into: folder).path) }
+                    catch { print("learned export failed:", error.localizedDescription) }
+                }
+            }
+        }
+    }
+
     private static func renderStandalone<V: View>(
-        _ content: V, size: NSSize, appearance: NSAppearance.Name, to url: URL
+        _ content: V, size: NSSize, appearance: NSAppearance.Name, to url: URL, settle: Double = 1
     ) async {
         let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -4000, y: 0), size: size),
                               styleMask: [.borderless], backing: .buffered, defer: false)
@@ -97,7 +250,7 @@ enum SnapshotHarness {
         host.frame = NSRect(origin: .zero, size: size)
         window.contentView = host
         window.orderFrontRegardless()
-        try? await Task.sleep(for: .seconds(1))
+        try? await Task.sleep(for: .seconds(settle))
         host.layoutSubtreeIfNeeded()
         if let representation = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
             host.cacheDisplay(in: host.bounds, to: representation)

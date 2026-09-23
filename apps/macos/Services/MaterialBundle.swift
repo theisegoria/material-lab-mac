@@ -77,7 +77,7 @@ enum MaterialBundle {
         try verifyEmbeddedPhoto(capture, prefix: "original")
         try verifyEmbeddedPhoto(capture, prefix: "fallbackOriginal")
         do {
-            let allowed = Set(MaterialMapKind.allCases.map(\.exportedName))
+            let allowed = Set(MaterialMapKind.allCases.filter(\.isExported).map(\.exportedName))
             for (name, raw) in derived {
                 guard allowed.contains(name),
                       let record = raw as? [String: Any],
@@ -193,6 +193,16 @@ enum MaterialBundle {
                 throw MaterialBundleError.invalidCapture("recipe \(field.key) is out of range")
             }
         }
+        if let raw = recipe["seamlessMode"] {
+            guard let mode = raw as? String, SeamlessMode(rawValue: mode) != nil else {
+                throw MaterialBundleError.invalidCapture("recipe seamlessMode must be \"cut\" or \"blend\"")
+            }
+        }
+        if let raw = recipe["guideNormalWeight"] {
+            guard let value = raw as? Double, value.isFinite, (0...1).contains(value) else {
+                throw MaterialBundleError.invalidCapture("recipe guideNormalWeight is out of range")
+            }
+        }
         if let raw = recipe["normalYDown"] {
             guard raw is Bool || (raw as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() }) == true else {
                 throw MaterialBundleError.invalidCapture("recipe normalYDown must be a boolean")
@@ -222,6 +232,9 @@ enum MaterialBundle {
         recipe.aoStrength = number("aoStrength", MaterialRecipe.Range.aoStrength) ?? recipe.aoStrength
         recipe.albedoEqualize = number("albedoEqualize", MaterialRecipe.Range.albedoEqualize) ?? recipe.albedoEqualize
         recipe.seamlessBlend = number("seamlessBlend", MaterialRecipe.Range.seamlessBlend) ?? recipe.seamlessBlend
+        // A capture without seamlessMode predates the seam cut and used the blend.
+        recipe.seamlessMode = (raw["seamlessMode"] as? String).flatMap(SeamlessMode.init(rawValue:)) ?? .blend
+        recipe.guideNormalWeight = number("guideNormalWeight", MaterialRecipe.Range.guideNormalWeight) ?? recipe.guideNormalWeight
         if let polarity = raw["heightPolarity"] as? Int, polarity == 1 || polarity == -1 {
             recipe.heightPolarity = Int32(polarity)
         }
@@ -334,7 +347,7 @@ enum MaterialBundle {
         try fm.createDirectory(at: temp, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: temp) }
         var mapManifest: [String: [String: Any]] = [:]
-        for kind in MaterialMapKind.allCases {
+        for kind in MaterialMapKind.allCases where kind.isExported {
             guard let map = material.maps[kind] else { continue }
             let filename = "\(kind.exportedName).png"
             let url = temp.appendingPathComponent(filename)
@@ -346,7 +359,7 @@ enum MaterialBundle {
                 "width": map.width,
                 "height": map.height,
                 "pixel_format": map.format == .rgba8SRGB ? "rgba8_srgb_png" : (map.format == .r16Linear ? "r16_unorm_png" : "rgba8_linear_png"),
-                "provenance": provenance(for: kind, recipe: material.recipe)
+                "provenance": provenance(for: kind, recipe: material.recipe, learned: material.guide != nil)
             ]
         }
         let recipe = material.recipe
@@ -387,7 +400,9 @@ enum MaterialBundle {
                 "normal_y_down": recipe.normalYDown,
                 "ao_strength": tidy(recipe.aoStrength),
                 "albedo_equalize": tidy(recipe.albedoEqualize),
-                "seamless_blend": tidy(recipe.seamlessBlend)
+                "seamless_blend": tidy(recipe.seamlessBlend),
+                "seamless_mode": recipe.seamlessMode.rawValue,
+                "guide_normal_weight": tidy(material.guide == nil ? 0 : recipe.guideNormalWeight)
             ],
             "normal_convention": recipe.normalConvention,
             "maps": mapManifest,
@@ -410,6 +425,19 @@ enum MaterialBundle {
             if let digest = material.heightOverrideSHA256 { recipeManifest["height_override_sha256"] = digest }
         }
         cleanManifest["recipe"] = recipeManifest
+        if let guide = material.guide, recipe.guideNormalWeight > 0 {
+            cleanManifest["guide_normals"] = [
+                "estimator": LearnedNormalEstimator.estimatorName,
+                "contract": LearnedNormalEstimator.contract,
+                "weights_sha256": guide.model.weightsSHA256,
+                "moge_commit": guide.model.mogeCommit,
+                "model_file": guide.model.modelFile,
+                "compute_units": guide.computeUnits.rawValue,
+                "work_resolution": guide.workResolution,
+                "tiles": guide.tiles,
+                "normals_sha256": guide.sha256
+            ] as [String: Any]
+        }
         guard JSONSerialization.isValidJSONObject(cleanManifest) else {
             throw MaterialBundleError.exportFailed("manifest serialization")
         }
@@ -457,16 +485,17 @@ enum MaterialBundle {
         }
     }
 
-    private static func provenance(for kind: MaterialMapKind, recipe: MaterialRecipe) -> String {
+    private static func provenance(for kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool) -> String {
         switch kind {
         case .albedo: "source_color_resampled_srgb"
         case .roughness: "artist_prior_with_estimated_variation"
         case .orm: recipe.assignedMetalnessEnabled
             ? "estimated_ao_roughness_plus_artist_assigned_metalness"
             : "unavailable_without_artist_assigned_metalness"
-        case .height: recipe.heightOverrideURL == nil
-            ? "pseudo_height_estimated_from_color"
-            : "authored_height_override"
+        case .height:
+            if recipe.heightOverrideURL != nil { "authored_height_override" }
+            else if learned { recipe.preset == .flat ? "learned_normals" : "estimated_from_albedo_and_learned_normals" }
+            else { "pseudo_height_estimated_from_color" }
         default: recipe.heightOverrideURL == nil
             ? "derived_from_estimated_pseudo_height"
             : "derived_from_authored_height_override"

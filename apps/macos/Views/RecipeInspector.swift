@@ -37,6 +37,7 @@ struct RecipeInspector: View {
                              range: MaterialRecipe.Range.normalStrength, digits: 2,
                              sliderRange: 0...4,
                              help: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16.")
+                LearnedGeometryRow(store: store, learned: store.learned)
                 AttachmentRow(
                     title: "Relief mask",
                     systemImage: "circle.lefthalf.striped.horizontal",
@@ -83,9 +84,7 @@ struct RecipeInspector: View {
                 Toggle("Bent normal map", isOn: $store.recipe.bentNormalEnabled)
                 Toggle("Wrap filters at edges", isOn: $store.recipe.tileWrap)
                     .help("Treat the image as tiling when filtering and sampling occlusion.")
-                ParameterRow(title: "Make tileable", value: $store.recipe.seamlessBlend,
-                             range: MaterialRecipe.Range.seamlessBlend, digits: 2,
-                             help: "Cross-fades opposite edges; the value is the blend width per edge.")
+                TileableRows(store: store)
             }
 
             Section {
@@ -226,5 +225,125 @@ private struct AttachmentRow: View {
             Label(title, systemImage: systemImage)
         }
         .help(help)
+    }
+}
+
+/// Blend of learned (MoGe-2) geometry over the analytic height estimate, with model status.
+private struct LearnedGeometryRow: View {
+    @Bindable var store: MaterialLabStore
+    let learned: LearnedModelStore
+
+    private var available: Bool { learned.isInstalled }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ParameterRow(
+                title: "Learned geometry", value: $store.recipe.guideNormalWeight,
+                range: MaterialRecipe.Range.guideNormalWeight, digits: 2,
+                help: "Blends height integrated from MoGe-2 learned normals over the analytic estimate: 0 analytic only, 1 learned only. Fine detail still comes from the analytic path below 1."
+            )
+            .disabled(!available)
+            footnote
+        }
+        .animation(.easeOut(duration: 0.2), value: learned.isRunning)
+        .animation(.easeOut(duration: 0.2), value: available)
+    }
+
+    @ViewBuilder
+    private var footnote: some View {
+        if !available {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(learned.status == .installing
+                         ? "Installing the learned model…"
+                         : "Install the MoGe-2 normal model to read mortar, grout and seams as recessed.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    SettingsLink {
+                        Text("Open Learned Geometry Settings…")
+                    }
+                    .buttonStyle(.link)
+                    .foregroundStyle(.tint)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if let value = learned.inferenceProgress {
+            HStack(spacing: 7) {
+                ProgressView(value: Double(value))
+                    .progressViewStyle(.linear)
+                    .controlSize(.mini)
+                    .tint(.purple)
+                Text(value == 0 ? "Preparing learned model…" : "Estimating geometry \(Int(value * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+            .transition(.opacity)
+            .accessibilityElement(children: .combine)
+        } else if store.recipe.guideNormalWeight > 0 {
+            Label {
+                Text(caption)
+            } icon: {
+                Image(systemName: "sparkles").foregroundStyle(.purple.gradient)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .transition(.opacity)
+        }
+    }
+
+    private var caption: String {
+        let units = learned.cpuOnly ? "CPU" : "Neural Engine"
+        if let seconds = learned.lastInferenceDuration {
+            return "MoGe-2 · \(units) · \(Int((seconds * 1000).rounded())) ms, reused while editing"
+        }
+        return "MoGe-2 · \(units)"
+    }
+}
+
+/// Make tileable: edge-band width, seam method and a one-click jump to the 3×3 tile preview.
+private struct TileableRows: View {
+    @Bindable var store: MaterialLabStore
+
+    private var enabled: Bool { store.recipe.seamlessBlend > 0 }
+    private var showingTiles: Bool { store.canvasMode == .tile }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ParameterRow(title: "Make tileable", value: $store.recipe.seamlessBlend,
+                         range: MaterialRecipe.Range.seamlessBlend, digits: 2,
+                         help: "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched.")
+            Picker("Method", selection: $store.recipe.seamlessMode) {
+                ForEach(SeamlessMode.allCases) { mode in
+                    Text(mode.title).tag(mode).help(mode.explanation)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            .disabled(!enabled)
+            .accessibilityLabel("Tiling method")
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(enabled ? store.recipe.seamlessMode.explanation : "Raise Make tileable to choose a method.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Button {
+                    withAnimation(.snappy) { store.canvasMode = showingTiles ? .map : .tile }
+                } label: {
+                    Label(showingTiles ? "Single" : "Preview Tiling",
+                          systemImage: showingTiles ? "square" : "square.grid.3x3")
+                        .font(.caption.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(showingTiles ? nil : .accentColor)
+                .help(showingTiles ? "Back to the single map view" : "Show the map repeated 3 × 3 to check the seams")
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: enabled)
     }
 }

@@ -81,6 +81,10 @@ struct MaterialRecipe: Equatable, Sendable {
     var aoStrength: Float = 1
     var albedoEqualize: Float = 0
     var seamlessBlend: Float = 0
+    // Algorithm 1.2.0: blend of learned guide-normal height over inferred height.
+    var guideNormalWeight: Float = 0
+    /// Method used by Make tileable when seamlessBlend > 0.
+    var seamlessMode: SeamlessMode = .cut
     var reliefMaskURL: URL?
     var heightOverrideURL: URL?
 
@@ -94,9 +98,24 @@ struct MaterialRecipe: Equatable, Sendable {
         static let aoStrength: ClosedRange<Float> = 0...4
         static let albedoEqualize: ClosedRange<Float> = 0...1
         static let seamlessBlend: ClosedRange<Float> = 0...0.45
+        static let guideNormalWeight: ClosedRange<Float> = 0...1
     }
 
     var normalConvention: String { normalYDown ? "-Y" : "+Y" }
+}
+
+/// PBRLabRecipe.seamless_mode: 1 = aligned minimum-error seam cut, 0 = histogram-preserving blend.
+enum SeamlessMode: String, CaseIterable, Identifiable, Sendable {
+    case cut, blend
+    var id: String { rawValue }
+    var title: String { self == .cut ? "Structured" : "Soft blend" }
+    var explanation: String {
+        self == .cut
+            ? "Cuts along the lowest-difference seam. Best for brick, tiles, planks and most photos."
+            : "Histogram-preserving cross-fade. Best for fine noise, sand and grain."
+    }
+    var cValue: UInt32 { self == .cut ? 1 : 0 }
+    init(cValue: UInt32) { self = cValue == 0 ? .blend : .cut }
 }
 
 enum NormalConvention: String, CaseIterable, Identifiable {
@@ -107,6 +126,8 @@ enum NormalConvention: String, CaseIterable, Identifiable {
 
 enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
     case albedo, height, normal, roughness, ao, cavity, convexity, slope, edge, bentNormal, orm
+    /// Guide normals from the learned estimator: inspection only, never exported as a map.
+    case learnedNormal
     var id: String { rawValue }
 
     var title: String {
@@ -114,9 +135,13 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         case .ao: "Ambient occlusion"
         case .bentNormal: "Bent normal"
         case .orm: "ORM"
+        case .learnedNormal: "Learned normals"
         default: rawValue.capitalized
         }
     }
+
+    /// Maps written to .pbrmaterial bundles; learned guide normals are display-only.
+    var isExported: Bool { self != .learnedNormal }
 
     var symbol: String {
         switch self {
@@ -127,6 +152,7 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         case .ao, .cavity: "circle.dotted.circle"
         case .convexity, .slope, .edge: "waveform.path"
         case .orm: "square.stack.3d.up"
+        case .learnedNormal: "sparkles"
         }
     }
 
@@ -135,12 +161,17 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         case .ao: "AO"
         case .bentNormal: "Bent normal"
         case .orm: "ORM"
+        case .learnedNormal: "Learned"
         default: rawValue.capitalized
         }
     }
 
     var exportedName: String {
-        self == .bentNormal ? "bent_normal" : rawValue
+        switch self {
+        case .bentNormal: "bent_normal"
+        case .learnedNormal: "learned_normal"
+        default: rawValue
+        }
     }
 
     /// One-line explanation used for help tags and accessibility hints.
@@ -157,6 +188,7 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         case .edge: "Edge wear mask."
         case .bentNormal: "Average unoccluded direction."
         case .orm: "Packed occlusion, roughness and metalness."
+        case .learnedNormal: "Guide normals from the learned estimator (+Y). For inspection; not exported."
         }
     }
 }
@@ -194,6 +226,8 @@ struct DerivedMaterial: @unchecked Sendable {
     let sourceSHA256: String
     let reliefMaskSHA256: String?
     let heightOverrideSHA256: String?
+    /// Learned guide normals fed to the core (present only when guideNormalWeight > 0).
+    let guide: GuideNormals?
     let algorithmVersion: String
     let working: WorkingImageInfo
     let maps: [MaterialMapKind: MaterialMapData]

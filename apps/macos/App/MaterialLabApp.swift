@@ -26,6 +26,9 @@ struct MaterialLabApp: App {
         }
         .defaultSize(width: 1440, height: 900)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Material Lab") { MaterialLabAbout.show() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Import Images…") { store.showSourceImporter = true }
                     .keyboardShortcut("o")
@@ -85,5 +88,31 @@ struct MaterialLabApp: App {
             }
             InspectorCommands()
         }
+        Settings {
+            MaterialLabSettings(learned: store.learned)
+        }
+    }
+}
+
+/// Standard About panel with third-party model attribution in its credits.
+enum MaterialLabAbout {
+    static func show() {
+        let body = NSMutableParagraphStyle()
+        body.alignment = .center
+        body.paragraphSpacing = 4
+        func text(_ string: String, bold: Bool = false) -> NSAttributedString {
+            NSAttributedString(string: string, attributes: [
+                .font: bold ? NSFont.systemFont(ofSize: 11, weight: .semibold) : NSFont.systemFont(ofSize: 11),
+                .foregroundColor: bold ? NSColor.labelColor : NSColor.secondaryLabelColor,
+                .paragraphStyle: body
+            ])
+        }
+        let credits = NSMutableAttributedString()
+        credits.append(text("Learned geometry\n", bold: true))
+        credits.append(text("MoGe-2 (ViT-S normal) \u{00A9} Microsoft Corporation, MIT License.\n"))
+        credits.append(text("DINOv2 \u{00A9} Meta Platforms, Inc., Apache License 2.0.\n"))
+        credits.append(text("Runs locally through Core ML; maps are editable estimates."))
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

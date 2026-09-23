@@ -28,10 +28,16 @@ final class DerivationControl: @unchecked Sendable {
     private var cancelled = false
     private var lastReported: Float = -1
     private let onProgress: @Sendable (Float) -> Void
+    private let onLearned: @Sendable (Float?) -> Void
 
-    init(onProgress: @escaping @Sendable (Float) -> Void) {
+    /// `onLearned` receives learned-inference tile progress in [0, 1], then nil when inference ends.
+    init(onProgress: @escaping @Sendable (Float) -> Void,
+         onLearned: @escaping @Sendable (Float?) -> Void = { _ in }) {
         self.onProgress = onProgress
+        self.onLearned = onLearned
     }
+
+    func reportLearned(_ value: Float?) { onLearned(value) }
 
     func cancel() {
         lock.lock()
@@ -119,6 +125,8 @@ enum MaterialEngine {
             aoStrength: native.ao_strength,
             albedoEqualize: native.albedo_equalize,
             seamlessBlend: native.seamless_blend,
+            guideNormalWeight: native.guide_normal_weight,
+            seamlessMode: SeamlessMode(cValue: native.seamless_mode),
             reliefMaskURL: nil,
             heightOverrideURL: nil
         )
@@ -147,6 +155,22 @@ enum MaterialEngine {
         }
         guard control.shouldContinue else { throw MaterialEngineError.cancelled }
 
+        // Learned guide normals are cached per (source, model, compute units): recipe edits reuse them.
+        var guide: GuideNormals?
+        if recipe.guideNormalWeight > 0 {
+            do {
+                defer { control.reportLearned(nil) }
+                guide = try LearnedNormalEstimator.shared.guideNormals(
+                    rgba: working.payload, size: targetSize, sourceSHA256: working.sha256,
+                    shouldContinue: { control.shouldContinue },
+                    progress: { control.reportLearned($0) }
+                )
+            } catch LearnedNormalError.cancelled {
+                throw MaterialEngineError.cancelled
+            }
+        }
+        guard control.shouldContinue else { throw MaterialEngineError.cancelled }
+
         var nativeRecipe = PBRLabDefaultRecipe(recipe.preset.cValue)
         nativeRecipe.height_strength = recipe.heightStrength
         nativeRecipe.height_polarity = recipe.heightPolarity
@@ -162,13 +186,17 @@ enum MaterialEngine {
         nativeRecipe.ao_strength = recipe.aoStrength
         nativeRecipe.albedo_equalize = recipe.albedoEqualize
         nativeRecipe.seamless_blend = recipe.seamlessBlend
+        nativeRecipe.seamless_mode = recipe.seamlessMode.cValue
+        nativeRecipe.guide_normal_weight = guide == nil ? 0 : recipe.guideNormalWeight
         var error = [CChar](repeating: 0, count: 1024)
 
         let maskBytes = relief ?? Data()
         let heightBytes = heightOverride ?? Data()
+        let guideBytes = guide?.rgba8 ?? Data()
         let nativeResult = working.payload.withUnsafeBytes { sourceRaw in
             maskBytes.withUnsafeBytes { maskRaw in
                 heightBytes.withUnsafeBytes { heightRaw in
+                  guideBytes.withUnsafeBytes { guideRaw in
                     var input = PBRLabInput()
                     input.rgba8 = sourceRaw.bindMemory(to: UInt8.self).baseAddress
                     input.rgba_row_bytes = targetSize * 4
@@ -178,6 +206,9 @@ enum MaterialEngine {
                     input.height_override_r16 = heightBytes.isEmpty ? nil :
                         heightRaw.bindMemory(to: UInt8.self).baseAddress
                     input.height_override_row_bytes = heightBytes.isEmpty ? 0 : targetSize * 2
+                    input.guide_normal_rgba8 = guideBytes.isEmpty ? nil :
+                        guideRaw.bindMemory(to: UInt8.self).baseAddress
+                    input.guide_normal_row_bytes = guideBytes.isEmpty ? 0 : targetSize * 4
                     input.width = UInt32(targetSize)
                     input.height = UInt32(targetSize)
                     return error.withUnsafeMutableBufferPointer { errorBuffer in
@@ -187,6 +218,7 @@ enum MaterialEngine {
                             errorBuffer.baseAddress, errorBuffer.count
                         )
                     }
+                  }
                 }
             }
         }
@@ -199,8 +231,9 @@ enum MaterialEngine {
         var maps: [MaterialMapKind: MaterialMapData] = [:]
         var previews: [MaterialMapKind: CGImage] = [:]
         for kind in MaterialMapKind.allCases {
+            guard let nativeKind = kind.cValue else { continue }
             var output = PBRLabMap()
-            guard PBRLabGetMap(nativeResult, kind.cValue, &output) != 0 else { continue }
+            guard PBRLabGetMap(nativeResult, nativeKind, &output) != 0 else { continue }
             guard let pixels = output.pixels,
                   output.width > 0, output.height > 0,
                   output.byte_count > 0,
@@ -221,6 +254,11 @@ enum MaterialEngine {
             maps[kind] = map
             previews[kind] = kind == .height ? heightDisplayImage(map) ?? previewImage(map) : previewImage(map)
         }
+        if let guide {
+            let map = LearnedNormalEstimator.previewMap(guide)
+            maps[.learnedNormal] = map
+            previews[.learnedNormal] = previewImage(map)
+        }
         let seams = PBRLabGetSeamMetrics(nativeResult)
         var warnings = [
             "Height, normals, AO and roughness are editable estimates from one color image.",
@@ -235,6 +273,9 @@ enum MaterialEngine {
         if seams.height_value_delta > 0.02 || seams.albedo_value_delta > 0.03 {
             warnings.append("Opposite image edges differ; inspect the tiled view before repeating.")
         }
+        if let guide {
+            warnings.append("Learned geometry (\(Int((recipe.guideNormalWeight * 100).rounded())) %) comes from \(LearnedNormalEstimator.estimatorName) on \(guide.computeUnits == .all ? "the Neural Engine; fp16 results can vary slightly between chips" : "the CPU").")
+        }
         if recipe.normalYDown {
             warnings.append("Normals are encoded DirectX-style (−Y, green down).")
         }
@@ -247,6 +288,7 @@ enum MaterialEngine {
             sourceSHA256: working.sha256,
             reliefMaskSHA256: reliefSHA,
             heightOverrideSHA256: heightSHA,
+            guide: guide,
             algorithmVersion: String(cString: PBRLabVersion()),
             working: working.info,
             maps: maps,
@@ -618,8 +660,9 @@ private extension MaterialPreset {
 }
 
 private extension MaterialMapKind {
-    var cValue: PBRLabMapKind {
+    var cValue: PBRLabMapKind? {
         switch self {
+        case .learnedNormal: nil
         case .albedo: PBRLabMapAlbedo
         case .height: PBRLabMapHeight
         case .normal: PBRLabMapNormal
