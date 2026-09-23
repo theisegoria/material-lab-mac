@@ -3,6 +3,8 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <Accelerate/Accelerate.h>
+#import <CoreML/CoreML.h>
+#import <CoreVideo/CoreVideo.h>
 #include <dispatch/dispatch.h>
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
@@ -217,6 +219,8 @@ struct Options {
     std::vector<std::string> preUpscaleArgs;
     std::string label, id;
     PBRLabRecipe recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+    fs::path learnedModel, guideNormals;
+    bool learnedCpuOnly = false, guideWeightSet = false;
     bool includeUnreviewed = false, keepGoing = false;
     double preUpscaleTimeout = 600;
 };
@@ -256,6 +260,10 @@ constexpr const char* kUsage =
     "  --ao-radius 0..64  --ao-strength 0..4  --normal-strength 0..16  --normal-dx (green-down -Y normals)\n"
     "  --equalize 0..1 (albedo delighting)  --seamless 0..0.45 (edge cross-fade)  --no-tile  --bent-normal\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
+    "Learned geometry (see docs/LEARNED_NORMALS.md):\n"
+    "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
+    "  --guide-normals PNG  use precomputed +Y tangent normals instead  --guide-weight 0..1 (default 1)\n"
+    "  --learned-cpu-only  run the estimator on CPU for more reproducible output\n"
     "Optional local pre-upscale: --pre-upscale-exec ABSOLUTE_EXECUTABLE --pre-upscale-arg ARG (repeat; include\n"
     "  {input} and {output} placeholders) [--pre-upscale-timeout SECONDS, default 600]. No shell or network is\n"
     "  invoked by Material Lab.\n";
@@ -294,6 +302,10 @@ Options parse(int argc, const char** argv) {
             float n = number(value());
             overrides.push_back([=](PBRLabRecipe& r) { r.assigned_metalness_enabled = 1; r.assigned_metalness = n; });
         }
+        else if (flag == "--learned-normals") o.learnedModel = value();
+        else if (flag == "--guide-normals") o.guideNormals = value();
+        else if (flag == "--learned-cpu-only") o.learnedCpuOnly = true;
+        else if (flag == "--guide-weight") { recipeNumber(&PBRLabRecipe::guide_normal_weight); o.guideWeightSet = true; }
         else if (flag == "--relief-mask-r8") o.mask = value();
         else if (flag == "--height-override-r16le") o.heightOverride = value();
         else if (flag == "--include-unreviewed") o.includeUnreviewed = true;
@@ -308,7 +320,13 @@ Options parse(int argc, const char** argv) {
         else throw std::runtime_error("unknown option: " + flag);
     }
     o.recipe = PBRLabDefaultRecipe(preset.value_or(PBRLabPresetFlat));
+    const bool hasGuide = !o.learnedModel.empty() || !o.guideNormals.empty();
+    if (!o.learnedModel.empty() && !o.guideNormals.empty())
+        throw std::runtime_error("use either --learned-normals or --guide-normals, not both");
+    if (hasGuide) o.recipe.guide_normal_weight = 1.0f;
     for (auto& apply : overrides) apply(o.recipe);
+    if (o.recipe.guide_normal_weight > 0 && !hasGuide)
+        throw std::runtime_error("--guide-weight needs --learned-normals or --guide-normals");
     if (!o.validate.empty()) {
         if (!o.input.empty() || !o.catalog.empty() || !o.output.empty() ||
             !o.preUpscaleExec.empty() || !o.preUpscaleArgs.empty())
@@ -488,6 +506,164 @@ PreUpscaleResult runPreUpscale(const fs::path& inputPath, NSData* original, cons
 }
 
 // ---------------------------------------------------------------------------------------------
+// Learned guide normals (docs/LEARNED_NORMALS.md). The Core ML model returns +Y tangent normals for a
+// 518x518 RGB tile; tiles are blended with a sine window at a working size of clamp(N, 518, 1036).
+constexpr int kLearnedTile = 518;
+constexpr int kLearnedStride = 259;
+struct GuideNormals { std::vector<uint8_t> rgba; NSMutableDictionary* provenance = nil; };
+
+struct LoadedModel { MLModel* model = nil; NSDictionary* metadata = nil; std::string file; };
+LoadedModel& learnedModel(const fs::path& path, bool cpuOnly) {
+    static std::map<std::string, LoadedModel> cache;
+    std::string key = path.string() + (cpuOnly ? "#cpu" : "#all");
+    auto found = cache.find(key);
+    if (found != cache.end()) return found->second;
+    NSURL* url = [NSURL fileURLWithPath:ns(path.string())];
+    NSError* error = nil;
+    const std::string ext = path.extension().string();
+    if (ext == ".mlpackage" || ext == ".mlmodel") {
+        url = [MLModel compileModelAtURL:url error:&error];
+        if (!url) throw std::runtime_error("cannot compile Core ML model: " + str(error.localizedDescription ?: @"unknown"));
+    } else if (ext != ".mlmodelc") throw std::runtime_error("--learned-normals expects an .mlpackage, .mlmodel or .mlmodelc");
+    MLModelConfiguration* configuration = [MLModelConfiguration new];
+    configuration.computeUnits = cpuOnly ? MLComputeUnitsCPUOnly : MLComputeUnitsAll;
+    MLModel* model = [MLModel modelWithContentsOfURL:url configuration:configuration error:&error];
+    if (!model) throw std::runtime_error("cannot load Core ML model: " + str(error.localizedDescription ?: @"unknown"));
+    NSDictionary* metadata = asDictionary(model.modelDescription.metadata[MLModelCreatorDefinedKey]);
+    if (![asString(metadata[@"materiallab.contract"]) isEqualToString:@"tangent_normals_plus_y_v1"])
+        throw std::runtime_error("Core ML model does not declare materiallab.contract = tangent_normals_plus_y_v1");
+    return cache[key] = LoadedModel{model, metadata, path.filename().string()};
+}
+
+GuideNormals runLearnedNormals(const Image& image, const Options& options) {
+    const int n = static_cast<int>(image.width);
+    const int work = std::clamp(n, kLearnedTile, 2 * kLearnedTile);
+    LoadedModel& loaded = learnedModel(options.learnedModel, options.learnedCpuOnly);
+    // High-quality resample of the sRGB source to the working size.
+    std::vector<uint8_t> scaled(static_cast<size_t>(work) * work * 4);
+    vImage_Buffer from{const_cast<uint8_t*>(image.pixels.data()), static_cast<vImagePixelCount>(n), static_cast<vImagePixelCount>(n), static_cast<size_t>(n) * 4};
+    vImage_Buffer to{scaled.data(), static_cast<vImagePixelCount>(work), static_cast<vImagePixelCount>(work), static_cast<size_t>(work) * 4};
+    if (vImageScale_ARGB8888(&from, &to, nullptr, kvImageHighQualityResampling) != kvImageNoError)
+        throw std::runtime_error("cannot resample source for the learned estimator");
+    std::vector<int> origins;
+    for (int o = 0; o + kLearnedTile <= work; o += kLearnedStride) origins.push_back(o);
+    if (origins.back() != work - kLearnedTile) origins.push_back(work - kLearnedTile);
+    std::array<float, kLearnedTile> window{};
+    for (int t = 0; t < kLearnedTile; ++t)
+        window[t] = std::max(static_cast<float>(std::sin(M_PI * (t + .5) / kLearnedTile)), 1e-3f);
+    std::vector<float> accum(static_cast<size_t>(work) * work * 3, 0.0f), weights(static_cast<size_t>(work) * work, 0.0f);
+    CVPixelBufferRef tile = nullptr;
+    NSDictionary* attributes = @{(__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{}};
+    if (CVPixelBufferCreate(kCFAllocatorDefault, kLearnedTile, kLearnedTile, kCVPixelFormatType_32BGRA,
+                            (__bridge CFDictionaryRef)attributes, &tile) != kCVReturnSuccess)
+        throw std::runtime_error("cannot allocate Core ML input buffer");
+    try {
+        for (int oy : origins) for (int ox : origins) {
+            checkInterrupted();
+            CVPixelBufferLockBaseAddress(tile, 0);
+            auto* base = static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(tile));
+            const size_t stride = CVPixelBufferGetBytesPerRow(tile);
+            for (int y = 0; y < kLearnedTile; ++y) {
+                const uint8_t* src = &scaled[(static_cast<size_t>(oy + y) * work + ox) * 4];
+                uint8_t* dst = base + static_cast<size_t>(y) * stride;
+                for (int x = 0; x < kLearnedTile; ++x) {
+                    dst[x * 4] = src[x * 4 + 2]; dst[x * 4 + 1] = src[x * 4 + 1];
+                    dst[x * 4 + 2] = src[x * 4]; dst[x * 4 + 3] = 255;
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(tile, 0);
+            NSError* error = nil;
+            MLDictionaryFeatureProvider* input = [[MLDictionaryFeatureProvider alloc]
+                initWithDictionary:@{@"image": [MLFeatureValue featureValueWithPixelBuffer:tile]} error:&error];
+            id<MLFeatureProvider> output = input ? [loaded.model predictionFromFeatures:input error:&error] : nil;
+            MLMultiArray* normals = [output featureValueForName:@"normals"].multiArrayValue;
+            if (!normals || normals.shape.count != 4 || normals.shape[1].intValue != 3 ||
+                normals.shape[2].intValue != kLearnedTile || normals.shape[3].intValue != kLearnedTile)
+                throw std::runtime_error("learned estimator failed: " + str(error.localizedDescription ?: @"unexpected output shape"));
+            const NSInteger cs = normals.strides[1].integerValue, ys = normals.strides[2].integerValue, xs = normals.strides[3].integerValue;
+            const MLMultiArrayDataType type = normals.dataType;
+            float* accumData = accum.data();
+            float* weightData = weights.data();
+            const float* windowData = window.data();
+            [normals getBytesWithHandler:^(const void* bytes, NSInteger) {
+                auto read = [&](NSInteger offset) -> float {
+                    if (type == MLMultiArrayDataTypeFloat16) return static_cast<float>(static_cast<const __fp16*>(bytes)[offset]);
+                    if (type == MLMultiArrayDataTypeDouble) return static_cast<float>(static_cast<const double*>(bytes)[offset]);
+                    return static_cast<const float*>(bytes)[offset];
+                };
+                for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x) {
+                    const float w = windowData[x] * windowData[y];
+                    const size_t i = static_cast<size_t>(oy + y) * work + ox + x;
+                    for (int c = 0; c < 3; ++c) accumData[i * 3 + c] += w * read(c * cs + y * ys + x * xs);
+                    weightData[i] += w;
+                }
+            }];
+        }
+    } catch (...) { CVPixelBufferRelease(tile); throw; }
+    CVPixelBufferRelease(tile);
+    auto normalizedAt = [&](int x, int y, float out[3]) {
+        const size_t i = static_cast<size_t>(std::clamp(y, 0, work - 1)) * work + std::clamp(x, 0, work - 1);
+        for (int c = 0; c < 3; ++c) out[c] = accum[i * 3 + c];
+    };
+    GuideNormals guide;
+    guide.rgba.resize(static_cast<size_t>(n) * n * 4);
+    const float scale = static_cast<float>(work) / static_cast<float>(n);
+    for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
+        float fx = (x + .5f) * scale - .5f, fy = (y + .5f) * scale - .5f;
+        int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+        float tx = fx - x0, ty = fy - y0, a[3], b[3], c[3], d[3], v[3];
+        normalizedAt(x0, y0, a); normalizedAt(x0 + 1, y0, b); normalizedAt(x0, y0 + 1, c); normalizedAt(x0 + 1, y0 + 1, d);
+        for (int k = 0; k < 3; ++k) v[k] = (a[k] + (b[k] - a[k]) * tx) * (1 - ty) + (c[k] + (d[k] - c[k]) * tx) * ty;
+        float length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (length < 1e-6f) { v[0] = v[1] = 0; v[2] = length = 1; }
+        uint8_t* out = &guide.rgba[(static_cast<size_t>(y) * n + x) * 4];
+        for (int k = 0; k < 3; ++k) out[k] = static_cast<uint8_t>(std::lround(std::clamp(v[k] / length * .5f + .5f, 0.0f, 1.0f) * 255));
+        out[3] = 255;
+    }
+    NSString* weightsHash = asString(loaded.metadata[@"materiallab.weights_sha256"]);
+    guide.provenance = [@{
+        @"estimator": @"moge-2-vits-normal",
+        @"contract": @"tangent_normals_plus_y_v1",
+        @"weights_sha256": weightsHash ?: @"unknown",
+        @"moge_commit": asString(loaded.metadata[@"materiallab.moge_commit"]) ?: @"unknown",
+        @"model_file": ns(loaded.file),
+        @"compute_units": options.learnedCpuOnly ? @"cpu_only" : @"all",
+        @"work_resolution": @(work),
+        @"tiles": @(origins.size() * origins.size()),
+        @"normals_sha256": ns(hash(guide.rgba.data(), guide.rgba.size()))
+    } mutableCopy];
+    return guide;
+}
+GuideNormals loadGuideNormalsPNG(const fs::path& path, uint32_t size) {
+    NSData* data = boundedDataAt(path, 256ull * 1024 * 1024);
+    if (!data) throw std::runtime_error("cannot read --guide-normals file: " + path.string());
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)data, nullptr);
+    CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+    if (source) CFRelease(source);
+    if (!image) throw std::runtime_error("cannot decode --guide-normals PNG");
+    if (CGImageGetWidth(image) != size || CGImageGetHeight(image) != size) {
+        CGImageRelease(image); throw std::runtime_error("--guide-normals must match the source dimensions");
+    }
+    GuideNormals guide;
+    guide.rgba.resize(static_cast<size_t>(size) * size * 4);
+    // Normals are data: draw without colour management into a device RGB context.
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(guide.rgba.data(), size, size, 8, static_cast<size_t>(size) * 4, space,
+        static_cast<CGBitmapInfo>(static_cast<uint32_t>(kCGImageAlphaNoneSkipLast) | static_cast<uint32_t>(kCGBitmapByteOrder32Big)));
+    CGColorSpaceRelease(space);
+    if (!context) { CGImageRelease(image); throw std::runtime_error("cannot allocate guide normal buffer"); }
+    CGContextSetBlendMode(context, kCGBlendModeCopy);
+    CGContextDrawImage(context, CGRectMake(0, 0, size, size), image);
+    CGContextRelease(context);
+    CGImageRelease(image);
+    for (size_t i = 0; i < guide.rgba.size(); i += 4) guide.rgba[i + 3] = 255;
+    guide.provenance = [@{@"estimator": @"external", @"contract": @"tangent_normals_plus_y_v1",
+                          @"model_file": ns(path.filename().string()), @"weights_sha256": @"unknown",
+                          @"normals_sha256": ns(hash(guide.rgba.data(), guide.rgba.size()))} mutableCopy];
+    return guide;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Derivation.
 int progressCallback(float, void*) { return gInterrupted ? 0 : 1; }
 struct ReviewInfo { bool reviewed = false; bool includedByOptIn = false; };
@@ -510,10 +686,15 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
     const size_t count = static_cast<size_t>(image.width) * image.height;
     auto mask = options.mask.empty() ? std::vector<uint8_t>{} : rawFile(options.mask, count);
     auto authored = options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
+    GuideNormals guide;
+    const bool useGuide = options.recipe.guide_normal_weight > 0 && authored.empty();
+    if (useGuide) guide = !options.learnedModel.empty() ? runLearnedNormals(image, options)
+                                                       : loadGuideNormalsPNG(options.guideNormals, image.width);
     PBRLabInput input{image.pixels.data(), static_cast<size_t>(image.width) * 4,
                       mask.empty() ? nullptr : mask.data(), mask.empty() ? 0 : image.width,
                       authored.empty() ? nullptr : authored.data(), authored.empty() ? 0 : static_cast<size_t>(image.width) * 2,
-                      image.width, image.height};
+                      image.width, image.height, useGuide ? guide.rgba.data() : nullptr,
+                      useGuide ? static_cast<size_t>(image.width) * 4 : 0};
     char error[256]{};
     std::unique_ptr<PBRLabResult, decltype(&PBRLabFreeResult)> result(
         PBRLabDerive(&input, &options.recipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);
@@ -552,6 +733,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                 throw std::runtime_error(pngError);
             NSString* provenance = @(role.provenance);
             if (role.kind == PBRLabMapHeight) provenance = !authored.empty() ? @"authored_height_override" :
+                useGuide ? (options.recipe.preset == PBRLabPresetFlat || options.recipe.guide_normal_weight >= 1
+                            ? @"learned_normals" : @"estimated_from_albedo_and_learned_normals") :
                 options.recipe.preset == PBRLabPresetFlat ? @"flat_prior" : @"estimated_from_albedo";
             maps[name] = @{@"file": filename, @"sha256": ns(hash(png.data(), png.size())), @"width": @(map.width),
                            @"height": @(map.height), @"pixel_format": @(role.format), @"provenance": provenance};
@@ -573,7 +756,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"normal_y_down": @(r.normal_y_down != 0),
             @"ao_strength": @(r.ao_strength),
             @"albedo_equalize": @(r.albedo_equalize),
-            @"seamless_blend": @(r.seamless_blend)
+            @"seamless_blend": @(r.seamless_blend),
+            @"guide_normal_weight": @(useGuide ? r.guide_normal_weight : 0.0f)
         };
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
@@ -596,6 +780,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                                 @"albedo_value_delta": @(seam.albedo_value_delta)},
             @"runtime_admitted": @NO
         } mutableCopy];
+        if (useGuide) manifest[@"guide_normals"] = guide.provenance;
         if (review) {
             manifest[@"source_review_status"] = review->reviewed ? @"reviewed" : @"unreviewed";
             manifest[@"included_by_opt_in"] = @(review->includedByOptIn);
@@ -617,26 +802,35 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
 
 // ---------------------------------------------------------------------------------------------
 // Bundle validation.
-bool validateRecipe(NSDictionary* recipe, bool snakeCase, bool requireV11, std::string& why) {
+// version: 0 = 1.0.0, 1 = 1.1.0, 2 = 1.2.0. Fields introduced by a version are required from it on.
+int algorithmLevel(NSString* algorithm) {
+    if ([algorithm isEqualToString:@"1.0.0"]) return 0;
+    if ([algorithm isEqualToString:@"1.1.0"]) return 1;
+    if ([algorithm isEqualToString:@"1.2.0"]) return 2;
+    return -1;
+}
+bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string& why) {
+    const bool requireV11 = level >= 1;
     auto key = [&](const char* snake, const char* camel) { return snakeCase ? @(snake) : @(camel); };
     NSSet* presets = snakeCase ? [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coated-metal", @"bare-metal"]]
                                : [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coatedMetal", @"bareMetal"]];
     NSString* preset = asString(recipe[@"preset"]);
     if (!preset || ![presets containsObject:preset]) { why = "preset"; return false; }
-    struct Range { const char* snake; const char* camel; double lo, hi; bool v11; };
+    struct Range { const char* snake; const char* camel; double lo, hi; int since; };
     static constexpr Range ranges[] = {
-        {"height_strength", "heightStrength", 0, .5, false},
-        {"roughness_base", "roughnessBase", 0, 1, false},
-        {"roughness_variation", "roughnessVariation", 0, 1, false},
-        {"ao_radius_pixels", "aoRadiusPixels", 0, 64, false},
-        {"normal_strength", "normalStrength", 0, 16, true},
-        {"ao_strength", "aoStrength", 0, 4, true},
-        {"albedo_equalize", "albedoEqualize", 0, 1, true},
-        {"seamless_blend", "seamlessBlend", 0, .45, true},
+        {"height_strength", "heightStrength", 0, .5, 0},
+        {"roughness_base", "roughnessBase", 0, 1, 0},
+        {"roughness_variation", "roughnessVariation", 0, 1, 0},
+        {"ao_radius_pixels", "aoRadiusPixels", 0, 64, 0},
+        {"normal_strength", "normalStrength", 0, 16, 1},
+        {"ao_strength", "aoStrength", 0, 4, 1},
+        {"albedo_equalize", "albedoEqualize", 0, 1, 1},
+        {"seamless_blend", "seamlessBlend", 0, .45, 1},
+        {"guide_normal_weight", "guideNormalWeight", 0, 1, 2},
     };
     for (const auto& range : ranges) {
         id value = recipe[key(range.snake, range.camel)];
-        if (range.v11 && !requireV11 && !value) continue;
+        if (level < range.since && !value) continue;
         // Recipes are stored as float32 then widened; allow a single-precision rounding margin at the bounds.
         if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
     }
@@ -656,7 +850,7 @@ bool validateRecipe(NSDictionary* recipe, bool snakeCase, bool requireV11, std::
 }
 constexpr const char* kLegacyNormalWarning =
     "algorithm 1.0.0 normal and bent-normal maps are green-down (-Y, DirectX) despite the recorded +Y claim; "
-    "flip green or re-derive with 1.1.0";
+    "flip green or re-derive with 1.1.0 or later";
 void validateMapPNG(NSData* file, const MapRole& role, const std::string& label, uint32_t& width, uint32_t& height) {
     pbrlab::PNGInfo info;
     std::string why;
@@ -702,11 +896,11 @@ void validate(const fs::path& bundle) {
     // Admission is a separate explicit step: the flag must be literally JSON false.
     if (!isBoolean(manifest[@"runtime_admitted"]) || [manifest[@"runtime_admitted"] boolValue])
         throw std::runtime_error("runtime_admitted must be the boolean false");
-    const bool legacy = [algorithm isEqualToString:@"1.0.0"];
-    if (!legacy && ![algorithm isEqualToString:@"1.1.0"])
-        throw std::runtime_error("unsupported algorithm_version: " + str(algorithm));
+    const int level = algorithmLevel(algorithm);
+    if (level < 0) throw std::runtime_error("unsupported algorithm_version: " + str(algorithm));
+    const bool legacy = level == 0;
     std::string why;
-    if (!validateRecipe(recipe, true, !legacy, why))
+    if (!validateRecipe(recipe, true, level, why))
         throw std::runtime_error("manifest recipe parameter missing or out of range: " + why);
     id convention = manifest[@"normal_convention"];
     if (!legacy || convention) {
@@ -715,6 +909,14 @@ void validate(const fs::path& bundle) {
             throw std::runtime_error("normal_convention must be \"+Y\" or \"-Y\" and agree with recipe.normal_y_down");
     }
     if (legacy) warn(kLegacyNormalWarning);
+    NSNumber* guideWeight = asNumber(recipe[@"guide_normal_weight"]);
+    NSDictionary* guideNormals = asDictionary(manifest[@"guide_normals"]);
+    if (guideWeight && guideWeight.doubleValue > 0) {
+        if (!guideNormals || !nonemptyString(guideNormals[@"estimator"], 120) ||
+            ![asString(guideNormals[@"contract"]) isEqualToString:@"tangent_normals_plus_y_v1"] ||
+            !validSHA256String(guideNormals[@"normals_sha256"]) || !nonemptyString(guideNormals[@"model_file"], 255))
+            throw std::runtime_error("guide_normal_weight > 0 requires guide_normals provenance with estimator, contract and hashes");
+    } else if (manifest[@"guide_normals"]) throw std::runtime_error("guide_normals present but recipe.guide_normal_weight is 0");
     if (!validSHA256String(source[@"sha256"]) || !nonemptyString(source[@"color_space"], 120) ||
         !nonemptyString(source[@"path"], 4096))
         throw std::runtime_error("manifest source identity or hash is invalid");
@@ -889,11 +1091,11 @@ void validateCapture(const fs::path& capturePath) {
         ![asString(capture[@"sourceMime"]) isEqualToString:@"image/png"] || !asString(capture[@"sourceBase64"]) ||
         !algorithm || !recipe || !captureMetadata || !derived || !seamMetrics)
         throw std::runtime_error("invalid capture envelope fields");
-    const bool legacy = [algorithm isEqualToString:@"1.0.0"];
-    if (!legacy && ![algorithm isEqualToString:@"1.1.0"])
-        throw std::runtime_error("unsupported capture algorithmVersion: " + str(algorithm));
+    const int level = algorithmLevel(algorithm);
+    if (level < 0) throw std::runtime_error("unsupported capture algorithmVersion: " + str(algorithm));
+    const bool legacy = level == 0;
     std::string why;
-    if (!validateRecipe(recipe, false, !legacy, why))
+    if (!validateRecipe(recipe, false, level, why))
         throw std::runtime_error("capture recipe is missing or out of range: " + why);
     if (legacy) warn(kLegacyNormalWarning);
     if (!nonemptyString(captureMetadata[@"capturedAt"], 80) ||

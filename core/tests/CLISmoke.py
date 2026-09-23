@@ -325,6 +325,32 @@ def main() -> None:
             red, green = rows[8][8 * bpp], rows[8][8 * bpp + 1]
             assert red == 128 and check(green), (name, red, green)
 
+        # Guide normals (the learned path without a model): provenance is recorded and enforced.
+        guided = root / "guided.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(guided), "--guide-normals",
+            str(root / "ramp-gl.pbrmaterial" / "normal.png"), "--guide-weight", "0.7", "--preset", "stone")
+        run(cli, "--validate", str(guided))
+        guided_manifest = json.loads((guided / "manifest.json").read_text())
+        assert abs(guided_manifest["recipe"]["guide_normal_weight"] - 0.7) < 1e-6
+        assert guided_manifest["guide_normals"]["contract"] == "tangent_normals_plus_y_v1"
+        assert guided_manifest["maps"]["height"]["provenance"] == "estimated_from_albedo_and_learned_normals"
+        assert manifest["recipe"]["guide_normal_weight"] == 0 and "guide_normals" not in manifest
+        run(cli, "--input", str(image), "--output", str(root / "no-guide"), "--guide-weight", "0.5", expect_success=False)
+        run(cli, "--input", str(image), "--output", str(root / "both-guides"), "--guide-normals", str(image),
+            "--learned-normals", str(image), expect_success=False)
+        guided_good = guided_manifest
+        def forge_guide(mutate):
+            tampered = json.loads(json.dumps(guided_good))
+            mutate(tampered)
+            (guided / "manifest.json").write_text(json.dumps(tampered))
+            run(cli, "--validate", str(guided), expect_success=False)
+        forge_guide(lambda m: m.pop("guide_normals"))
+        forge_guide(lambda m: m["recipe"].__setitem__("guide_normal_weight", 0))
+        forge_guide(lambda m: m["recipe"].__setitem__("guide_normal_weight", 1.5))
+        forge_guide(lambda m: m["guide_normals"].__setitem__("contract", "something_else"))
+        (guided / "manifest.json").write_text(json.dumps(guided_good))
+        run(cli, "--validate", str(guided))
+
         # Non-ASCII labels survive; a bare relative --output lands in the working directory.
         label = "ardoise \u00e9clat \u77f3"
         run(cli, "--input", str(image), "--output", "bare", "--label", label, cwd=root)
