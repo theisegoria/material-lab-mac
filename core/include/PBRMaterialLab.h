@@ -73,6 +73,9 @@ typedef struct PBRLabRecipe {
     float seamless_blend;            // Offset cross-fade width per edge as a fraction of the size, [0,0.45]; 0 is off.
     // Added in 1.2.0.
     float guide_normal_weight;       // Blend of guide-derived height over inferred height, [0,1]; needs guide normals.
+    uint32_t seamless_mode;          // With seamless_blend > 0: 1 (default) = aligned minimum-error seam cut, best for
+                                     // structured textures (brick, tiles, planks) and most photos; 0 = histogram-
+                                     // preserving blend, for fine stochastic textures with soft lighting drift.
 } PBRLabRecipe;
 
 typedef struct PBRLabMap {

@@ -191,7 +191,7 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
         !in01(r->ao_radius_pixels, 64) || !in01(r->assigned_metalness, 1) ||
         !in01(r->normal_strength, 16) || !in01(r->ao_strength, 4) ||
         !in01(r->albedo_equalize, 1) || !in01(r->seamless_blend, .45f) ||
-        !in01(r->guide_normal_weight, 1)) {
+        !in01(r->guide_normal_weight, 1) || r->seamless_mode > 1) {
         why = "recipe contains an invalid preset or out-of-range parameter"; return false;
     }
     return true;
@@ -381,6 +381,116 @@ std::vector<float> guideHeight(const PBRLabInput *input, int width, int height, 
     return solver.solve(divergence, width, height, 10);
 }
 
+// Structure-aware tiling (image-quilting style minimum-error boundary cut). For one axis, the output takes
+// the half-period offset copy near both opposite edges (it is continuous across the wrap) and the original
+// in the interior. Each transition follows the lowest-difference path between the two images through its
+// edge band, found by dynamic programming, with a few pixels of feathering. Paths start and end at the same
+// offset so the result stays continuous across the other axis' wrap. Structured textures (brick, tiles,
+// planks) keep crisp features instead of the ghosted double edges a cross-fade produces.
+// Offset of the copy along the cut axis. Any offset keeps the copy continuous across the wrap; its own seam
+// (at n - offset) must stay outside both edge bands. The offset that best aligns the texture with itself in
+// the bands (e.g. a whole number of brick courses) makes the cut nearly invisible. Coarse search on a
+// subsampled grid, then refinement at full resolution.
+int bestCopyOffset(const std::vector<float> &rgb, int n, int band, bool vertical) {
+    const int lo = std::max(band + 2, n / 4), hi = std::min(n - band - 2, n - n / 4);
+    if (lo >= hi) return n / 2;
+    auto lum = [&](int across, int along) {
+        size_t i = vertical ? at(along, across, n) : at(across, along, n);
+        return kLinearLuminance[0] * rgb[i * 3] + kLinearLuminance[1] * rgb[i * 3 + 1] + kLinearLuminance[2] * rgb[i * 3 + 2];
+    };
+    auto score = [&](int offset, int stride) {
+        double sum = 0;
+        for (int along = 0; along < n; along += stride)
+            for (int k = 0; k < band; k += stride) {
+                for (int across : {k, n - 1 - k}) {
+                    float d = lum(across, along) - lum((across + offset) % n, along);
+                    sum += d * d;
+                }
+            }
+        return sum;
+    };
+    const int coarse = std::max(1, n / 256);
+    int best = n / 2;
+    double bestScore = score(best, coarse);
+    for (int offset = lo; offset <= hi; offset += coarse) {
+        double value = score(offset, coarse);
+        if (value < bestScore) { bestScore = value; best = offset; }
+    }
+    const int center = best;
+    bestScore = score(center, std::max(1, coarse / 2));
+    for (int offset = std::max(lo, center - coarse); offset <= std::min(hi, center + coarse); ++offset) {
+        double value = score(offset, std::max(1, coarse / 2));
+        if (value < bestScore) { bestScore = value; best = offset; }
+    }
+    return best;
+}
+
+void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, int band, bool vertical) {
+    band = std::clamp(band, 4, n / 2 - 4);
+    const int half = bestCopyOffset(rgb, n, band, vertical);
+    auto index = [&](int across, int along) {
+        return vertical ? at(along, across, n) : at(across, along, n); // vertical: cut runs along x.
+    };
+    const std::vector<float> original(rgb);
+    const std::vector<uint8_t> originalAlpha(alpha);
+    auto difference = [&](int across, int along) {
+        size_t i = index(across, along), j = index((across + half) % n, along);
+        float sum = 0;
+        for (int c = 0; c < 3; ++c) { float d = original[i * 3 + c] - original[j * 3 + c]; sum += d * d; }
+        float da = (static_cast<float>(originalAlpha[i]) - static_cast<float>(originalAlpha[j])) / 255.0f;
+        return sum + da * da;
+    };
+    constexpr float kFeather = 2.0f;
+    std::vector<float> weight(static_cast<size_t>(n) * n, 0.0f); // Weight of the offset copy, indexed by index().
+    for (int zone = 0; zone < 2; ++zone) {
+        const int lo = zone == 0 ? 0 : n - band;
+        std::vector<float> cost(static_cast<size_t>(n) * band);
+        for (int v = 0; v < n; ++v) for (int u = 0; u < band; ++u) cost[static_cast<size_t>(v) * band + u] = difference(lo + u, v);
+        // Start at the band column with the least total difference; end at the same column.
+        int start = 1;
+        double best = std::numeric_limits<double>::max();
+        for (int u = 1; u < band - 1; ++u) {
+            double total = 0;
+            for (int v = 0; v < n; ++v) total += cost[static_cast<size_t>(v) * band + u];
+            if (total < best) { best = total; start = u; }
+        }
+        const float inf = std::numeric_limits<float>::infinity();
+        std::vector<float> energy(static_cast<size_t>(n) * band, inf);
+        std::vector<int8_t> step(static_cast<size_t>(n) * band, 0);
+        energy[start] = cost[start];
+        for (int v = 1; v < n; ++v) for (int u = 1; u < band - 1; ++u) {
+            float bestPrev = inf; int8_t move = 0;
+            for (int8_t d = -1; d <= 1; ++d) {
+                float e = energy[static_cast<size_t>(v - 1) * band + u + d];
+                if (e < bestPrev) { bestPrev = e; move = d; }
+            }
+            if (bestPrev == inf) continue;
+            energy[static_cast<size_t>(v) * band + u] = bestPrev + cost[static_cast<size_t>(v) * band + u];
+            step[static_cast<size_t>(v) * band + u] = move;
+        }
+        std::vector<int> path(n);
+        int u = start;
+        if (energy[static_cast<size_t>(n - 1) * band + u] == inf) { // Unreachable only for tiny images.
+            float e = inf;
+            for (int k = 1; k < band - 1; ++k) if (energy[static_cast<size_t>(n - 1) * band + k] < e) { e = energy[static_cast<size_t>(n - 1) * band + k]; u = k; }
+        }
+        for (int v = n - 1; v >= 0; --v) { path[v] = u; u += step[static_cast<size_t>(v) * band + u]; }
+        for (int v = 0; v < n; ++v) for (int k = 0; k < band; ++k) {
+            // Signed distance toward the image edge, where the offset copy is used.
+            float d = zone == 0 ? static_cast<float>(path[v] - k) : static_cast<float>(k - path[v]);
+            weight[index(lo + k, v)] = smoothstep01((d + kFeather) / (2.0f * kFeather));
+        }
+    }
+    for (int across = 0; across < n; ++across) for (int along = 0; along < n; ++along) {
+        size_t i = index(across, along);
+        float w = weight[i];
+        if (w <= 0) continue;
+        size_t j = index((across + half) % n, along);
+        for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = original[i * 3 + c] + (original[j * 3 + c] - original[i * 3 + c]) * w;
+        alpha[i] = static_cast<uint8_t>(std::lround(originalAlpha[i] + (static_cast<float>(originalAlpha[j]) - originalAlpha[i]) * w));
+    }
+}
+
 // Precomputed horizon sample for one side of one GTAO slice. Samples lie exactly on the slice line and
 // are read bilinearly, so planar surfaces of any orientation produce exact horizons.
 struct AOSample { int x0, y0; float fx, fy, distanceSquared; };
@@ -446,6 +556,7 @@ extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     r.albedo_equalize = 0.0f;
     r.seamless_blend = 0.0f;
     r.guide_normal_weight = 0.0f;
+    r.seamless_mode = 1;
     return r;
 }
 
@@ -527,7 +638,10 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = std::min(rgb[i * 3 + c] * gain, 1.0f);
                 }
             }
-            if (seamless) {
+            if (seamless && recipe->seamless_mode == 1) {
+                seamCutAxis(rgb, alpha, width, blendWidth, false);
+                seamCutAxis(rgb, alpha, width, blendWidth, true);
+            } else if (seamless) {
                 // Histogram-preserving half-period offset blend (Heitz & Neyret 2018). The offset copy
                 // is continuous across the wrap and its own seam sits where the weight is zero, so one
                 // pass per axis removes that axis' seam while the other stays continuous. Blending in

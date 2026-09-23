@@ -1,6 +1,6 @@
 # Derivation model and provenance
 
-Material Lab 1.1.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations. Unless the recipe asks for delighting or tiling, the albedo output is a byte-exact copy of the source.
+Material Lab 1.2.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations. Unless the recipe asks for delighting or tiling, the albedo output is a byte-exact copy of the source.
 
 ## What the source can and cannot tell us
 
@@ -10,18 +10,27 @@ References:
 
 - [MaterIA: Single Image High-Resolution Material Capture in the Wild](https://perso.telecom-paristech.fr/boubek/papers/MaterIA/MaterIA_lowres.pdf)
 - Jimenez et al. 2016, *Practical Real-Time Strategies for Accurate Indirect Occlusion* (GTAO), and Intel's MIT-licensed [XeGTAO](https://github.com/GameTechDev/XeGTAO) reference for the bent-normal form
+- Efros & Freeman 2001, *Image Quilting for Texture Synthesis and Transfer* (minimum-error boundary cut)
 - Heitz & Neyret 2018, *High-Performance By-Example Noise using a Histogram-Preserving Blending Operator* (HPG)
 - [glTF 2.0 material texture conventions](https://github.com/KhronosGroup/glTF/blob/main/specification/2.0/Specification.adoc)
 
-## Algorithm (1.1.0)
+## Algorithm (1.2.0)
 
 1. **Source conditioning (optional, off by default).**
    - *Equalize* (`albedo_equalize`, 0–1) delights the image. It divides linear RGB by a smooth luminance field whose Gaussian scale is about 1/8 of the tile, pulls it toward the image mean luminance, and raises the gain to the chosen strength. Hue is preserved and the gain is clamped to 0.25–4×.
-   - *Seamless* (`seamless_blend`, 0–0.45 of the width per edge) blends each axis with a half-period offset copy. The blend is histogram-preserving (Heitz & Neyret):
-     - Each linear channel is Gaussianized through its empirical CDF.
-     - Values are blended as `((1−w)·a + w·b) / √((1−w)² + w²)` and mapped back.
-     - This keeps contrast and the value distribution, where a linear cross-fade washes them out.
-     - Pixels outside the blend zone round-trip exactly.
+   - *Make tileable* (`seamless_blend`, 0–0.45 of the width per edge, sets the edge band) has two methods (`seamless_mode`):
+     - **Seam cut** (default, `1`). This is a minimum-error boundary cut in the style of image quilting (Efros & Freeman 2001):
+       - For each axis, the output uses an offset copy of the image near both opposite edges; the copy is continuous across the wrap. The original is used in the interior.
+       - The offset is searched coarse-to-fine to align the texture with itself in the bands, for example a whole number of brick courses. The copy's own seam is kept outside the bands.
+       - Each transition follows the lowest-difference path through its band, found by dynamic programming and feathered by only ±2 px.
+       - Paths start and end at the same offset, so the other axis stays continuous.
+       - Structured textures (brick, tiles, planks) keep crisp features instead of ghosted double edges. Pixels outside the bands are untouched.
+     - **Blend** (`0`). A histogram-preserving half-period offset blend (Heitz & Neyret):
+       - Each linear channel is Gaussianized through its empirical CDF.
+       - Values are blended as `((1−w)·a + w·b) / √((1−w)² + w²)` and mapped back.
+       - This preserves contrast in fine stochastic textures, such as noise, sand and grain, whose soft lighting drift would make a cut visible.
+     - When a pattern's period does not divide the tile size, a defect somewhere is unavoidable. The cut hides it in one place; the blend spreads it as ghosting.
+     - Comparison: [seam cut vs blend on brick](verification/tiling-seam-cut-vs-blend.png).
    - Equalize runs before tiling, so lighting gradients do not become seams. Pseudo-height uses the conditioned image.
 2. **Relief bands.** Compute Rec. 709 luminance in linear light. Apply Gaussian-approximating filters (three box passes each) at scales equivalent to 2, 8, and 24 pixel boxes. The differences between successive scales form the high, middle, and coarse relief bands, and the chosen preset weights them. Flat is the default for unknown or painted materials; it produces no inferred relief.
 3. **Height.** An optional 8-bit relief mask scales the inferred signal (0 removes it; 255 keeps it). An optional authored 16-bit height replaces inference altogether. Otherwise the signal is scaled by the amplitude and polarity around neutral 0.5, clamped, and exported as normalized R16 height.

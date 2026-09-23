@@ -174,6 +174,7 @@ int main() {
         assert(std::memcmp(map(plain, PBRLabMapAlbedo).pixels, gradientSource.data(), gradientSource.size()) == 0);
         PBRLabFreeResult(plain);
         flatRecipe.seamless_blend = .25f;
+        flatRecipe.seamless_mode = 0;
         auto* blended = derive(gradientSource, m, flatRecipe);
         assert(PBRLabGetSeamMetrics(blended).albedo_value_delta < plainSeam * .2f);
         PBRLabFreeResult(blended);
@@ -198,6 +199,7 @@ int main() {
         }
         auto tileRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
         tileRecipe.seamless_blend = .2f;
+        tileRecipe.seamless_mode = 0;
         auto* tiled = derive(noiseSource, m, tileRecipe);
         auto out = map(tiled, PBRLabMapAlbedo);
         auto deviation = [&](const uint8_t* px, unsigned x0, unsigned x1) {
@@ -287,6 +289,59 @@ int main() {
         auto* ignored = PBRLabDerive(&in, &flatRecipe, nullptr, nullptr, err, sizeof(err));
         assert(ignored && v(map(ignored, PBRLabMapNormal), 30, 26, 1) == 128);
         PBRLabFreeResult(ignored);
+    }
+
+    // Seam-cut tiling (the default mode).
+    {
+        constexpr unsigned m = 96;
+        auto cutRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        assert(cutRecipe.seamless_mode == 1);
+        // 1. A smooth, non-periodic pattern: the wrap mismatch drops to the level of neighbouring pixels.
+        std::vector<uint8_t> smooth(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            double val = 128 + 55 * std::sin(6.2831853 * x / 37.0) + 35 * std::sin(6.2831853 * y / 29.0 + .7);
+            size_t i = (y * m + x) * 4;
+            smooth[i] = smooth[i + 1] = smooth[i + 2] = static_cast<uint8_t>(std::lround(val));
+        }
+        auto* plain = derive(smooth, m, cutRecipe);
+        float before = PBRLabGetSeamMetrics(plain).albedo_value_delta;
+        PBRLabFreeResult(plain);
+        cutRecipe.seamless_blend = .2f;
+        auto* cut = derive(smooth, m, cutRecipe);
+        float after = PBRLabGetSeamMetrics(cut).albedo_value_delta;
+        auto cutAlbedo = map(cut, PBRLabMapAlbedo);
+        // 2. Pixels outside both edge bands are untouched.
+        for (unsigned y = 24; y < 72; ++y) for (unsigned x = 24; x < 72; ++x)
+            assert(cutAlbedo.pixels[(y * m + x) * 4] == smooth[(y * m + x) * 4]);
+        std::cout << "seam cut: smooth-pattern wrap mismatch " << before << " -> " << after << "\n";
+        assert(after < before * .3f);
+        PBRLabFreeResult(cut);
+        // 3. Stripes whose period does not fit the tile: the cut hides the unavoidable defect in one place
+        //    and leaves only feathered pixels along its path; a cross-fade ghosts whole bands.
+        std::vector<uint8_t> stripes(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            uint8_t val = ((x / 5) % 2 ? 40 : 220);
+            size_t i = (y * m + x) * 4;
+            stripes[i] = stripes[i + 1] = stripes[i + 2] = val;
+        }
+        auto countMixed = [&](const PBRLabMap& albedoMap) {
+            size_t count = 0;
+            for (size_t i = 0; i < m * m; ++i) if (albedoMap.pixels[i * 4] != 40 && albedoMap.pixels[i * 4] != 220) ++count;
+            return count;
+        };
+        auto* stripeCut = derive(stripes, m, cutRecipe);
+        size_t mixed = countMixed(map(stripeCut, PBRLabMapAlbedo));
+        PBRLabFreeResult(stripeCut);
+        cutRecipe.seamless_mode = 0;
+        auto* stripeBlend = derive(stripes, m, cutRecipe);
+        size_t blendedMixed = countMixed(map(stripeBlend, PBRLabMapAlbedo));
+        PBRLabFreeResult(stripeBlend);
+        std::cout << "seam cut: intermediate pixels " << mixed << " (blend " << blendedMixed << ")\n";
+        assert(mixed < m * m / 20 && blendedMixed > mixed * 2);
+        cutRecipe.seamless_mode = 2;
+        PBRLabInput bad{stripes.data(), m * 4, nullptr, 0, nullptr, 0, m, m, nullptr, 0};
+        char err[128]{};
+        assert(!PBRLabDerive(&bad, &cutRecipe, nullptr, nullptr, err, sizeof(err)));
     }
 
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.

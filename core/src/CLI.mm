@@ -258,7 +258,9 @@ constexpr const char* kUsage =
     "  --preset flat|stone|fabric|organic|coated-metal|bare-metal\n"
     "  --height-strength 0..0.5  --polarity -1|1  --roughness 0..1  --roughness-variation 0..1\n"
     "  --ao-radius 0..64  --ao-strength 0..4  --normal-strength 0..16  --normal-dx (green-down -Y normals)\n"
-    "  --equalize 0..1 (albedo delighting)  --seamless 0..0.45 (edge cross-fade)  --no-tile  --bent-normal\n"
+    "  --equalize 0..1 (albedo delighting)  --no-tile  --bent-normal\n"
+    "  --seamless 0..0.45 (make tileable: edge band width)  --seamless-mode cut|blend (default cut: aligned\n"
+    "    minimum-error seam for structured textures; blend: histogram-preserving cross-fade for fine noise)\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
     "Learned geometry (see docs/LEARNED_NORMALS.md):\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
@@ -295,6 +297,11 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--normal-strength") recipeNumber(&PBRLabRecipe::normal_strength);
         else if (flag == "--equalize") recipeNumber(&PBRLabRecipe::albedo_equalize);
         else if (flag == "--seamless") recipeNumber(&PBRLabRecipe::seamless_blend);
+        else if (flag == "--seamless-mode") {
+            std::string mode = value();
+            if (mode != "cut" && mode != "blend") throw std::runtime_error("--seamless-mode must be cut or blend");
+            overrides.push_back([=](PBRLabRecipe& r) { r.seamless_mode = mode == "cut" ? 1 : 0; });
+        }
         else if (flag == "--normal-dx") overrides.push_back([](PBRLabRecipe& r) { r.normal_y_down = 1; });
         else if (flag == "--no-tile") overrides.push_back([](PBRLabRecipe& r) { r.tile_wrap = 0; });
         else if (flag == "--bent-normal") overrides.push_back([](PBRLabRecipe& r) { r.bent_normal_enabled = 1; });
@@ -757,7 +764,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"ao_strength": @(r.ao_strength),
             @"albedo_equalize": @(r.albedo_equalize),
             @"seamless_blend": @(r.seamless_blend),
-            @"guide_normal_weight": @(useGuide ? r.guide_normal_weight : 0.0f)
+            @"guide_normal_weight": @(useGuide ? r.guide_normal_weight : 0.0f),
+            @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend"
         };
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
@@ -835,6 +843,11 @@ bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string
         if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
     }
     if (!unitPolarity(recipe[key("height_polarity", "heightPolarity")])) { why = "height polarity"; return false; }
+    // Optional (absent means the pre-cut behaviour, "blend"); when present it must name a known method.
+    if (id mode = recipe[key("seamless_mode", "seamlessMode")]) {
+        NSString* text = asString(mode);
+        if (!text || !([text isEqualToString:@"cut"] || [text isEqualToString:@"blend"])) { why = "seamless mode"; return false; }
+    }
     NSArray* flags = snakeCase ? @[@"tile_wrap", @"bent_normal_enabled", @"assigned_metalness_enabled"]
                                : @[@"tileWrap", @"bentNormal"];
     for (NSString* flag in flags) if (!isBoolean(recipe[flag])) { why = str(flag); return false; }

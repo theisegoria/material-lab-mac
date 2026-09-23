@@ -21,6 +21,7 @@ Both formats carry the core algorithm version (`algorithm_version` / `algorithmV
 | 1.1.0 | `albedo_equalize` | `albedoEqualize` | 0–1 |
 | 1.1.0 | `seamless_blend` | `seamlessBlend` | 0–0.45 |
 | 1.2.0 | `guide_normal_weight` | `guideNormalWeight` | 0–1 |
+| 1.2.0 (optional) | `seamless_mode` | `seamlessMode` | `"cut"` or `"blend"`; absent means `"blend"` |
 
 From 1.1.0 on, a material manifest also records `normal_convention` (`+Y` or `-Y`, matching `normal_y_down`). **Algorithm 1.0.0 normal and bent-normal maps are green-down even though they are labelled +Y.** Validators print a warning for these bundles; re-derive them or flip green. When `guide_normal_weight > 0`, the manifest has a top-level `guide_normals` provenance object ([learned normals](LEARNED_NORMALS.md)). Validators reject a guide weight without provenance, and provenance without a guide weight.
 

@@ -312,6 +312,12 @@ def main() -> None:
         assert abs(recipe["normal_strength"] - 2) < 1e-6 and abs(recipe["ao_strength"] - 1.5) < 1e-6
         assert abs(recipe["albedo_equalize"] - 0.3) < 1e-6 and abs(recipe["seamless_blend"] - 0.1) < 1e-6
         assert recipe["normal_y_down"] is True and flagged_manifest["normal_convention"] == "-Y"
+        assert recipe["seamless_mode"] == "cut"
+        blended = root / "blended.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(blended), "--seamless", "0.2", "--seamless-mode", "blend")
+        run(cli, "--validate", str(blended))
+        assert json.loads((blended / "manifest.json").read_text())["recipe"]["seamless_mode"] == "blend"
+        run(cli, "--input", str(image), "--output", str(root / "bad-mode"), "--seamless-mode", "quilt", expect_success=False)
         assert manifest["normal_convention"] == "+Y" and manifest["recipe"]["normal_y_down"] is False
         run(cli, "--input", str(image), "--output", str(root / "bad-flag"), "--seamless", "0.6", expect_success=False)
 
