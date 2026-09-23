@@ -107,6 +107,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.tile < 16 or args.tile > 1024 or args.pad < 0 or args.pad > 256:
         parser.error("tile must be 16..1024 and pad must be 0..256")
+    if args.scale == 2 and (args.tile % 2 or args.pad % 2):
+        parser.error("x2 model requires even tile and pad values to preserve pixel-unshuffle phase")
+    if not sys.flags.isolated:
+        parser.error("run the pinned Python interpreter with -I to isolate imports from PYTHONPATH")
     if not args.input.is_file() or args.input.is_symlink():
         parser.error("input must be a regular local image")
     if args.output.suffix.lower() != ".png" or args.output.resolve() == args.input.resolve():
@@ -171,7 +175,18 @@ def main() -> None:
         "alpha": "source alpha resized; not inferred" if alpha is not None else "none",
     }
     receipt_path = args.output.with_name(args.output.name + ".upscale.json")
-    receipt_path.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
+    receipt_temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=args.output.parent, suffix=".json", delete=False) as temporary:
+            receipt_temporary = Path(temporary.name)
+            temporary.write((json.dumps(receipt, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(receipt_temporary, receipt_path)  # Replaces a symlink itself; never follows it.
+        receipt_temporary = None
+    finally:
+        if receipt_temporary is not None:
+            receipt_temporary.unlink(missing_ok=True)
     print(json.dumps({"output": str(args.output), "receipt": str(receipt_path),
                       "outputSHA256": receipt["outputSHA256"]}))
 

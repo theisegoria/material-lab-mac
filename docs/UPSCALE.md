@@ -6,7 +6,7 @@ The Mac CLI can pass an image through a local pre-upscaler before deriving maps.
 
 ## Existing pinned Real-ESRGAN tree
 
-`scripts/pinned_realesrgan.py` is a standalone offline adapter for a separately pinned Real-ESRGAN vendor tree. It does not copy model weights, install dependencies, fetch files, or alter the vendor project. It verifies the vendor manifest and installed wheel versions, uses its pinned virtual environment and x2plus or x4plus model, converts embedded input ICC profiles to sRGB, then writes a tagged sRGB PNG and a hash-rich receipt. CPU and MPS are explicit choices; MPS does not silently fall back to CPU. Tiled inference uses overlap padding, and every output still needs visual review for artificial detail and tile seams.
+`scripts/pinned_realesrgan.py` is a standalone offline adapter for a separately pinned Real-ESRGAN vendor tree. It does not copy model weights, install dependencies, fetch files, or alter the vendor project. It verifies the vendor manifest and installed wheel versions, uses its pinned virtual environment and x2plus or x4plus model, converts embedded input ICC profiles to sRGB, then writes a tagged sRGB PNG and a hash-rich receipt. CPU and MPS are explicit choices; MPS does not silently fall back to CPU. The adapter requires Python isolated mode (`-I`) so `PYTHONPATH` cannot shadow pinned packages. Tiled inference uses overlap padding; custom tile and pad values must both be even for x2 to preserve pixel-unshuffle phase. Every output still needs visual review for artificial detail and tile seams.
 
 For example, with a local vendor project that contains `script/vendor_realesrgan.py`, `third_party/realesrgan/.venv`, and its pinned model weights:
 
@@ -17,6 +17,7 @@ VENDOR_PROJECT_ROOT='/absolute/vendor-project'
   --input ./source-512.png --output ./weathered-stone.pbrmaterial \
   --label 'weathered stone' --preset stone \
   --pre-upscale-exec "$PINNED_PYTHON" \
+  --pre-upscale-arg -I \
   --pre-upscale-arg "$PWD/scripts/pinned_realesrgan.py" \
   --pre-upscale-arg --vendor-project-root --pre-upscale-arg "$VENDOR_PROJECT_ROOT" \
   --pre-upscale-arg --input --pre-upscale-arg '{input}' \
@@ -28,7 +29,7 @@ VENDOR_PROJECT_ROOT='/absolute/vendor-project'
 The adapter also runs directly as a two-step workflow:
 
 ```sh
-"$PINNED_PYTHON" scripts/pinned_realesrgan.py \
+"$PINNED_PYTHON" -I scripts/pinned_realesrgan.py \
   --vendor-project-root "$VENDOR_PROJECT_ROOT" \
   --input ./source-512.png --output ./source-1024.png --scale 2 --device cpu
 ./build/core/material-lab --input ./source-1024.png \
