@@ -1,35 +1,87 @@
 # Derivation model and provenance
 
-Material Lab 1.0.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations and preserves the sRGB color image for albedo output.
+Material Lab 1.1.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations. Unless the recipe asks for delighting or tiling, the albedo output is a byte-exact copy of the source.
 
 ## What the source can and cannot tell us
 
-The height and normal of a photographed surface cannot be uniquely recovered from one color image. Lighting, pigment, specular reflection, shadows, and shape can create the same RGB pattern. MaterIA explicitly combines learned normal inference with integration and heuristic map construction; it also notes the difficulty of inferring roughness from a single observation. Material Lab therefore calls its geometry pseudo-height and its AO heightfield AO. Presets are editable priors, not material recognition.
+The height and normal of a photographed surface cannot be uniquely recovered from one color image. Lighting, pigment, specular reflection, shadows, and shape can create the same RGB pattern. MaterIA combines learned normal inference with integration and heuristic map construction. It also notes how hard it is to infer roughness from a single observation. Material Lab therefore calls its geometry pseudo-height and its AO heightfield AO. Presets are editable priors, not material recognition.
 
 References:
 
 - [MaterIA: Single Image High-Resolution Material Capture in the Wild](https://perso.telecom-paristech.fr/boubek/papers/MaterIA/MaterIA_lowres.pdf)
-- [Horizon-Based Ambient Occlusion](https://developer.download.nvidia.com/presentations/2008/SIGGRAPH/HBAO_SIG08b.pdf)
+- Jimenez et al. 2016, *Practical Real-Time Strategies for Accurate Indirect Occlusion* (GTAO), and Intel's MIT-licensed [XeGTAO](https://github.com/GameTechDev/XeGTAO) reference for the bent-normal form
+- Heitz & Neyret 2018, *High-Performance By-Example Noise using a Histogram-Preserving Blending Operator* (HPG)
 - [glTF 2.0 material texture conventions](https://github.com/KhronosGroup/glTF/blob/main/specification/2.0/Specification.adoc)
 
-## Algorithm
+## Algorithm (1.1.0)
 
-1. Convert each source sRGB channel to linear light and compute Rec. 709 luminance.
-2. Apply three separable box filters at radii 2, 8, and 24 pixels. Differences between the source and these scales form high, middle, and coarse relief signals. The chosen preset weights these bands. Flat is the default for unknown or painted materials and produces no inferred relief.
-3. An optional 8-bit relief suppression mask scales inferred signal (0 removes it; 255 retains it). An optional authored 16-bit height replaces inference altogether. Otherwise the signal is scaled by a user-specified amplitude and polarity around neutral 0.5, then clamped and exported as normalized R16 height.
-4. Centered differences of height form a normalized tangent-space normal. Encoding follows +Y / green-up tangent convention: as image V increases downwards, a rising height makes the encoded green channel decrease.
-5. Eight azimuths with six samples per azimuth form a bounded heightfield horizon estimate. AO is 1 for an open surface. A visibility-weighted direction estimates an optional bent normal. This is a local, discrete approximation informed by HBAO, not a physically measured occlusion field or a direct implementation of the HBAO renderer.
-6. A small local height average and gradient provide cavity, convexity, slope, and edge diagnostics.
-7. Perceptual roughness begins with the selected material prior. Optional, bounded slope modulation adds restrained spatial variation. Metalness is never inferred: ORM is available only after explicit metalness assignment. The ORM channels are R = AO, G = perceptual roughness, B = assigned metalness.
+1. **Source conditioning (optional, off by default).**
+   - *Equalize* (`albedo_equalize`, 0–1) delights the image. It divides linear RGB by a smooth luminance field whose Gaussian scale is about 1/8 of the tile, pulls it toward the image mean luminance, and raises the gain to the chosen strength. Hue is preserved and the gain is clamped to 0.25–4×.
+   - *Seamless* (`seamless_blend`, 0–0.45 of the width per edge) blends each axis with a half-period offset copy. The blend is histogram-preserving (Heitz & Neyret):
+     - Each linear channel is Gaussianized through its empirical CDF.
+     - Values are blended as `((1−w)·a + w·b) / √((1−w)² + w²)` and mapped back.
+     - This keeps contrast and the value distribution, where a linear cross-fade washes them out.
+     - Pixels outside the blend zone round-trip exactly.
+   - Equalize runs before tiling, so lighting gradients do not become seams. Pseudo-height uses the conditioned image.
+2. **Relief bands.** Compute Rec. 709 luminance in linear light. Apply Gaussian-approximating filters (three box passes each) at scales equivalent to 2, 8, and 24 pixel boxes. The differences between successive scales form the high, middle, and coarse relief bands, and the chosen preset weights them. Flat is the default for unknown or painted materials; it produces no inferred relief.
+3. **Height.** An optional 8-bit relief mask scales the inferred signal (0 removes it; 255 keeps it). An optional authored 16-bit height replaces inference altogether. Otherwise the signal is scaled by the amplitude and polarity around neutral 0.5, clamped, and exported as normalized R16 height.
+4. **Normal.** A Scharr derivative of height, which is more rotationally symmetric than central differences, gives the tangent normal `normalize(−∂h/∂x·8s, −∂h/∂y·8s, 1)`, with `s = normal_strength`.
+   - The default encoding is **+Y / green-up** (glTF, OpenGL, Blender). Image rows grow downward, so height that rises toward the bottom of the image faces up and encodes green > 128.
+   - `normal_y_down` encodes −Y / green-down (DirectX, Unreal) by flipping only green.
+   - **1.0.0 bundles** encoded green-down while claiming +Y. Re-derive them, or flip green on import.
+5. **Ambient occlusion.** GTAO's cosine-weighted slice integral is evaluated on the heightfield, viewed from +Z:
+   - Sampling: eight two-sided slices (16 horizon directions) and eight bilinear taps per side, placed exactly on each slice line.
+   - Horizons are clamped to the normal's hemisphere.
+   - Each pixel is normalized by its own unoccluded integral, so open planes of any slope are exactly 1.
+   - The AO geometry sees height × 32 × `ao_strength` pixels. It is art-directable separately from the normal response. `ao_radius_pixels` bounds the horizon search.
+   - The optional bent normal uses the analytic XeGTAO cosine-weighted form.
+   - Every cosine and sine is derived through exact angle-addition identities. A polynomial acos (error < 7e-5 rad) supplies only the angle-linear term.
+6. **Diagnostics.** A small Gaussian local height average and the gradient provide the cavity, convexity, slope, and edge maps.
+7. **Roughness.** Perceptual roughness starts from the selected material prior. Optional variation follows local luminance micro-contrast, normalized to the image mean: grainy areas read rougher and smooth areas glossier. The image mean stays at the prior, and variation is bounded to ±0.25 × `roughness_variation`.
+8. **Metalness.** Metalness is never inferred. ORM is available only after metalness is explicitly assigned. Its channels are R = AO, G = perceptual roughness, B = assigned metalness.
 
-The tile option wraps all local filters and samples. Value and first-gradient differences across opposite edges are reported separately for height; linear-light albedo edge differences are also reported. Wrapping a filter does not make a non-seamless source seamless.
+The tile option wraps all local filters and samples. Opposite-edge differences are reported separately: height value and first-gradient differences, and linear-light albedo differences. Wrapping a filter does not make a non-seamless source seamless; use `seamless_blend` for that.
+
+The core derives in parallel across rows, using worker threads plus the calling thread. Results are bit-identical to a serial run, and the progress callback only runs on the calling thread. A 1024² stone derivation with bent normals takes about 0.1 s in an optimized build on an M5 (10 cores).
 
 ## Exports
 
-Albedo is sRGB PNG. Tangent normal is linear RGBA8 PNG with alpha 255. Roughness, AO, and diagnostic scalar maps are replicated grayscale linear RGBA8 PNGs with alpha 255. Height is normalized single-channel 16-bit PNG. Map and source hashes, algorithm version, recipe parameters, semantic label, map encodings, and provenance belong in the material manifest. A bundle should be reviewed before an engine-specific import.
+- Albedo is an sRGB PNG.
+- The tangent normal is a linear RGBA8 PNG with alpha 255. The manifest records its convention (`normal_convention`: `+Y` or `-Y`).
+- Roughness, AO, and the diagnostic scalar maps are replicated grayscale linear RGBA8 PNGs with alpha 255.
+- Height is a normalized single-channel 16-bit PNG.
+
+The material manifest holds map and source hashes, the algorithm version, every recipe parameter, the semantic label, map encodings, and provenance. Review a bundle before any engine-specific import.
 
 The source alone does not determine intrinsic roughness, metalness, specular F0, emission, opacity, thickness, physical depth, or gameplay properties. Normal-variance filtering for rendering is an engine concern and is kept separate from authored roughness.
 
+## Learned estimators: status and plan
+
+Single-image SVBRDF estimators now lead the state of the art in *quality*. Examples are ControlMat, MaterialPicker, DualMat, and HiMat. None has permissively licensed weights, and they generate plausible maps rather than deterministic estimates.
+
+The most practical permissive learned stage is **MoGe-2 ViT-S normals** (MIT code and weights). It would be an optional input:
+
+- Tiled Core ML inference, with only the high-pass part kept (scene-trained models add global tilt).
+- Blended with the analytic gradients.
+- Integrated to height, then fed through the same GTAO, roughness, and diagnostic stages.
+- The manifest records the model hash and compute unit, because Neural Engine fp16 output can vary by chip.
+
+Several alternatives are use-restricted or unclear and are avoided without legal review: Stable Diffusion-derived normal and delight models (OpenRAIL++ lineage), DSINE, non-commercial Depth Anything variants, and Marigold weights. This path is not implemented yet.
+
 ## Scope of validation
 
-Synthetic tests check flat color, painted checkerboard, authored bump and pit, ramps, mask suppression, normal sign and length, ORM gating, cancellation, and malformed input. CLI validation checks manifest fields and map hashes. GUI, simulator, physical camera, and device link tests have distinct evidence levels; a build does not validate a real iPhone camera or network permission flow.
+Core tests always run with assertions, including Release builds. They check:
+
+- flat color, painted checkerboard, and authored bump and pit;
+- the +Y ramp convention and the DirectX flip;
+- zero normal strength;
+- normal sign and length;
+- unoccluded tilted planes, and pit occlusion;
+- ORM gating and mask suppression;
+- seam removal, and contrast preservation in the histogram blend zone;
+- equalization of a lighting ramp;
+- roughness following micro-contrast;
+- threaded determinism at 1K;
+- cancellation, malformed input, and out-of-range parameters.
+
+CLI validation checks manifest fields and map hashes. GUI, simulator, physical camera, and device link tests have distinct evidence levels; a build does not validate a real iPhone camera or network permission flow.

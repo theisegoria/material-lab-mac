@@ -5,6 +5,8 @@ import hashlib
 import json
 import pathlib
 import struct
+import sys
+import time
 import zlib
 
 
@@ -18,7 +20,15 @@ def main():
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--bad-receipt", action="store_true")
+    parser.add_argument("--fail", action="store_true", help="print a stdout marker and exit 3")
+    parser.add_argument("--sleep", type=float, default=0, help="stall before working (timeout tests)")
     args = parser.parse_args()
+    print("STUB-STDOUT-MARKER", flush=True)
+    if args.fail:
+        print("stub failure requested", file=sys.stderr)
+        raise SystemExit(3)
+    if args.sleep:
+        time.sleep(args.sleep)
     source = pathlib.Path(args.input).read_bytes()
     if not source.startswith(b"\x89PNG\r\n\x1a\n"):
         raise ValueError("stub requires PNG")

@@ -2,93 +2,223 @@
 #import <ImageIO/ImageIO.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <Accelerate/Accelerate.h>
+#include <dispatch/dispatch.h>
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
-#include <cerrno>
-#include <cstring>
 
 extern char **environ;
 namespace fs = std::filesystem;
 namespace {
-NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()]; }
-std::string str(NSString* s) { return s ? std::string([s UTF8String]) : std::string(); }
-std::string hash(NSData* data) {
+
+// ---------------------------------------------------------------------------------------------
+// Signals: SIGINT/SIGTERM set a flag that derivation, batch and the pre-upscale wait loop honour, so
+// temporary directories are removed by normal unwinding. A second signal restores the default action.
+volatile sig_atomic_t gInterrupted = 0;
+volatile sig_atomic_t gChildGroup = 0;
+void onSignal(int signal) {
+    if (gInterrupted) { ::signal(signal, SIG_DFL); ::raise(signal); return; }
+    gInterrupted = signal;
+    if (gChildGroup > 0) ::kill(-static_cast<pid_t>(gChildGroup), signal);
+}
+void installSignalHandlers() {
+    struct sigaction action{};
+    action.sa_handler = onSignal;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGINT, &action, nullptr);
+    sigaction(SIGTERM, &action, nullptr);
+}
+struct Interrupted : std::runtime_error { using std::runtime_error::runtime_error; };
+void checkInterrupted() { if (gInterrupted) throw Interrupted("interrupted by signal"); }
+
+// ---------------------------------------------------------------------------------------------
+// Conversions and JSON type checks. Every JSON value is type-checked before any message send.
+NSString* ns(const std::string& s) {
+    NSString* value = [[NSString alloc] initWithBytes:s.data() length:s.size() encoding:NSUTF8StringEncoding];
+    if (!value) throw std::runtime_error("text is not valid UTF-8");
+    return value;
+}
+std::string str(NSString* s) {
+    if (!s) return std::string();
+    const char* utf8 = [s UTF8String];
+    return utf8 ? std::string(utf8) : std::string();
+}
+NSString* asString(id value) { return [value isKindOfClass:[NSString class]] ? value : nil; }
+NSDictionary* asDictionary(id value) { return [value isKindOfClass:[NSDictionary class]] ? value : nil; }
+NSArray* asArray(id value) { return [value isKindOfClass:[NSArray class]] ? value : nil; }
+bool isBoolean(id value) {
+    return [value isKindOfClass:[NSNumber class]] && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+}
+NSNumber* asNumber(id value) { // Numeric JSON value that is not a boolean.
+    return [value isKindOfClass:[NSNumber class]] && !isBoolean(value) ? value : nil;
+}
+bool finiteNumber(id value, double minimum, double maximum) {
+    NSNumber* number = asNumber(value);
+    if (!number) return false;
+    double n = number.doubleValue;
+    return std::isfinite(n) && n >= minimum && n <= maximum;
+}
+bool exactNumber(id value, double expected) { return finiteNumber(value, expected, expected); }
+bool unitPolarity(id value) {
+    NSNumber* number = asNumber(value);
+    return number && (number.doubleValue == 1.0 || number.doubleValue == -1.0);
+}
+bool nonemptyString(id value, NSUInteger maximum) {
+    NSString* s = asString(value);
+    if (!s) return false;
+    NSString* trimmed = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return trimmed.length > 0 && s.length <= maximum;
+}
+std::string hash(const void* bytes, size_t length) {
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, static_cast<CC_LONG>(data.length), digest);
+    CC_SHA256(bytes, static_cast<CC_LONG>(length), digest);
     const char* hex = "0123456789abcdef";
     std::string out; out.reserve(64);
     for (auto c : digest) { out.push_back(hex[c >> 4]); out.push_back(hex[c & 15]); }
     return out;
 }
+std::string hash(NSData* data) { return hash(data.bytes, data.length); }
+bool validSHA256String(id value) {
+    NSString* digest = asString(value);
+    if (!digest || digest.length != 64) return false;
+    for (NSUInteger i = 0; i < digest.length; ++i) {
+        unichar c = [digest characterAtIndex:i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+    }
+    return true;
+}
+bool sameDigest(id a, id b) { // Case-insensitive; both must be well-formed.
+    return validSHA256String(a) && validSHA256String(b) &&
+           [(NSString*)a caseInsensitiveCompare:(NSString*)b] == NSOrderedSame;
+}
 NSData* dataAt(const fs::path& path) { return [NSData dataWithContentsOfFile:ns(path.string())]; }
+NSData* boundedDataAt(const fs::path& path, uintmax_t maximum) {
+    std::error_code ec;
+    if (fs::is_symlink(path, ec) || !fs::is_regular_file(path, ec) || fs::file_size(path, ec) > maximum || ec) return nil;
+    return dataAt(path);
+}
 std::string sanitized(std::string raw) {
     for (char& c : raw) if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_')) c = '_';
     while (!raw.empty() && raw.front() == '_') raw.erase(raw.begin());
     return raw.empty() ? "material" : raw;
 }
+void warn(const std::string& message) { std::cerr << "material-lab: warning: " << message << '\n'; }
+
+// ---------------------------------------------------------------------------------------------
+// Decoding. Orientation (EXIF/TIFF 1..8) is applied so the CLI matches PIL exif_transpose. Pixels are
+// decoded unpremultiplied through vImage; the premultiplied CoreGraphics path is only a fallback.
 struct Image { std::vector<uint8_t> pixels; uint32_t width = 0, height = 0; };
-Image decodeSRGB(const fs::path& path) {
-    NSData* bytes = dataAt(path);
-    if (!bytes) throw std::runtime_error("cannot read input image: " + path.string());
-    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)bytes, nullptr);
-    if (!source) throw std::runtime_error("ImageIO cannot open input image");
-    CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
-    CFRelease(source);
-    if (!image) throw std::runtime_error("ImageIO cannot decode input image");
-    Image out;
-    out.width = static_cast<uint32_t>(CGImageGetWidth(image));
-    out.height = static_cast<uint32_t>(CGImageGetHeight(image));
-    if (out.width < 2 || out.width > 4096 || out.height != out.width) {
-        CGImageRelease(image); throw std::runtime_error("input must be square and 2..4096 pixels");
-    }
-    out.pixels.resize(static_cast<size_t>(out.width) * out.height * 4);
-    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGBitmapInfo info = static_cast<CGBitmapInfo>(static_cast<uint32_t>(kCGImageAlphaPremultipliedLast) | static_cast<uint32_t>(kCGBitmapByteOrder32Big));
-    CGContextRef context = CGBitmapContextCreate(out.pixels.data(), out.width, out.height,
-                                                 8, static_cast<size_t>(out.width) * 4, space, info);
-    CGColorSpaceRelease(space);
-    if (!context) { CGImageRelease(image); throw std::runtime_error("cannot allocate sRGB conversion context"); }
-    CGContextSetBlendMode(context, kCGBlendModeCopy);
-    CGContextDrawImage(context, CGRectMake(0, 0, out.width, out.height), image);
-    CGContextRelease(context);
-    CGImageRelease(image);
-    // CoreGraphics stores premultiplied RGBA; the core accepts straight RGBA.
-    for (size_t i = 0; i < out.pixels.size(); i += 4) {
-        unsigned alpha = out.pixels[i + 3];
-        if (alpha == 0) { out.pixels[i] = out.pixels[i + 1] = out.pixels[i + 2] = 0; continue; }
-        if (alpha < 255) for (int c = 0; c < 3; ++c)
-            out.pixels[i + c] = static_cast<uint8_t>(std::min(255u, (out.pixels[i + c] * 255u + alpha / 2) / alpha));
+std::vector<uint8_t> orient(const std::vector<uint8_t>& in, uint32_t w, uint32_t h, int orientation,
+                            uint32_t& outW, uint32_t& outH) {
+    const bool swap = orientation >= 5 && orientation <= 8;
+    outW = swap ? h : w; outH = swap ? w : h;
+    if (orientation <= 1 || orientation > 8) return in;
+    std::vector<uint8_t> out(in.size());
+    for (uint32_t y = 0; y < outH; ++y) for (uint32_t x = 0; x < outW; ++x) {
+        uint32_t sx = x, sy = y; // Source pixel displayed at (x, y).
+        switch (orientation) {
+        case 2: sx = w - 1 - x; sy = y; break;
+        case 3: sx = w - 1 - x; sy = h - 1 - y; break;
+        case 4: sx = x; sy = h - 1 - y; break;
+        case 5: sx = y; sy = x; break;
+        case 6: sx = y; sy = h - 1 - x; break;
+        case 7: sx = w - 1 - y; sy = h - 1 - x; break;
+        case 8: sx = w - 1 - y; sy = x; break;
+        default: break;
+        }
+        std::memcpy(&out[(static_cast<size_t>(y) * outW + x) * 4], &in[(static_cast<size_t>(sy) * w + sx) * 4], 4);
     }
     return out;
 }
+Image decodeSRGB(NSData* bytes) {
+    if (!bytes.length) throw std::runtime_error("input image is empty or unreadable");
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)bytes, nullptr);
+    if (!source) throw std::runtime_error("ImageIO cannot open input image");
+    int orientation = 1;
+    if (CFDictionaryRef properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr)) {
+        NSNumber* value = asNumber(((__bridge NSDictionary*)properties)[(__bridge NSString*)kCGImagePropertyOrientation]);
+        if (value && value.intValue >= 1 && value.intValue <= 8) orientation = value.intValue;
+        CFRelease(properties);
+    }
+    NSDictionary* options = @{(__bridge NSString*)kCGImageSourceShouldCacheImmediately: @YES};
+    CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (!image) throw std::runtime_error("ImageIO cannot decode input image");
+    const uint32_t w = static_cast<uint32_t>(CGImageGetWidth(image)), h = static_cast<uint32_t>(CGImageGetHeight(image));
+    if (w < 2 || w > 4096 || h != w) {
+        CGImageRelease(image); throw std::runtime_error("input must be square and 2..4096 pixels");
+    }
+    std::vector<uint8_t> pixels(static_cast<size_t>(w) * h * 4);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    vImage_CGImageFormat format{};
+    format.bitsPerComponent = 8; format.bitsPerPixel = 32; format.colorSpace = space;
+    format.bitmapInfo = static_cast<CGBitmapInfo>(static_cast<uint32_t>(kCGImageAlphaLast) |
+                                                  static_cast<uint32_t>(kCGBitmapByteOrderDefault));
+    format.renderingIntent = kCGRenderingIntentDefault;
+    vImage_Buffer buffer{pixels.data(), h, w, static_cast<size_t>(w) * 4};
+    vImage_Error decoded = vImageBuffer_InitWithCGImage(&buffer, &format, nullptr, image, kvImageNoAllocate);
+    if (decoded != kvImageNoError) {
+        // Fallback: premultiplied CoreGraphics draw, then unpremultiply (loses colour under alpha 0).
+        CGBitmapInfo info = static_cast<CGBitmapInfo>(static_cast<uint32_t>(kCGImageAlphaPremultipliedLast) |
+                                                      static_cast<uint32_t>(kCGBitmapByteOrder32Big));
+        CGContextRef context = CGBitmapContextCreate(pixels.data(), w, h, 8, static_cast<size_t>(w) * 4, space, info);
+        if (!context) { CGColorSpaceRelease(space); CGImageRelease(image); throw std::runtime_error("cannot allocate sRGB conversion context"); }
+        CGContextSetBlendMode(context, kCGBlendModeCopy);
+        CGContextDrawImage(context, CGRectMake(0, 0, w, h), image);
+        CGContextRelease(context);
+        for (size_t i = 0; i < pixels.size(); i += 4) {
+            unsigned alpha = pixels[i + 3];
+            if (alpha == 0) { pixels[i] = pixels[i + 1] = pixels[i + 2] = 0; continue; }
+            if (alpha < 255) for (int c = 0; c < 3; ++c)
+                pixels[i + c] = static_cast<uint8_t>(std::min(255u, (pixels[i + c] * 255u + alpha / 2) / alpha));
+        }
+    }
+    CGColorSpaceRelease(space);
+    CGImageRelease(image);
+    Image out;
+    out.pixels = orient(pixels, w, h, orientation, out.width, out.height);
+    return out;
+}
 std::vector<uint8_t> rawFile(const fs::path& path, size_t expected) {
-    NSData* data = dataAt(path);
+    NSData* data = boundedDataAt(path, expected);
     if (!data || data.length != expected) throw std::runtime_error("raw mask/height file has wrong byte length: " + path.string());
     return std::vector<uint8_t>(static_cast<const uint8_t*>(data.bytes),
                                 static_cast<const uint8_t*>(data.bytes) + data.length);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Options. --preset is applied first regardless of position; every other recipe flag overrides it.
 struct Options {
     fs::path input, output, catalog, validate, mask, heightOverride, preUpscaleExec;
     std::vector<std::string> preUpscaleArgs;
     std::string label, id;
     PBRLabRecipe recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    bool includeUnreviewed = false;
+    bool includeUnreviewed = false, keepGoing = false;
+    double preUpscaleTimeout = 600;
 };
 PBRLabPreset parsePreset(const std::string& s) {
     if (s == "flat") return PBRLabPresetFlat;
@@ -111,43 +241,74 @@ std::string presetName(PBRLabPreset p) {
 }
 float number(const std::string& s) {
     size_t parsed = 0;
-    float n = std::stof(s, &parsed);
+    float n = 0;
+    try { n = std::stof(s, &parsed); } catch (const std::exception&) { throw std::runtime_error("invalid number: " + s); }
     if (parsed != s.size() || !std::isfinite(n)) throw std::runtime_error("invalid number: " + s);
     return n;
 }
+constexpr const char* kUsage =
+    "material-lab --input IMAGE --output BUNDLE_DIR [--label TEXT --id ID] [recipe flags]\n"
+    "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed] [--keep-going]\n"
+    "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
+    "Recipe flags (--preset applies first, wherever it appears):\n"
+    "  --preset flat|stone|fabric|organic|coated-metal|bare-metal\n"
+    "  --height-strength 0..0.5  --polarity -1|1  --roughness 0..1  --roughness-variation 0..1\n"
+    "  --ao-radius 0..64  --ao-strength 0..4  --normal-strength 0..16  --normal-dx (green-down -Y normals)\n"
+    "  --equalize 0..1 (albedo delighting)  --seamless 0..0.45 (edge cross-fade)  --no-tile  --bent-normal\n"
+    "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
+    "Optional local pre-upscale: --pre-upscale-exec ABSOLUTE_EXECUTABLE --pre-upscale-arg ARG (repeat; include\n"
+    "  {input} and {output} placeholders) [--pre-upscale-timeout SECONDS, default 600]. No shell or network is\n"
+    "  invoked by Material Lab.\n";
 Options parse(int argc, const char** argv) {
     Options o;
+    std::optional<PBRLabPreset> preset;
+    std::vector<std::function<void(PBRLabRecipe&)>> overrides;
     for (int i = 1; i < argc; ++i) {
         std::string flag = argv[i];
         auto value = [&]() -> std::string { if (++i >= argc) throw std::runtime_error("missing value for " + flag); return argv[i]; };
+        auto recipeNumber = [&](float PBRLabRecipe::*field) { float n = number(value()); overrides.push_back([=](PBRLabRecipe& r) { r.*field = n; }); };
         if (flag == "--input") o.input = value();
         else if (flag == "--output") o.output = value();
         else if (flag == "--catalog") o.catalog = value();
         else if (flag == "--validate") o.validate = value();
         else if (flag == "--id") o.id = value();
         else if (flag == "--label") o.label = value();
-        else if (flag == "--preset") o.recipe = PBRLabDefaultRecipe(parsePreset(value()));
-        else if (flag == "--height-strength") o.recipe.height_strength = number(value());
-        else if (flag == "--polarity") o.recipe.height_polarity = static_cast<int32_t>(number(value()));
-        else if (flag == "--roughness") o.recipe.roughness_base = number(value());
-        else if (flag == "--roughness-variation") o.recipe.roughness_variation = number(value());
-        else if (flag == "--ao-radius") o.recipe.ao_radius_pixels = number(value());
-        else if (flag == "--no-tile") o.recipe.tile_wrap = 0;
-        else if (flag == "--bent-normal") o.recipe.bent_normal_enabled = 1;
-        else if (flag == "--metalness") { o.recipe.assigned_metalness_enabled = 1; o.recipe.assigned_metalness = number(value()); }
+        else if (flag == "--preset") preset = parsePreset(value());
+        else if (flag == "--height-strength") recipeNumber(&PBRLabRecipe::height_strength);
+        else if (flag == "--polarity") {
+            float n = number(value());
+            if (n != 1.0f && n != -1.0f) throw std::runtime_error("--polarity must be 1 or -1");
+            overrides.push_back([=](PBRLabRecipe& r) { r.height_polarity = static_cast<int32_t>(n); });
+        }
+        else if (flag == "--roughness") recipeNumber(&PBRLabRecipe::roughness_base);
+        else if (flag == "--roughness-variation") recipeNumber(&PBRLabRecipe::roughness_variation);
+        else if (flag == "--ao-radius") recipeNumber(&PBRLabRecipe::ao_radius_pixels);
+        else if (flag == "--ao-strength") recipeNumber(&PBRLabRecipe::ao_strength);
+        else if (flag == "--normal-strength") recipeNumber(&PBRLabRecipe::normal_strength);
+        else if (flag == "--equalize") recipeNumber(&PBRLabRecipe::albedo_equalize);
+        else if (flag == "--seamless") recipeNumber(&PBRLabRecipe::seamless_blend);
+        else if (flag == "--normal-dx") overrides.push_back([](PBRLabRecipe& r) { r.normal_y_down = 1; });
+        else if (flag == "--no-tile") overrides.push_back([](PBRLabRecipe& r) { r.tile_wrap = 0; });
+        else if (flag == "--bent-normal") overrides.push_back([](PBRLabRecipe& r) { r.bent_normal_enabled = 1; });
+        else if (flag == "--metalness") {
+            float n = number(value());
+            overrides.push_back([=](PBRLabRecipe& r) { r.assigned_metalness_enabled = 1; r.assigned_metalness = n; });
+        }
         else if (flag == "--relief-mask-r8") o.mask = value();
         else if (flag == "--height-override-r16le") o.heightOverride = value();
         else if (flag == "--include-unreviewed") o.includeUnreviewed = true;
+        else if (flag == "--keep-going") o.keepGoing = true;
         else if (flag == "--pre-upscale-exec") o.preUpscaleExec = value();
         else if (flag == "--pre-upscale-arg") o.preUpscaleArgs.push_back(value());
-        else if (flag == "--help") {
-            std::cout << "material-lab --input IMAGE --output BUNDLE_DIR [--label TEXT --id ID --preset flat|stone|fabric|organic|coated-metal|bare-metal] [--height-strength 0..0.5 --polarity -1|1 --roughness 0..1 --roughness-variation 0..1 --ao-radius 0..64 --no-tile --bent-normal --metalness 0..1 --relief-mask-r8 RAW --height-override-r16le RAW]\n"
-                         "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed]\n"
-                         "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
-                         "Optional local pre-upscale: --pre-upscale-exec ABSOLUTE_EXECUTABLE --pre-upscale-arg ARG (repeat; include {input} and {output} placeholders). No shell or network is invoked by Material Lab.\n";
-            std::exit(0);
-        } else throw std::runtime_error("unknown option: " + flag);
+        else if (flag == "--pre-upscale-timeout") {
+            o.preUpscaleTimeout = number(value());
+            if (o.preUpscaleTimeout <= 0 || o.preUpscaleTimeout > 86400) throw std::runtime_error("--pre-upscale-timeout must be 0..86400 seconds");
+        }
+        else if (flag == "--help") { std::cout << kUsage; std::exit(0); }
+        else throw std::runtime_error("unknown option: " + flag);
     }
+    o.recipe = PBRLabDefaultRecipe(preset.value_or(PBRLabPresetFlat));
+    for (auto& apply : overrides) apply(o.recipe);
     if (!o.validate.empty()) {
         if (!o.input.empty() || !o.catalog.empty() || !o.output.empty() ||
             !o.preUpscaleExec.empty() || !o.preUpscaleArgs.empty())
@@ -170,82 +331,139 @@ Options parse(int argc, const char** argv) {
     }
     return o;
 }
-NSArray<NSDictionary*>* mapDefinitions() {
-    return @[
-        @{@"kind": @(PBRLabMapAlbedo), @"name": @"albedo", @"provenance": @"source_color_converted_to_srgb"},
-        @{@"kind": @(PBRLabMapHeight), @"name": @"height", @"provenance": @"estimated_or_authored_height"},
-        @{@"kind": @(PBRLabMapNormal), @"name": @"normal", @"provenance": @"derived_from_pseudo_height"},
-        @{@"kind": @(PBRLabMapRoughness), @"name": @"roughness", @"provenance": @"artist_prior_with_optional_height_variation"},
-        @{@"kind": @(PBRLabMapAO), @"name": @"ao", @"provenance": @"heightfield_horizon_estimate"},
-        @{@"kind": @(PBRLabMapCavity), @"name": @"cavity", @"provenance": @"heightfield_diagnostic"},
-        @{@"kind": @(PBRLabMapConvexity), @"name": @"convexity", @"provenance": @"heightfield_diagnostic"},
-        @{@"kind": @(PBRLabMapSlope), @"name": @"slope", @"provenance": @"heightfield_diagnostic"},
-        @{@"kind": @(PBRLabMapEdge), @"name": @"edge", @"provenance": @"heightfield_diagnostic"},
-        @{@"kind": @(PBRLabMapBentNormal), @"name": @"bent_normal", @"provenance": @"heightfield_horizon_estimate"},
-        @{@"kind": @(PBRLabMapORM), @"name": @"orm", @"provenance": @"estimated_ao_artist_roughness_artist_assigned_metalness"}
-    ];
+
+// ---------------------------------------------------------------------------------------------
+// Map roles shared by writer and validator.
+struct MapRole { PBRLabMapKind kind; const char* name; const char* provenance; const char* format; };
+constexpr std::array<MapRole, 11> kMapRoles{{
+    {PBRLabMapAlbedo, "albedo", "source_color_converted_to_srgb", "rgba8_srgb_png"},
+    {PBRLabMapHeight, "height", "estimated_or_authored_height", "r16_unorm_png"},
+    {PBRLabMapNormal, "normal", "derived_from_pseudo_height", "rgba8_linear_png"},
+    {PBRLabMapRoughness, "roughness", "artist_prior_with_optional_height_variation", "rgba8_linear_png"},
+    {PBRLabMapAO, "ao", "heightfield_horizon_estimate", "rgba8_linear_png"},
+    {PBRLabMapCavity, "cavity", "heightfield_diagnostic", "rgba8_linear_png"},
+    {PBRLabMapConvexity, "convexity", "heightfield_diagnostic", "rgba8_linear_png"},
+    {PBRLabMapSlope, "slope", "heightfield_diagnostic", "rgba8_linear_png"},
+    {PBRLabMapEdge, "edge", "heightfield_diagnostic", "rgba8_linear_png"},
+    {PBRLabMapBentNormal, "bent_normal", "heightfield_horizon_estimate", "rgba8_linear_png"},
+    {PBRLabMapORM, "orm", "estimated_ao_artist_roughness_artist_assigned_metalness", "rgba8_linear_png"},
+}};
+constexpr size_t kRequiredMapCount = 9; // The first nine roles are always present.
+const MapRole* roleNamed(NSString* name) {
+    for (const auto& role : kMapRoles) if ([name isEqualToString:@(role.name)]) return &role;
+    return nullptr;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Pre-upscale subprocess.
 struct ScratchDirectory {
     fs::path path;
     ~ScratchDirectory() {
         if (!path.empty()) { std::error_code ignored; fs::remove_all(path, ignored); }
     }
 };
-std::string replaceToken(std::string value, const std::string& token, const std::string& replacement) {
-    size_t at = 0;
-    while ((at = value.find(token, at)) != std::string::npos) {
-        value.replace(at, token.size(), replacement);
-        at += replacement.size();
+std::string substitute(const std::string& value, const std::string& input, const std::string& output) {
+    std::string out;
+    for (size_t i = 0; i < value.size();) { // Single pass: substituted text is never rescanned.
+        if (value.compare(i, 7, "{input}") == 0) { out += input; i += 7; }
+        else if (value.compare(i, 8, "{output}") == 0) { out += output; i += 8; }
+        else out.push_back(value[i++]);
     }
-    return value;
+    return out;
 }
-fs::path runPreUpscale(const fs::path& inputPath, const Options& options,
-                       ScratchDirectory& scratch, NSMutableDictionary* __strong *provenance) {
+struct SpawnResources {
+    posix_spawnattr_t attributes; posix_spawn_file_actions_t actions;
+    SpawnResources() { posix_spawnattr_init(&attributes); posix_spawn_file_actions_init(&actions); }
+    ~SpawnResources() { posix_spawnattr_destroy(&attributes); posix_spawn_file_actions_destroy(&actions); }
+};
+void sleepMilliseconds(long ms) { timespec t{ms / 1000, (ms % 1000) * 1000000L}; nanosleep(&t, nullptr); }
+// Returns the waitpid status; terminates the child's process group on timeout or interruption.
+int runChild(const fs::path& executable, std::vector<std::string>& arguments, double timeoutSeconds) {
+    std::vector<char*> argv;
+    for (auto& arg : arguments) argv.push_back(arg.data());
+    argv.push_back(nullptr);
+    SpawnResources spawn;
+    short flags = POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
+    posix_spawnattr_setflags(&spawn.attributes, flags);
+    posix_spawnattr_setpgroup(&spawn.attributes, 0);
+    sigset_t defaults, empty;
+    sigemptyset(&defaults); sigaddset(&defaults, SIGINT); sigaddset(&defaults, SIGTERM); sigaddset(&defaults, SIGPIPE);
+    sigemptyset(&empty);
+    posix_spawnattr_setsigdefault(&spawn.attributes, &defaults);
+    posix_spawnattr_setsigmask(&spawn.attributes, &empty);
+    posix_spawn_file_actions_addopen(&spawn.actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_adddup2(&spawn.actions, STDERR_FILENO, STDOUT_FILENO); // Keep our stdout machine-readable.
+    posix_spawn_file_actions_addinherit_np(&spawn.actions, STDERR_FILENO);
+    checkInterrupted();
+    pid_t child = 0;
+    int spawned = posix_spawn(&child, executable.c_str(), &spawn.actions, &spawn.attributes, argv.data(), environ);
+    if (spawned != 0) throw std::runtime_error("pre-upscale spawn failed: " + std::string(std::strerror(spawned)));
+    gChildGroup = child;
+    const auto start = std::chrono::steady_clock::now();
+    std::optional<std::chrono::steady_clock::time_point> termSent;
+    std::string failure;
+    int status = 0;
+    for (;;) {
+        pid_t done = waitpid(child, &status, WNOHANG);
+        if (done == child) break;
+        if (done < 0 && errno != EINTR) { failure = "pre-upscale wait failed"; break; }
+        const auto now = std::chrono::steady_clock::now();
+        if (!termSent && (gInterrupted || std::chrono::duration<double>(now - start).count() > timeoutSeconds)) {
+            failure = gInterrupted ? "pre-upscale interrupted" : "pre-upscale timed out after " + std::to_string(timeoutSeconds) + " s";
+            ::kill(-child, SIGTERM);
+            termSent = now;
+        } else if (termSent && now - *termSent > std::chrono::seconds(5)) {
+            ::kill(-child, SIGKILL);
+        }
+        sleepMilliseconds(20);
+    }
+    gChildGroup = 0;
+    if (!failure.empty()) {
+        if (gInterrupted) throw Interrupted(failure);
+        throw std::runtime_error(failure);
+    }
+    return status;
+}
+struct PreUpscaleResult { NSData* processed = nil; NSMutableDictionary* provenance = nil; };
+PreUpscaleResult runPreUpscale(const fs::path& inputPath, NSData* original, const Options& options,
+                               ScratchDirectory& scratch) {
     scratch.path = fs::temp_directory_path() / ("material-lab-pre-upscale-" + str([[NSUUID UUID] UUIDString]));
     fs::create_directory(scratch.path);
-    fs::path input = fs::absolute(inputPath);
-    fs::path output = scratch.path / "upscaled.png";
-    std::vector<std::string> arguments;
-    arguments.push_back(options.preUpscaleExec.string());
+    const fs::path input = fs::absolute(inputPath);
+    const fs::path output = scratch.path / "upscaled.png";
+    std::vector<std::string> arguments{options.preUpscaleExec.string()};
     NSMutableArray* templates = [NSMutableArray array];
     NSMutableArray* localFileHashes = [NSMutableArray array];
     for (const auto& arg : options.preUpscaleArgs) {
         [templates addObject:ns(arg)];
-        if (arg.find('{') == std::string::npos) {
+        // Only explicit paths are hashed; bare words such as "-I" or "stone" are never looked up in the cwd.
+        const bool pathLike = !arg.empty() && (arg.front() == '/' || arg.find('/') != std::string::npos);
+        if (pathLike && arg.find('{') == std::string::npos) {
             std::error_code ec;
             fs::path candidate = fs::absolute(arg, ec);
             if (!ec && fs::is_regular_file(candidate, ec) && !ec &&
                 fs::file_size(candidate, ec) <= 128ull * 1024 * 1024 && !ec) {
-                NSData* bytes = dataAt(candidate);
-                if (bytes) [localFileHashes addObject:@{@"path": ns(candidate.string()), @"sha256": ns(hash(bytes))}];
+                if (NSData* bytes = dataAt(candidate))
+                    [localFileHashes addObject:@{@"path": ns(candidate.filename().string()), @"sha256": ns(hash(bytes))}];
             }
         }
-        auto expanded = replaceToken(arg, "{input}", input.string());
-        arguments.push_back(replaceToken(expanded, "{output}", output.string()));
+        arguments.push_back(substitute(arg, input.string(), output.string()));
     }
-    std::vector<char*> argv;
-    for (auto& arg : arguments) argv.push_back(arg.data());
-    argv.push_back(nullptr);
-    pid_t child = 0;
-    int spawned = posix_spawn(&child, options.preUpscaleExec.c_str(), nullptr, nullptr, argv.data(), environ);
-    if (spawned != 0) throw std::runtime_error("pre-upscale spawn failed: " + std::string(std::strerror(spawned)));
-    int status = 0;
-    while (waitpid(child, &status, 0) < 0) {
-        if (errno == EINTR) continue;
-        throw std::runtime_error("pre-upscale wait failed");
-    }
+    NSData* tool = dataAt(options.preUpscaleExec);
+    if (!tool) throw std::runtime_error("cannot hash pre-upscale executable");
+    int status = runChild(options.preUpscaleExec, arguments, options.preUpscaleTimeout);
+    if (WIFSIGNALED(status))
+        throw std::runtime_error("pre-upscale process terminated by signal " + std::to_string(WTERMSIG(status)));
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        throw std::runtime_error("pre-upscale process failed with status " + std::to_string(status));
-    if (!fs::is_regular_file(output) || fs::is_symlink(output) || fs::file_size(output) == 0 ||
-        fs::file_size(output) > 128ull * 1024 * 1024)
+        throw std::runtime_error("pre-upscale process exited with status " + std::to_string(WEXITSTATUS(status)));
+    NSData* processed = boundedDataAt(output, 128ull * 1024 * 1024);
+    if (!processed || !processed.length)
         throw std::runtime_error("pre-upscale process did not produce a bounded regular output image");
-    NSData* original = dataAt(input), *processed = dataAt(output), *tool = dataAt(options.preUpscaleExec);
-    if (!original || !processed || !tool) throw std::runtime_error("cannot hash pre-upscale input, output, or executable");
     NSString* inputHash = ns(hash(original));
     NSString* outputHash = ns(hash(processed));
-    *provenance = [@{
+    NSMutableDictionary* provenance = [@{
         @"mode": @"external_local_argv_process",
-        @"executable": ns(options.preUpscaleExec.string()),
+        @"executable": ns(options.preUpscaleExec.filename().string()),
         @"executable_sha256": ns(hash(tool)),
         @"arguments_template": templates,
         @"local_argument_files": localFileHashes,
@@ -254,31 +472,41 @@ fs::path runPreUpscale(const fs::path& inputPath, const Options& options,
     } mutableCopy];
     fs::path receiptPath = output;
     receiptPath += ".upscale.json";
-    if (fs::exists(receiptPath)) {
-        if (!fs::is_regular_file(receiptPath) || fs::is_symlink(receiptPath) ||
-            fs::file_size(receiptPath) > 1024 * 1024)
-            throw std::runtime_error("pre-upscale receipt is not a bounded regular JSON file");
-        NSData* receiptBytes = dataAt(receiptPath);
+    std::error_code ec;
+    if (fs::exists(fs::symlink_status(receiptPath, ec))) {
+        NSData* receiptBytes = boundedDataAt(receiptPath, 1024 * 1024);
+        if (!receiptBytes) throw std::runtime_error("pre-upscale receipt is not a bounded regular JSON file");
         NSError* receiptError = nil;
-        NSDictionary* receipt = [NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError];
-        if (![receipt isKindOfClass:[NSDictionary class]] ||
-            ![receipt[@"sourceSHA256"] isEqualToString:inputHash] ||
-            ![receipt[@"outputSHA256"] isEqualToString:outputHash])
+        NSDictionary* receipt = asDictionary([NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError]);
+        if (!receipt || !sameDigest(receipt[@"sourceSHA256"], inputHash) || !sameDigest(receipt[@"outputSHA256"], outputHash))
             throw std::runtime_error("pre-upscale receipt hashes do not match actual input/output bytes");
-        (*provenance)[@"receipt"] = receipt;
-        (*provenance)[@"receipt_sha256"] = ns(hash(receiptBytes));
-        (*provenance)[@"receipt_json_base64"] = [receiptBytes base64EncodedStringWithOptions:0];
+        provenance[@"receipt"] = receipt;
+        provenance[@"receipt_sha256"] = ns(hash(receiptBytes));
+        provenance[@"receipt_json_base64"] = [receiptBytes base64EncodedStringWithOptions:0];
     }
-    return output;
+    return {processed, provenance};
 }
+
+// ---------------------------------------------------------------------------------------------
+// Derivation.
+int progressCallback(float, void*) { return gInterrupted ? 0 : 1; }
+struct ReviewInfo { bool reviewed = false; bool includedByOptIn = false; };
 void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std::string& id,
-               const std::string& label, const Options& options, NSString* reviewStatus = nil) {
+               const std::string& label, const Options& options, const ReviewInfo* review = nullptr) {
+    std::error_code ec;
+    if (fs::exists(fs::symlink_status(outputPath, ec)))
+        throw std::runtime_error("bundle output already exists: " + outputPath.string());
+    NSString* labelText = ns(label);
+    NSString* idText = ns(id);
+    // Read once: the same bytes are hashed for provenance and decoded (or handed to the pre-upscaler).
+    NSData* sourceData = boundedDataAt(inputPath, 256ull * 1024 * 1024);
+    if (!sourceData) throw std::runtime_error("cannot read input image (missing, linked, or over 256 MiB): " + inputPath.string());
     ScratchDirectory preUpscaleScratch;
-    NSMutableDictionary* preUpscaleProvenance = nil;
-    fs::path workingImage = options.preUpscaleExec.empty() ? inputPath :
-        runPreUpscale(inputPath, options, preUpscaleScratch, &preUpscaleProvenance);
-    Image image = decodeSRGB(workingImage);
-    if (preUpscaleProvenance) preUpscaleProvenance[@"output_dimensions_px"] = @[@(image.width), @(image.height)];
+    PreUpscaleResult pre;
+    if (!options.preUpscaleExec.empty()) pre = runPreUpscale(inputPath, sourceData, options, preUpscaleScratch);
+    checkInterrupted();
+    Image image = decodeSRGB(pre.processed ?: sourceData);
+    if (pre.provenance) pre.provenance[@"output_dimensions_px"] = @[@(image.width), @(image.height)];
     const size_t count = static_cast<size_t>(image.width) * image.height;
     auto mask = options.mask.empty() ? std::vector<uint8_t>{} : rawFile(options.mask, count);
     auto authored = options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
@@ -288,216 +516,298 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                       image.width, image.height};
     char error[256]{};
     std::unique_ptr<PBRLabResult, decltype(&PBRLabFreeResult)> result(
-        PBRLabDerive(&input, &options.recipe, nullptr, nullptr, error, sizeof(error)), &PBRLabFreeResult);
+        PBRLabDerive(&input, &options.recipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);
+    checkInterrupted();
     if (!result) throw std::runtime_error(std::string("derivation failed: ") + error);
-    if (fs::exists(outputPath)) throw std::runtime_error("bundle output already exists: " + outputPath.string());
-    fs::create_directories(outputPath.parent_path());
+    if (!outputPath.parent_path().empty()) fs::create_directories(outputPath.parent_path());
     fs::path temp = outputPath;
     temp += ".tmp-" + str([[NSUUID UUID] UUIDString]);
     fs::create_directory(temp);
     try {
         NSMutableDictionary* maps = [NSMutableDictionary dictionary];
-        for (NSDictionary* definition in mapDefinitions()) {
-            auto kind = static_cast<PBRLabMapKind>([definition[@"kind"] intValue]);
+        // PNG compression dominates export time; encode every map concurrently, then write in order.
+        constexpr size_t roleCount = std::size(kMapRoles);
+        std::array<std::vector<uint8_t>, roleCount> encoded;
+        std::array<std::string, roleCount> encodeErrors;
+        std::array<bool, roleCount> encodedOK{};
+        const PBRLabResult* derived = result.get();
+        auto* encodedData = encoded.data();
+        auto* errorData = encodeErrors.data();
+        auto* okData = encodedOK.data();
+        dispatch_apply(roleCount, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t k) {
             PBRLabMap map{};
-            if (!PBRLabGetMap(result.get(), kind, &map)) continue;
-            NSString* name = definition[@"name"];
+            if (!PBRLabGetMap(derived, kMapRoles[k].kind, &map)) return;
+            okData[k] = pbrlab::encodePNG(map, encodedData[k], errorData[k]);
+        });
+        for (size_t k = 0; k < roleCount; ++k) {
+            const auto& role = kMapRoles[k];
+            PBRLabMap map{};
+            if (!PBRLabGetMap(result.get(), role.kind, &map)) continue;
+            NSString* name = @(role.name);
             NSString* filename = [name stringByAppendingString:@".png"];
-            fs::path file = temp / str(filename);
-            std::string pngError;
-            if (!pbrlab::writePNG(file.string(), map, pngError)) throw std::runtime_error(pngError);
-            NSData* bytes = dataAt(file);
-            NSString* format = map.format == PBRLabPixelFormatR16UNormLE ? @"r16_unorm_png" :
-                               map.format == PBRLabPixelFormatRGBA8SRGB ? @"rgba8_srgb_png" : @"rgba8_linear_png";
-            NSString* provenance = definition[@"provenance"];
-            if (kind == PBRLabMapHeight) provenance = !authored.empty() ? @"authored_height_override" :
+            const std::vector<uint8_t>& png = encoded[k];
+            std::string pngError = encodeErrors[k];
+            if (!encodedOK[k] ||
+                !pbrlab::writeFileAtomically((temp / str(filename)).string(), png, pngError))
+                throw std::runtime_error(pngError);
+            NSString* provenance = @(role.provenance);
+            if (role.kind == PBRLabMapHeight) provenance = !authored.empty() ? @"authored_height_override" :
                 options.recipe.preset == PBRLabPresetFlat ? @"flat_prior" : @"estimated_from_albedo";
-            maps[name] = @{@"file": filename, @"sha256": ns(hash(bytes)), @"width": @(map.width),
-                           @"height": @(map.height), @"pixel_format": format, @"provenance": provenance};
+            maps[name] = @{@"file": filename, @"sha256": ns(hash(png.data(), png.size())), @"width": @(map.width),
+                           @"height": @(map.height), @"pixel_format": @(role.format), @"provenance": provenance};
         }
-        NSData* sourceData = dataAt(inputPath);
-        if (!sourceData) throw std::runtime_error("cannot read original source for provenance");
         PBRLabSeamMetrics seam = PBRLabGetSeamMetrics(result.get());
+        const PBRLabRecipe& r = options.recipe;
         NSDictionary* recipe = @{
-            @"preset": ns(presetName(options.recipe.preset)),
-            @"height_strength": @(options.recipe.height_strength),
-            @"height_polarity": @(options.recipe.height_polarity),
-            @"roughness_base": @(options.recipe.roughness_base),
-            @"roughness_variation": @(options.recipe.roughness_variation),
-            @"ao_radius_pixels": @(options.recipe.ao_radius_pixels),
-            @"tile_wrap": @(options.recipe.tile_wrap != 0),
-            @"assigned_metalness_enabled": @(options.recipe.assigned_metalness_enabled != 0),
-            @"assigned_metalness": @(options.recipe.assigned_metalness),
-            @"bent_normal_enabled": @(options.recipe.bent_normal_enabled != 0)
+            @"preset": ns(presetName(r.preset)),
+            @"height_strength": @(r.height_strength),
+            @"height_polarity": @(r.height_polarity),
+            @"roughness_base": @(r.roughness_base),
+            @"roughness_variation": @(r.roughness_variation),
+            @"ao_radius_pixels": @(r.ao_radius_pixels),
+            @"tile_wrap": @(r.tile_wrap != 0),
+            @"assigned_metalness_enabled": @(r.assigned_metalness_enabled != 0),
+            @"assigned_metalness": @(r.assigned_metalness),
+            @"bent_normal_enabled": @(r.bent_normal_enabled != 0),
+            @"normal_strength": @(r.normal_strength),
+            @"normal_y_down": @(r.normal_y_down != 0),
+            @"ao_strength": @(r.ao_strength),
+            @"albedo_equalize": @(r.albedo_equalize),
+            @"seamless_blend": @(r.seamless_blend)
         };
-        NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.string()), @"sha256": ns(hash(sourceData)),
+        NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
-        if (preUpscaleProvenance) {
-            sourceManifest[@"processed_sha256"] = preUpscaleProvenance[@"output_sha256"];
-            sourceManifest[@"pre_upscale"] = preUpscaleProvenance;
+        if (pre.provenance) {
+            sourceManifest[@"processed_sha256"] = pre.provenance[@"output_sha256"];
+            sourceManifest[@"pre_upscale"] = pre.provenance;
         }
         NSMutableDictionary* manifest = [@{
             @"schema_version": @1,
             @"bundle_kind": @"pbr-material-bundle",
             @"algorithm_version": ns(PBRLabVersion()),
-            @"material_id": ns(id),
-            @"semantic_label": ns(label),
+            @"material_id": idText,
+            @"semantic_label": labelText,
             @"source": sourceManifest,
             @"recipe": recipe,
+            @"normal_convention": r.normal_y_down ? @"-Y" : @"+Y",
             @"maps": maps,
             @"seam_metrics": @{@"height_value_delta": @(seam.height_value_delta),
                                 @"height_gradient_delta": @(seam.height_gradient_delta),
                                 @"albedo_value_delta": @(seam.albedo_value_delta)},
             @"runtime_admitted": @NO
         } mutableCopy];
-        if (reviewStatus) manifest[@"source_review_status"] = reviewStatus;
+        if (review) {
+            manifest[@"source_review_status"] = review->reviewed ? @"reviewed" : @"unreviewed";
+            manifest[@"included_by_opt_in"] = @(review->includedByOptIn);
+        }
         NSError* jsonError = nil;
         NSData* json = [NSJSONSerialization dataWithJSONObject:manifest
             options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:&jsonError];
-        if (!json || ![json writeToFile:ns((temp / "manifest.json").string()) atomically:YES])
-            throw std::runtime_error("cannot write material manifest");
+        std::string writeError;
+        if (!json || !pbrlab::writeFileAtomically((temp / "manifest.json").string(),
+                std::vector<uint8_t>(static_cast<const uint8_t*>(json.bytes), static_cast<const uint8_t*>(json.bytes) + json.length), writeError))
+            throw std::runtime_error("cannot write material manifest " + writeError);
+        checkInterrupted();
+        if (fs::exists(fs::symlink_status(outputPath, ec)))
+            throw std::runtime_error("bundle output appeared during derivation: " + outputPath.string());
         fs::rename(temp, outputPath);
-    } catch (...) { fs::remove_all(temp); throw; }
+    } catch (...) { std::error_code ignored; fs::remove_all(temp, ignored); throw; }
     std::cout << outputPath.string() << '\n';
 }
-bool validSHA256String(id value) {
-    if (![value isKindOfClass:[NSString class]] || [value length] != 64) return false;
-    NSString* digest = value;
-    for (NSUInteger i = 0; i < digest.length; ++i) {
-        unichar c = [digest characterAtIndex:i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-              (c >= 'A' && c <= 'F'))) return false;
+
+// ---------------------------------------------------------------------------------------------
+// Bundle validation.
+bool validateRecipe(NSDictionary* recipe, bool snakeCase, bool requireV11, std::string& why) {
+    auto key = [&](const char* snake, const char* camel) { return snakeCase ? @(snake) : @(camel); };
+    NSSet* presets = snakeCase ? [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coated-metal", @"bare-metal"]]
+                               : [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coatedMetal", @"bareMetal"]];
+    NSString* preset = asString(recipe[@"preset"]);
+    if (!preset || ![presets containsObject:preset]) { why = "preset"; return false; }
+    struct Range { const char* snake; const char* camel; double lo, hi; bool v11; };
+    static constexpr Range ranges[] = {
+        {"height_strength", "heightStrength", 0, .5, false},
+        {"roughness_base", "roughnessBase", 0, 1, false},
+        {"roughness_variation", "roughnessVariation", 0, 1, false},
+        {"ao_radius_pixels", "aoRadiusPixels", 0, 64, false},
+        {"normal_strength", "normalStrength", 0, 16, true},
+        {"ao_strength", "aoStrength", 0, 4, true},
+        {"albedo_equalize", "albedoEqualize", 0, 1, true},
+        {"seamless_blend", "seamlessBlend", 0, .45, true},
+    };
+    for (const auto& range : ranges) {
+        id value = recipe[key(range.snake, range.camel)];
+        if (range.v11 && !requireV11 && !value) continue;
+        // Recipes are stored as float32 then widened; allow a single-precision rounding margin at the bounds.
+        if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
+    }
+    if (!unitPolarity(recipe[key("height_polarity", "heightPolarity")])) { why = "height polarity"; return false; }
+    NSArray* flags = snakeCase ? @[@"tile_wrap", @"bent_normal_enabled", @"assigned_metalness_enabled"]
+                               : @[@"tileWrap", @"bentNormal"];
+    for (NSString* flag in flags) if (!isBoolean(recipe[flag])) { why = str(flag); return false; }
+    NSString* yDown = key("normal_y_down", "normalYDown");
+    if ((requireV11 || recipe[yDown]) && !isBoolean(recipe[yDown])) { why = str(yDown); return false; }
+    if (snakeCase) {
+        if (!finiteNumber(recipe[@"assigned_metalness"], 0, 1)) { why = "assigned_metalness"; return false; }
+    } else {
+        id metal = recipe[@"assignedMetalness"];
+        if (metal && metal != [NSNull null] && !finiteNumber(metal, 0, 1)) { why = "assignedMetalness"; return false; }
     }
     return true;
 }
-uint32_t readBE32(const uint8_t* p) {
-    return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
+constexpr const char* kLegacyNormalWarning =
+    "algorithm 1.0.0 normal and bent-normal maps are green-down (-Y, DirectX) despite the recorded +Y claim; "
+    "flip green or re-derive with 1.1.0";
+void validateMapPNG(NSData* file, const MapRole& role, const std::string& label, uint32_t& width, uint32_t& height) {
+    pbrlab::PNGInfo info;
+    std::string why;
+    if (!pbrlab::inspectPNG(static_cast<const uint8_t*>(file.bytes), file.length, info, why))
+        throw std::runtime_error(label + ": " + why);
+    const bool r16 = role.kind == PBRLabMapHeight;
+    if (info.bitDepth != (r16 ? 16 : 8) || info.colorType != (r16 ? 0 : 6) || info.interlace != 0)
+        throw std::runtime_error("PNG channel format does not match map role: " + label);
+    if (role.kind == PBRLabMapAlbedo ? info.hasGAMA : info.hasSRGB)
+        throw std::runtime_error("PNG colour tagging does not match map role: " + label);
+    // Independent full decode through ImageIO as well.
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)file, nullptr);
+    CGImageRef image = nullptr;
+    if (source && CGImageSourceGetStatus(source) == kCGImageStatusComplete && CGImageSourceGetCount(source) == 1) {
+        NSDictionary* options = @{(__bridge NSString*)kCGImageSourceShouldCacheImmediately: @YES};
+        image = CGImageSourceCreateImageAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    }
+    if (source) CFRelease(source);
+    if (!image) throw std::runtime_error("PNG decode failed: " + label);
+    const bool matches = CGImageGetWidth(image) == info.width && CGImageGetHeight(image) == info.height &&
+                         CGImageGetBitsPerComponent(image) == info.bitDepth;
+    CGImageRelease(image);
+    if (!matches) throw std::runtime_error("PNG decode disagrees with header: " + label);
+    width = info.width; height = info.height;
 }
 void validate(const fs::path& bundle) {
-    if (!fs::is_directory(bundle) || fs::is_symlink(bundle / "manifest.json") ||
-        !fs::exists(bundle / "manifest.json") || fs::file_size(bundle / "manifest.json") > 4 * 1024 * 1024)
-        throw std::runtime_error("bundle manifest missing, linked, or oversized");
-    NSData* data = dataAt(bundle / "manifest.json");
-    if (!data) throw std::runtime_error("manifest.json missing");
+    const fs::path manifestPath = bundle / "manifest.json";
+    NSData* data = boundedDataAt(manifestPath, 4 * 1024 * 1024);
+    if (!fs::is_directory(bundle) || !data) throw std::runtime_error("bundle manifest missing, linked, or oversized");
     NSError* jsonError = nil;
-    NSDictionary* manifest = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
-    if (![manifest isKindOfClass:[NSDictionary class]] || ![manifest[@"schema_version"] isEqual:@1] ||
-        ![manifest[@"bundle_kind"] isEqual:@"pbr-material-bundle"] ||
-        ![manifest[@"maps"] isKindOfClass:[NSDictionary class]] ||
-        ![manifest[@"recipe"] isKindOfClass:[NSDictionary class]] ||
-        ![manifest[@"source"] isKindOfClass:[NSDictionary class]] ||
-        ![manifest[@"material_id"] isKindOfClass:[NSString class]] ||
-        ![manifest[@"semantic_label"] isKindOfClass:[NSString class]] ||
-        ![manifest[@"algorithm_version"] isKindOfClass:[NSString class]] ||
-        [manifest[@"runtime_admitted"] boolValue])
+    NSDictionary* manifest = asDictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError]);
+    if (!manifest) throw std::runtime_error("manifest root must be a JSON object");
+    NSDictionary* maps = asDictionary(manifest[@"maps"]);
+    NSDictionary* recipe = asDictionary(manifest[@"recipe"]);
+    NSDictionary* source = asDictionary(manifest[@"source"]);
+    NSDictionary* seamMetrics = asDictionary(manifest[@"seam_metrics"]);
+    NSString* algorithm = asString(manifest[@"algorithm_version"]);
+    if (!exactNumber(manifest[@"schema_version"], 1) ||
+        ![asString(manifest[@"bundle_kind"]) isEqualToString:@"pbr-material-bundle"] ||
+        !maps || !recipe || !source || !seamMetrics || !algorithm ||
+        !nonemptyString(manifest[@"material_id"], 240) || !nonemptyString(manifest[@"semantic_label"], 1000))
         throw std::runtime_error("invalid material bundle manifest");
-    NSString* sourceHash = manifest[@"source"][@"sha256"];
-    if (!validSHA256String(sourceHash) ||
-        ![manifest[@"source"][@"color_space"] isKindOfClass:[NSString class]] ||
-        ![manifest[@"seam_metrics"] isKindOfClass:[NSDictionary class]] ||
-        [manifest[@"material_id"] length] == 0 ||
-        [manifest[@"semantic_label"] length] == 0 || [manifest[@"algorithm_version"] length] == 0)
-        throw std::runtime_error("manifest identity or source hash is invalid");
-    NSDictionary* recipe = manifest[@"recipe"];
-    for (NSString* key in @[@"preset", @"height_strength", @"height_polarity", @"roughness_base",
-                          @"roughness_variation", @"ao_radius_pixels", @"tile_wrap",
-                          @"assigned_metalness_enabled", @"assigned_metalness", @"bent_normal_enabled"])
-        if (!recipe[key]) throw std::runtime_error("manifest recipe parameter missing: " + str(key));
-    NSDictionary* maps = manifest[@"maps"];
-    uint32_t bundleWidth = 0, bundleHeight = 0;
-    for (NSString* required in @[@"albedo", @"height", @"normal", @"roughness", @"ao"])
-        if (![maps[required] isKindOfClass:[NSDictionary class]]) throw std::runtime_error("required map missing: " + str(required));
-    for (NSString* name in maps) {
-        NSDictionary* record = maps[name];
-        if (![record isKindOfClass:[NSDictionary class]] ||
-            ![record[@"sha256"] isKindOfClass:[NSString class]] || [record[@"sha256"] length] != 64 ||
-            ![record[@"width"] isKindOfClass:[NSNumber class]] ||
-            ![record[@"height"] isKindOfClass:[NSNumber class]] ||
-            ![record[@"pixel_format"] isKindOfClass:[NSString class]] ||
-            ![record[@"provenance"] isKindOfClass:[NSString class]])
-            throw std::runtime_error("malformed map record: " + str(name));
-        NSString* filename = record[@"file"];
-        if (![filename isKindOfClass:[NSString class]] || [filename containsString:@"/"] || [filename containsString:@".."])
-            throw std::runtime_error("unsafe map filename");
-        fs::path mapPath = bundle / str(filename);
-        if (!fs::is_regular_file(mapPath) || fs::is_symlink(mapPath) || fs::file_size(mapPath) > 128 * 1024 * 1024)
-            throw std::runtime_error("map file missing, linked, or oversized: " + str(filename));
-        NSData* file = dataAt(mapPath);
-        if (!file || file.length < 33) throw std::runtime_error("map file missing or too short: " + str(filename));
-        if (![ns(hash(file)) isEqualToString:record[@"sha256"]]) throw std::runtime_error("map SHA-256 mismatch: " + str(filename));
-        auto* p = static_cast<const uint8_t*>(file.bytes);
-        constexpr uint8_t signature[8] = {137,80,78,71,13,10,26,10};
-        if (std::memcmp(p, signature, 8) || std::memcmp(p + 12, "IHDR", 4))
-            throw std::runtime_error("invalid PNG header: " + str(filename));
-        if (readBE32(p + 16) != [record[@"width"] unsignedIntValue] ||
-            readBE32(p + 20) != [record[@"height"] unsignedIntValue])
-            throw std::runtime_error("PNG dimensions do not match manifest: " + str(filename));
-        bool height = [name isEqual:@"height"];
-        NSString* expectedFormat = height ? @"r16_unorm_png" :
-            [name isEqual:@"albedo"] ? @"rgba8_srgb_png" : @"rgba8_linear_png";
-        if (p[24] != (height ? 16 : 8) || p[25] != (height ? 0 : 6) ||
-            ![record[@"pixel_format"] isEqualToString:expectedFormat])
-            throw std::runtime_error("PNG channel format does not match map role: " + str(filename));
-        uint32_t width = readBE32(p + 16), heightPixels = readBE32(p + 20);
-        if (!width || width > 4096 || heightPixels != width ||
-            (bundleWidth && (width != bundleWidth || heightPixels != bundleHeight)))
-            throw std::runtime_error("map dimensions are inconsistent or out of range");
-        bundleWidth = width; bundleHeight = heightPixels;
-        CGImageSourceRef imageSource = CGImageSourceCreateWithData((__bridge CFDataRef)file, nullptr);
-        if (!imageSource || CGImageSourceGetStatus(imageSource) != kCGImageStatusComplete) {
-            if (imageSource) CFRelease(imageSource);
-            throw std::runtime_error("PNG decode failed: " + str(filename));
-        }
-        CFRelease(imageSource);
+    // Admission is a separate explicit step: the flag must be literally JSON false.
+    if (!isBoolean(manifest[@"runtime_admitted"]) || [manifest[@"runtime_admitted"] boolValue])
+        throw std::runtime_error("runtime_admitted must be the boolean false");
+    const bool legacy = [algorithm isEqualToString:@"1.0.0"];
+    if (!legacy && ![algorithm isEqualToString:@"1.1.0"])
+        throw std::runtime_error("unsupported algorithm_version: " + str(algorithm));
+    std::string why;
+    if (!validateRecipe(recipe, true, !legacy, why))
+        throw std::runtime_error("manifest recipe parameter missing or out of range: " + why);
+    id convention = manifest[@"normal_convention"];
+    if (!legacy || convention) {
+        NSString* expected = [recipe[@"normal_y_down"] boolValue] ? @"-Y" : @"+Y";
+        if (![asString(convention) isEqualToString:expected])
+            throw std::runtime_error("normal_convention must be \"+Y\" or \"-Y\" and agree with recipe.normal_y_down");
     }
-    NSDictionary* source = manifest[@"source"];
+    if (legacy) warn(kLegacyNormalWarning);
+    if (!validSHA256String(source[@"sha256"]) || !nonemptyString(source[@"color_space"], 120) ||
+        !nonemptyString(source[@"path"], 4096))
+        throw std::runtime_error("manifest source identity or hash is invalid");
+    for (NSString* key in @[@"height_value_delta", @"height_gradient_delta", @"albedo_value_delta"])
+        if (!finiteNumber(seamMetrics[key], 0, 2)) throw std::runtime_error("manifest seam metrics are missing or invalid");
+    id reviewStatus = manifest[@"source_review_status"];
+    if (reviewStatus && ![asString(reviewStatus) isEqualToString:@"reviewed"] && ![asString(reviewStatus) isEqualToString:@"unreviewed"] &&
+        !(legacy && asString(reviewStatus)))
+        throw std::runtime_error("source_review_status must be \"reviewed\" or \"unreviewed\"");
+    if (manifest[@"included_by_opt_in"] && !isBoolean(manifest[@"included_by_opt_in"]))
+        throw std::runtime_error("included_by_opt_in must be boolean");
+
+    // Maps: exactly the known roles, all nine required ones, and optional ones iff their recipe flag.
+    for (id name in maps)
+        if (!asString(name) || !roleNamed(name)) throw std::runtime_error("unknown map role: " + str(asString(name)));
+    const bool wantORM = [recipe[@"assigned_metalness_enabled"] boolValue];
+    const bool wantBent = [recipe[@"bent_normal_enabled"] boolValue];
+    uint32_t bundleWidth = 0, bundleHeight = 0;
+    for (size_t index = 0; index < kMapRoles.size(); ++index) {
+        const MapRole& role = kMapRoles[index];
+        NSString* name = @(role.name);
+        const bool expected = index < kRequiredMapCount ||
+            (role.kind == PBRLabMapORM && wantORM) || (role.kind == PBRLabMapBentNormal && wantBent);
+        id raw = maps[name];
+        if (!expected) {
+            if (raw) throw std::runtime_error("map present without its recipe flag: " + str(name));
+            continue;
+        }
+        NSDictionary* record = asDictionary(raw);
+        if (!record) throw std::runtime_error("required map missing: " + str(name));
+        NSString* filename = asString(record[@"file"]);
+        if (!validSHA256String(record[@"sha256"]) || !asNumber(record[@"width"]) || !asNumber(record[@"height"]) ||
+            !asString(record[@"pixel_format"]) || !nonemptyString(record[@"provenance"], 240) || !filename)
+            throw std::runtime_error("malformed map record: " + str(name));
+        if (![filename isEqualToString:[name stringByAppendingString:@".png"]])
+            throw std::runtime_error("map file must be named " + str(name) + ".png");
+        if (![record[@"pixel_format"] isEqualToString:@(role.format)])
+            throw std::runtime_error("map pixel_format does not match its role: " + str(name));
+        NSData* file = boundedDataAt(bundle / str(filename), 128ull * 1024 * 1024);
+        if (!file) throw std::runtime_error("map file missing, linked, or oversized: " + str(filename));
+        if (!sameDigest(ns(hash(file)), record[@"sha256"])) throw std::runtime_error("map SHA-256 mismatch: " + str(filename));
+        uint32_t width = 0, height = 0;
+        validateMapPNG(file, role, str(filename), width, height);
+        if (width != [record[@"width"] doubleValue] || height != [record[@"height"] doubleValue])
+            throw std::runtime_error("PNG dimensions do not match manifest: " + str(filename));
+        if (width < 2 || width > 4096 || height != width ||
+            (bundleWidth && (width != bundleWidth || height != bundleHeight)))
+            throw std::runtime_error("map dimensions are inconsistent or out of range");
+        bundleWidth = width; bundleHeight = height;
+    }
+
+    NSString* sourceHash = source[@"sha256"];
     id preValue = source[@"pre_upscale"];
     if (preValue) {
-        if (![preValue isKindOfClass:[NSDictionary class]])
-            throw std::runtime_error("pre-upscale provenance must be an object");
-        NSDictionary* pre = preValue;
+        NSDictionary* pre = asDictionary(preValue);
+        if (!pre) throw std::runtime_error("pre-upscale provenance must be an object");
         NSString* inputHash = pre[@"input_sha256"];
         NSString* outputHash = pre[@"output_sha256"];
-        NSString* processedHash = source[@"processed_sha256"];
-        if (![pre[@"mode"] isEqual:@"external_local_argv_process"] ||
-            !validSHA256String(inputHash) || !validSHA256String(outputHash) ||
-            !validSHA256String(processedHash) || !validSHA256String(pre[@"executable_sha256"]) ||
-            ![pre[@"arguments_template"] isKindOfClass:[NSArray class]] ||
-            ![pre[@"local_argument_files"] isKindOfClass:[NSArray class]] ||
-            [inputHash caseInsensitiveCompare:sourceHash] != NSOrderedSame ||
-            [processedHash caseInsensitiveCompare:outputHash] != NSOrderedSame)
-            throw std::runtime_error("pre-upscale source or processed hash mismatch");
-        NSArray* dimensions = pre[@"output_dimensions_px"];
-        if (![dimensions isKindOfClass:[NSArray class]] || dimensions.count != 2 ||
-            ![dimensions[0] isEqual:@(bundleWidth)] || ![dimensions[1] isEqual:@(bundleHeight)])
+        NSArray* templates = asArray(pre[@"arguments_template"]);
+        NSArray* files = asArray(pre[@"local_argument_files"]);
+        bool wellFormed = [asString(pre[@"mode"]) isEqualToString:@"external_local_argv_process"] &&
+            nonemptyString(pre[@"executable"], 4096) && validSHA256String(pre[@"executable_sha256"]) &&
+            templates && files && sameDigest(inputHash, sourceHash) && sameDigest(source[@"processed_sha256"], outputHash);
+        for (id item in templates) wellFormed = wellFormed && asString(item);
+        for (id item in files) {
+            NSDictionary* entry = asDictionary(item);
+            wellFormed = wellFormed && entry && asString(entry[@"path"]) && validSHA256String(entry[@"sha256"]);
+        }
+        if (!wellFormed) throw std::runtime_error("pre-upscale source or processed hash mismatch");
+        NSArray* dimensions = asArray(pre[@"output_dimensions_px"]);
+        if (dimensions.count != 2 || !exactNumber(dimensions[0], bundleWidth) || !exactNumber(dimensions[1], bundleHeight))
             throw std::runtime_error("pre-upscale output dimensions do not match exported maps");
         id receiptValue = pre[@"receipt"];
         id receiptHash = pre[@"receipt_sha256"];
         id receiptText = pre[@"receipt_json_base64"];
         if (receiptValue || receiptHash || receiptText) {
-            if (![receiptValue isKindOfClass:[NSDictionary class]] ||
-                !validSHA256String(receiptHash) ||
-                ![receiptText isKindOfClass:[NSString class]] || [receiptText length] > 1400000)
+            if (!asDictionary(receiptValue) || !validSHA256String(receiptHash) ||
+                !asString(receiptText) || [receiptText length] > 1400000)
                 throw std::runtime_error("pre-upscale receipt proof is incomplete");
             NSData* receiptBytes = [[NSData alloc] initWithBase64EncodedString:receiptText options:0];
             if (!receiptBytes || !receiptBytes.length || receiptBytes.length > 1024 * 1024 ||
                 ![[NSString alloc] initWithData:receiptBytes encoding:NSUTF8StringEncoding] ||
-                [ns(hash(receiptBytes)) caseInsensitiveCompare:receiptHash] != NSOrderedSame)
+                !sameDigest(ns(hash(receiptBytes)), receiptHash))
                 throw std::runtime_error("pre-upscale receipt SHA-256 mismatch");
             NSError* receiptError = nil;
-            NSDictionary* parsed = [NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError];
-            if (![parsed isKindOfClass:[NSDictionary class]] || ![parsed isEqualToDictionary:receiptValue])
+            NSDictionary* parsed = asDictionary([NSJSONSerialization JSONObjectWithData:receiptBytes options:0 error:&receiptError]);
+            if (!parsed || ![parsed isEqualToDictionary:receiptValue])
                 throw std::runtime_error("pre-upscale receipt bytes do not match embedded object");
-            NSString* receiptInput = parsed[@"sourceSHA256"];
-            NSString* receiptOutput = parsed[@"outputSHA256"];
-            if (![receiptInput isKindOfClass:[NSString class]] || ![receiptOutput isKindOfClass:[NSString class]] ||
-                [receiptInput caseInsensitiveCompare:inputHash] != NSOrderedSame ||
-                [receiptOutput caseInsensitiveCompare:outputHash] != NSOrderedSame)
+            if (!sameDigest(parsed[@"sourceSHA256"], inputHash) || !sameDigest(parsed[@"outputSHA256"], outputHash))
                 throw std::runtime_error("pre-upscale receipt source/output hashes disagree");
             id receiptSize = parsed[@"outputSize"];
-            if (receiptSize && (![receiptSize isKindOfClass:[NSArray class]] || [receiptSize count] != 2 ||
-                                ![receiptSize[0] isEqual:@(bundleWidth)] ||
-                                ![receiptSize[1] isEqual:@(bundleHeight)]))
+            if (receiptSize && (asArray(receiptSize).count != 2 || !exactNumber(receiptSize[0], bundleWidth) ||
+                                !exactNumber(receiptSize[1], bundleHeight)))
                 throw std::runtime_error("pre-upscale receipt output dimensions disagree");
         }
     } else if (source[@"processed_sha256"]) {
@@ -505,39 +815,43 @@ void validate(const fs::path& bundle) {
     }
     std::cout << "valid: " << bundle.string() << " (" << maps.count << " maps)\n";
 }
+
+// ---------------------------------------------------------------------------------------------
+// Capture validation.
 bool hasLocationKey(id value) {
-    if ([value isKindOfClass:[NSDictionary class]]) {
-        for (NSString* key in (NSDictionary*)value) {
-            NSString* lower = [key lowercaseString];
+    if (NSDictionary* dictionary = asDictionary(value)) {
+        for (id key in dictionary) {
+            NSString* lower = [asString(key) lowercaseString];
             if ([lower containsString:@"gps"] || [lower containsString:@"location"] ||
                 [lower containsString:@"latitude"] || [lower containsString:@"longitude"]) return true;
-            if (hasLocationKey(((NSDictionary*)value)[key])) return true;
+            if (hasLocationKey(dictionary[key])) return true;
         }
-    } else if ([value isKindOfClass:[NSArray class]]) {
-        for (id item in (NSArray*)value) if (hasLocationKey(item)) return true;
+    } else if (NSArray* array = asArray(value)) {
+        for (id item in array) if (hasLocationKey(item)) return true;
     }
     return false;
 }
-void verifyDigest(NSData* bytes, NSString* expected, const std::string& label) {
-    if (!bytes || ![expected isKindOfClass:[NSString class]] || expected.length != 64 ||
-        [ns(hash(bytes)) caseInsensitiveCompare:expected] != NSOrderedSame)
-        throw std::runtime_error(label + " SHA-256 mismatch");
+void verifyDigest(NSData* bytes, id expected, const std::string& label) {
+    if (!bytes || !sameDigest(ns(hash(bytes)), expected)) throw std::runtime_error(label + " SHA-256 mismatch");
+}
+NSData* decodeBase64(id value) {
+    NSString* text = asString(value);
+    return text ? [[NSData alloc] initWithBase64EncodedString:text options:0] : nil;
 }
 struct DecodedSize { uint32_t width, height; int bits; };
-DecodedSize inspectEncoded(NSData* bytes, const std::string& label, uint32_t maxSide,
-                           bool square, NSString* mime) {
+DecodedSize inspectEncoded(NSData* bytes, const std::string& label, uint32_t maxSide, bool square, id mimeValue) {
+    NSString* mime = asString(mimeValue);
     if (!bytes || !bytes.length || bytes.length > 64 * 1024 * 1024)
         throw std::runtime_error(label + " encoded image is missing or oversized");
     auto* p = static_cast<const uint8_t*>(bytes.bytes);
-    if ([mime isEqual:@"image/png"]) {
+    if ([mime isEqualToString:@"image/png"]) {
         constexpr uint8_t signature[8] = {137,80,78,71,13,10,26,10};
         if (bytes.length < 33 || std::memcmp(p, signature, 8) || std::memcmp(p + 12, "IHDR", 4))
             throw std::runtime_error(label + " is not PNG");
-    } else if (!([mime isEqual:@"image/jpeg"] || [mime isEqual:@"image/heic"]))
+    } else if (!([mime isEqualToString:@"image/jpeg"] || [mime isEqualToString:@"image/heic"]))
         throw std::runtime_error(label + " has unsupported MIME type");
     CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)bytes, nullptr);
-    if (!source || CGImageSourceGetStatus(source) != kCGImageStatusComplete ||
-        CGImageSourceGetCount(source) != 1) {
+    if (!source || CGImageSourceGetStatus(source) != kCGImageStatusComplete || CGImageSourceGetCount(source) != 1) {
         if (source) CFRelease(source);
         throw std::runtime_error(label + " image decode failed");
     }
@@ -545,11 +859,11 @@ DecodedSize inspectEncoded(NSData* bytes, const std::string& label, uint32_t max
     bool metadataHasLocation = properties && hasLocationKey((__bridge id)properties);
     if (properties) CFRelease(properties);
     if (metadataHasLocation) { CFRelease(source); throw std::runtime_error(label + " contains embedded location metadata"); }
-    CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, nullptr);
+    NSDictionary* options = @{(__bridge NSString*)kCGImageSourceShouldCacheImmediately: @YES};
+    CGImageRef image = CGImageSourceCreateImageAtIndex(source, 0, (__bridge CFDictionaryRef)options);
     CFRelease(source);
     if (!image) throw std::runtime_error(label + " image decode failed");
-    DecodedSize result{static_cast<uint32_t>(CGImageGetWidth(image)),
-                       static_cast<uint32_t>(CGImageGetHeight(image)),
+    DecodedSize result{static_cast<uint32_t>(CGImageGetWidth(image)), static_cast<uint32_t>(CGImageGetHeight(image)),
                        static_cast<int>(CGImageGetBitsPerComponent(image))};
     CGImageRelease(image);
     if (result.width < 2 || result.height < 2 || result.width > maxSide || result.height > maxSide ||
@@ -557,191 +871,215 @@ DecodedSize inspectEncoded(NSData* bytes, const std::string& label, uint32_t max
         throw std::runtime_error(label + " dimensions are out of range");
     return result;
 }
-bool nonemptyString(id value, NSUInteger maximum) {
-    if (![value isKindOfClass:[NSString class]]) return false;
-    NSString* trimmed = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    return trimmed.length > 0 && trimmed.length <= maximum;
-}
-bool finiteNumber(id value, double minimum, double maximum) {
-    if (![value isKindOfClass:[NSNumber class]]) return false;
-    double number = [value doubleValue];
-    return std::isfinite(number) && number >= minimum && number <= maximum;
-}
 void validateCapture(const fs::path& capturePath) {
-    constexpr uintmax_t maximumBytes = 64ull * 1024 * 1024;
-    if (!fs::is_regular_file(capturePath) || fs::is_symlink(capturePath) ||
-        fs::file_size(capturePath) == 0 || fs::file_size(capturePath) > maximumBytes)
-        throw std::runtime_error("capture envelope missing, linked, or larger than 64 MiB");
-    NSData* file = dataAt(capturePath);
+    NSData* file = boundedDataAt(capturePath, 64ull * 1024 * 1024);
+    if (!file || !file.length) throw std::runtime_error("capture envelope missing, linked, or larger than 64 MiB");
     NSError* jsonError = nil;
-    NSDictionary* capture = [NSJSONSerialization JSONObjectWithData:file options:0 error:&jsonError];
-    if (![capture isKindOfClass:[NSDictionary class]] ||
-        ![capture[@"schemaVersion"] isEqual:@1] ||
-        ![capture[@"bundleKind"] isEqual:@"pbr-capture"] ||
-        ![capture[@"runtimeAdmitted"] isKindOfClass:[NSNumber class]] ||
-        [capture[@"runtimeAdmitted"] boolValue] ||
-        ![capture[@"captureId"] isKindOfClass:[NSString class]] ||
-        ![[NSUUID alloc] initWithUUIDString:capture[@"captureId"]] ||
-        !nonemptyString(capture[@"semanticLabel"], 240) ||
-        !nonemptyString(capture[@"category"], 240) ||
-        ![capture[@"sourceMime"] isEqual:@"image/png"] ||
-        ![capture[@"sourceBase64"] isKindOfClass:[NSString class]] ||
-        !nonemptyString(capture[@"algorithmVersion"], 120) ||
-        ![capture[@"recipe"] isKindOfClass:[NSDictionary class]] ||
-        ![capture[@"capture"] isKindOfClass:[NSDictionary class]] ||
-        ![capture[@"derived"] isKindOfClass:[NSDictionary class]] ||
-        ![capture[@"seamMetrics"] isKindOfClass:[NSDictionary class]])
+    NSDictionary* capture = asDictionary([NSJSONSerialization JSONObjectWithData:file options:0 error:&jsonError]);
+    NSString* algorithm = asString(capture[@"algorithmVersion"]);
+    NSDictionary* recipe = asDictionary(capture[@"recipe"]);
+    NSDictionary* captureMetadata = asDictionary(capture[@"capture"]);
+    NSDictionary* seamMetrics = asDictionary(capture[@"seamMetrics"]);
+    NSDictionary* derived = asDictionary(capture[@"derived"]);
+    if (!capture || !exactNumber(capture[@"schemaVersion"], 1) ||
+        ![asString(capture[@"bundleKind"]) isEqualToString:@"pbr-capture"] ||
+        !isBoolean(capture[@"runtimeAdmitted"]) || [capture[@"runtimeAdmitted"] boolValue] ||
+        !asString(capture[@"captureId"]) || ![[NSUUID alloc] initWithUUIDString:capture[@"captureId"]] ||
+        !nonemptyString(capture[@"semanticLabel"], 240) || !nonemptyString(capture[@"category"], 240) ||
+        ![asString(capture[@"sourceMime"]) isEqualToString:@"image/png"] || !asString(capture[@"sourceBase64"]) ||
+        !algorithm || !recipe || !captureMetadata || !derived || !seamMetrics)
         throw std::runtime_error("invalid capture envelope fields");
-    NSDictionary* recipe = capture[@"recipe"];
-    NSSet* presets = [NSSet setWithArray:@[@"flat", @"stone", @"fabric", @"organic", @"coatedMetal", @"bareMetal"]];
-    if (![presets containsObject:recipe[@"preset"]] ||
-        !finiteNumber(recipe[@"heightStrength"], 0, .5) ||
-        !finiteNumber(recipe[@"heightPolarity"], -1, 1) ||
-        (std::abs([recipe[@"heightPolarity"] intValue]) != 1) ||
-        !finiteNumber(recipe[@"roughnessBase"], 0, 1) ||
-        !finiteNumber(recipe[@"roughnessVariation"], 0, 1) ||
-        !finiteNumber(recipe[@"aoRadiusPixels"], 0, 64) ||
-        ![recipe[@"tileWrap"] isKindOfClass:[NSNumber class]] ||
-        ![recipe[@"bentNormal"] isKindOfClass:[NSNumber class]] ||
-        (recipe[@"assignedMetalness"] && recipe[@"assignedMetalness"] != [NSNull null] &&
-         !finiteNumber(recipe[@"assignedMetalness"], 0, 1)))
-        throw std::runtime_error("capture recipe is missing or out of range");
-    NSDictionary* captureMetadata = capture[@"capture"];
+    const bool legacy = [algorithm isEqualToString:@"1.0.0"];
+    if (!legacy && ![algorithm isEqualToString:@"1.1.0"])
+        throw std::runtime_error("unsupported capture algorithmVersion: " + str(algorithm));
+    std::string why;
+    if (!validateRecipe(recipe, false, !legacy, why))
+        throw std::runtime_error("capture recipe is missing or out of range: " + why);
+    if (legacy) warn(kLegacyNormalWarning);
     if (!nonemptyString(captureMetadata[@"capturedAt"], 80) ||
         !nonemptyString(captureMetadata[@"orientation"], 120) ||
         !nonemptyString(captureMetadata[@"colorProfile"], 120) ||
         !nonemptyString(captureMetadata[@"captureMode"], 120) ||
-        ![captureMetadata[@"crop"] isKindOfClass:[NSDictionary class]] ||
-        ![captureMetadata[@"imageQuality"] isKindOfClass:[NSDictionary class]] ||
-        ![captureMetadata[@"fallbackUsed"] isKindOfClass:[NSNumber class]] ||
+        !asDictionary(captureMetadata[@"crop"]) || !asDictionary(captureMetadata[@"imageQuality"]) ||
+        !isBoolean(captureMetadata[@"fallbackUsed"]) ||
         (captureMetadata[@"constantColorCenterConfidence"] &&
          captureMetadata[@"constantColorCenterConfidence"] != [NSNull null] &&
          !finiteNumber(captureMetadata[@"constantColorCenterConfidence"], 0, 1)))
         throw std::runtime_error("capture metadata is missing or invalid");
-    NSDictionary* seamMetrics = capture[@"seamMetrics"];
     for (NSString* key in @[@"heightValueDelta", @"heightGradientDelta", @"albedoValueDelta"])
         if (!finiteNumber(seamMetrics[key], 0, 2))
             throw std::runtime_error("capture seam metrics are missing or invalid");
     if (hasLocationKey(capture)) throw std::runtime_error("capture contains GPS or location metadata");
-    NSData* source = [[NSData alloc] initWithBase64EncodedString:capture[@"sourceBase64"] options:0];
+    NSData* source = decodeBase64(capture[@"sourceBase64"]);
     verifyDigest(source, capture[@"sourceSHA256"], "source");
     DecodedSize sourceSize = inspectEncoded(source, "source", 4096, true, @"image/png");
-    NSDictionary* metadata = capture[@"capture"];
     auto verifyEmbeddedPhoto = [&](NSString* prefix) {
-        NSArray* suffixes = @[@"Mime", @"Base64", @"SHA256", @"Width", @"Height"];
         bool present = false;
-        for (NSString* suffix in suffixes) {
-            id value = metadata[[prefix stringByAppendingString:suffix]];
+        for (NSString* suffix in @[@"Mime", @"Base64", @"SHA256", @"Width", @"Height"]) {
+            id value = captureMetadata[[prefix stringByAppendingString:suffix]];
             if (value && value != [NSNull null]) present = true;
         }
         if (!present) return;
-        NSString* mime = metadata[[prefix stringByAppendingString:@"Mime"]];
-        NSString* base64 = metadata[[prefix stringByAppendingString:@"Base64"]];
-        NSNumber* width = metadata[[prefix stringByAppendingString:@"Width"]];
-        NSNumber* height = metadata[[prefix stringByAppendingString:@"Height"]];
-        if (![mime isKindOfClass:[NSString class]] || ![base64 isKindOfClass:[NSString class]] ||
-            ![width isKindOfClass:[NSNumber class]] || ![height isKindOfClass:[NSNumber class]])
+        id mime = captureMetadata[[prefix stringByAppendingString:@"Mime"]];
+        NSNumber* width = asNumber(captureMetadata[[prefix stringByAppendingString:@"Width"]]);
+        NSNumber* height = asNumber(captureMetadata[[prefix stringByAppendingString:@"Height"]]);
+        NSData* photo = decodeBase64(captureMetadata[[prefix stringByAppendingString:@"Base64"]]);
+        if (!asString(mime) || !photo || !width || !height)
             throw std::runtime_error(str(prefix) + " embedded photo fields are incomplete");
-        NSData* photo = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
-        verifyDigest(photo, metadata[[prefix stringByAppendingString:@"SHA256"]], str(prefix));
+        verifyDigest(photo, captureMetadata[[prefix stringByAppendingString:@"SHA256"]], str(prefix));
         auto size = inspectEncoded(photo, str(prefix), 8192, false, mime);
-        if (size.width != width.unsignedIntValue || size.height != height.unsignedIntValue ||
+        if (size.width != width.doubleValue || size.height != height.doubleValue ||
             static_cast<uint64_t>(size.width) * size.height > 50000000)
             throw std::runtime_error(str(prefix) + " embedded photo dimensions mismatch");
     };
     verifyEmbeddedPhoto(@"original");
     verifyEmbeddedPhoto(@"fallbackOriginal");
-    id derivedRaw = capture[@"derived"];
-    if (derivedRaw && derivedRaw != [NSNull null] && ![derivedRaw isKindOfClass:[NSDictionary class]])
-        throw std::runtime_error("derived maps must be an object");
-    NSDictionary* derived = [derivedRaw isKindOfClass:[NSDictionary class]] ? derivedRaw : @{};
-    for (NSString* required in @[@"albedo", @"height", @"normal", @"roughness", @"ao",
-                                @"cavity", @"convexity", @"slope", @"edge"])
-        if (![derived[required] isKindOfClass:[NSDictionary class]])
-            throw std::runtime_error("required capture map missing: " + str(required));
-    NSSet* allowed = [NSSet setWithArray:@[@"albedo", @"height", @"normal", @"roughness", @"ao",
-                                        @"cavity", @"convexity", @"slope", @"edge", @"bent_normal", @"orm"]];
-    for (NSString* kind in derived) {
-        NSDictionary* record = derived[kind];
-        if (![allowed containsObject:kind] || ![record isKindOfClass:[NSDictionary class]] ||
-            ![record[@"mime"] isEqual:@"image/png"] ||
-            ![record[@"base64"] isKindOfClass:[NSString class]] ||
-            ![record[@"width"] isKindOfClass:[NSNumber class]] ||
-            ![record[@"height"] isKindOfClass:[NSNumber class]] ||
-            ![record[@"pixelFormat"] isKindOfClass:[NSString class]] ||
-            ![record[@"provenance"] isKindOfClass:[NSString class]])
+    for (size_t index = 0; index < kRequiredMapCount; ++index)
+        if (!asDictionary(derived[@(kMapRoles[index].name)]))
+            throw std::runtime_error("required capture map missing: " + std::string(kMapRoles[index].name));
+    for (id kindValue in derived) {
+        NSString* kind = asString(kindValue);
+        const MapRole* role = kind ? roleNamed(kind) : nullptr;
+        NSDictionary* record = asDictionary(derived[kindValue]);
+        if (!role || !record || ![asString(record[@"mime"]) isEqualToString:@"image/png"] ||
+            !asNumber(record[@"width"]) || !asNumber(record[@"height"]) ||
+            !asString(record[@"pixelFormat"]) || !asString(record[@"provenance"]))
             throw std::runtime_error("invalid derived map record: " + str(kind));
-        NSData* bytes = [[NSData alloc] initWithBase64EncodedString:record[@"base64"] options:0];
+        NSData* bytes = decodeBase64(record[@"base64"]);
         verifyDigest(bytes, record[@"sha256"], str(kind));
         auto size = inspectEncoded(bytes, str(kind), 4096, true, @"image/png");
         if (size.width != sourceSize.width || size.height != sourceSize.height ||
-            size.width != [record[@"width"] unsignedIntValue] ||
-            size.height != [record[@"height"] unsignedIntValue])
+            size.width != [record[@"width"] doubleValue] || size.height != [record[@"height"] doubleValue])
             throw std::runtime_error("derived map dimensions mismatch: " + str(kind));
-        auto* png = static_cast<const uint8_t*>(bytes.bytes);
-        bool height = [kind isEqual:@"height"];
-        NSString* expectedFormat = height ? @"r16_unorm_png" :
-            [kind isEqual:@"albedo"] ? @"rgba8_srgb_png" : @"rgba8_linear_png";
-        if (![record[@"pixelFormat"] isEqualToString:expectedFormat] ||
-            png[24] != (height ? 16 : 8) || png[25] != (height ? 0 : 6))
-            throw std::runtime_error("derived map pixel format mismatch: " + str(kind));
+        pbrlab::PNGInfo info;
+        std::string pngWhy;
+        const bool r16 = role->kind == PBRLabMapHeight;
+        if (![record[@"pixelFormat"] isEqualToString:@(role->format)] ||
+            !pbrlab::inspectPNG(static_cast<const uint8_t*>(bytes.bytes), bytes.length, info, pngWhy) ||
+            info.bitDepth != (r16 ? 16 : 8) || info.colorType != (r16 ? 0 : 6))
+            throw std::runtime_error("derived map pixel format mismatch: " + str(kind) + (pngWhy.empty() ? "" : " (" + pngWhy + ")"));
     }
     std::cout << "valid capture: " << capturePath.string() << " (" << derived.count << " derived maps)\n";
 }
-void batch(const Options& options) {
-    NSData* data = dataAt(options.catalog);
+
+// ---------------------------------------------------------------------------------------------
+// Catalog batch.
+bool isWithin(const fs::path& child, const fs::path& parent) {
+    auto c = child.begin(), p = parent.begin();
+    for (; p != parent.end(); ++p, ++c) if (c == child.end() || *c != *p) return false;
+    return true;
+}
+fs::path resolveCatalogPath(const fs::path& catalogDir, NSString* relative) {
+    fs::path rel = str(relative);
+    if (rel.empty() || rel.is_absolute() || rel.has_root_name()) throw std::runtime_error("unsafe catalog relative path: " + rel.string());
+    fs::path walk = catalogDir;
+    for (const auto& component : rel) {
+        if (component == ".." ) throw std::runtime_error("unsafe catalog relative path: " + rel.string());
+        if (component.empty() || component == ".") continue;
+        walk /= component;
+        if (fs::is_symlink(walk)) throw std::runtime_error("catalog path contains a symbolic link: " + rel.string());
+    }
+    std::error_code ec;
+    fs::path canonical = fs::canonical(walk, ec);
+    if (ec) throw std::runtime_error("catalog source not found: " + rel.string());
+    if (!isWithin(canonical, catalogDir) || canonical == catalogDir)
+        throw std::runtime_error("catalog path escapes the catalog directory: " + rel.string());
+    return canonical;
+}
+struct BatchItem { fs::path source, output; std::string id, label; ReviewInfo review; };
+int batch(const Options& options) {
+    NSData* data = boundedDataAt(options.catalog, 64ull * 1024 * 1024);
     if (!data) throw std::runtime_error("cannot read catalog");
     NSError* error = nil;
-    NSDictionary* catalog = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-    if (![catalog isKindOfClass:[NSDictionary class]]) throw std::runtime_error("catalog root must be an object");
-    NSArray* materials = catalog[@"items"] ?: catalog[@"materials"] ?: catalog[@"assets"];
-    if (![materials isKindOfClass:[NSArray class]]) throw std::runtime_error("catalog has no items, materials, or assets array");
-    fs::create_directories(options.output);
+    NSDictionary* catalog = asDictionary([NSJSONSerialization JSONObjectWithData:data options:0 error:&error]);
+    if (!catalog) throw std::runtime_error("catalog root must be an object");
+    NSArray* materials = asArray(catalog[@"items"]) ?: asArray(catalog[@"materials"]) ?: asArray(catalog[@"assets"]);
+    if (!materials) throw std::runtime_error("catalog has no items, materials, or assets array");
+    const fs::path catalogDir = fs::canonical(fs::absolute(options.catalog).parent_path());
+    // Plan every item (paths, IDs, labels) before any expensive work, so duplicates fail fast.
+    std::vector<BatchItem> plan;
     std::set<std::string> ids;
-    size_t made = 0;
-    for (NSDictionary* material in materials) {
-        if (![material isKindOfClass:[NSDictionary class]]) throw std::runtime_error("invalid catalog record");
-        NSString* status = [material[@"review_status"] isKindOfClass:[NSString class]] ? material[@"review_status"] : nil;
-        NSNumber* reviewedFlag = [material[@"reviewed"] isKindOfClass:[NSNumber class]] ? material[@"reviewed"] : nil;
-        bool reviewed = reviewedFlag.boolValue || [status isEqualToString:@"approved"] || [status isEqualToString:@"reviewed"];
-        if (!reviewed && !options.includeUnreviewed) continue;
-        NSString* relative = material[@"path"] ?: material[@"relative_path"];
-        NSString* identity = material[@"id"];
-        if (![relative isKindOfClass:[NSString class]])
-            throw std::runtime_error("catalog entry missing path");
-        fs::path rel = str(relative);
-        if (rel.is_absolute() || rel.string().find("..") != std::string::npos) throw std::runtime_error("unsafe catalog relative path");
-        std::string id = sanitized(identity ? str(identity) : rel.stem().string());
-        if (!ids.insert(id).second) throw std::runtime_error("duplicate material ID: " + id);
-        fs::path source = options.catalog.parent_path() / rel;
-        NSString* label = [material[@"label"] isKindOfClass:[NSString class]] ? material[@"label"] :
-            [material[@"material_label"] isKindOfClass:[NSString class]] ? material[@"material_label"] : nil;
-        deriveOne(source, options.output / (id + ".pbrmaterial"), id, label ? str(label) : id, options, status);
-        ++made;
+    size_t skipped = 0;
+    for (id value in materials) {
+        NSDictionary* material = asDictionary(value);
+        if (!material) throw std::runtime_error("invalid catalog record");
+        NSString* status = asString(material[@"review_status"]);
+        const bool reviewed = (isBoolean(material[@"reviewed"]) && [material[@"reviewed"] boolValue]) ||
+            [status isEqualToString:@"approved"] || [status isEqualToString:@"reviewed"];
+        if (!reviewed && !options.includeUnreviewed) { ++skipped; continue; }
+        NSString* relative = asString(material[@"path"]) ?: asString(material[@"relative_path"]);
+        if (!relative) throw std::runtime_error("catalog entry missing string path");
+        id identityValue = material[@"id"];
+        if (identityValue && !asString(identityValue)) throw std::runtime_error("catalog id must be a string");
+        BatchItem item;
+        item.source = resolveCatalogPath(catalogDir, relative);
+        item.id = sanitized(identityValue ? str(identityValue) : fs::path(str(relative)).stem().string());
+        if (!ids.insert(item.id).second) throw std::runtime_error("duplicate material ID: " + item.id);
+        NSString* label = asString(material[@"label"]) ?: asString(material[@"material_label"]);
+        item.label = label.length ? str(label) : item.id;
+        item.output = options.output / (item.id + ".pbrmaterial");
+        item.review = {reviewed, !reviewed};
+        plan.push_back(item);
     }
-    if (!made) throw std::runtime_error("no reviewed materials in catalog; use --include-unreviewed to opt in to candidates");
-    std::cout << "derived " << made << " material bundles\n";
+    if (plan.empty()) throw std::runtime_error("no reviewed materials in catalog; use --include-unreviewed to opt in to candidates");
+    fs::create_directories(options.output);
+    size_t made = 0, failed = 0;
+    for (const auto& item : plan) {
+        checkInterrupted();
+        try {
+            @autoreleasepool { deriveOne(item.source, item.output, item.id, item.label, options, &item.review); }
+            ++made;
+        } catch (const Interrupted&) {
+            throw;
+        } catch (const std::exception& e) {
+            ++failed;
+            std::cerr << "material-lab: " << item.id << ": " << e.what() << '\n';
+            if (!options.keepGoing) {
+                std::cerr << "material-lab: stopping; derived " << made << ", failed " << failed
+                          << ", not attempted " << plan.size() - made - failed << " (use --keep-going to continue)\n";
+                return 1;
+            }
+        }
+    }
+    std::cout << "derived " << made << " material bundles";
+    if (failed) std::cout << ", " << failed << " failed";
+    if (skipped) std::cout << ", " << skipped << " unreviewed skipped";
+    std::cout << '\n';
+    return failed ? 1 : 0;
+}
+
+int run(int argc, const char** argv) {
+    Options options = parse(argc, argv);
+    if (!options.validate.empty()) {
+        if (fs::is_directory(options.validate)) validate(options.validate);
+        else validateCapture(options.validate);
+        return 0;
+    }
+    if (!options.catalog.empty()) return batch(options);
+    std::string id = options.id.empty() ? sanitized(options.input.stem().string()) : sanitized(options.id);
+    std::string label = options.label.empty() ? id : options.label;
+    fs::path destination = options.output;
+    if (destination.extension() != ".pbrmaterial") destination += ".pbrmaterial";
+    deriveOne(options.input, destination, id, label, options);
+    return 0;
 }
 } // namespace
+
 int main(int argc, const char** argv) {
+    installSignalHandlers();
     @autoreleasepool {
-        try {
-            Options options = parse(argc, argv);
-            if (!options.validate.empty()) {
-                if (fs::is_directory(options.validate)) validate(options.validate);
-                else validateCapture(options.validate);
+        @try {
+            try {
+                return run(argc, argv);
+            } catch (const Interrupted& e) {
+                std::cerr << "material-lab: " << e.what() << '\n';
+                return 128 + static_cast<int>(gInterrupted ? gInterrupted : SIGINT);
+            } catch (const std::exception& e) {
+                std::cerr << "material-lab: " << e.what() << '\n';
+                return 1;
             }
-            else if (!options.catalog.empty()) batch(options);
-            else {
-                std::string id = options.id.empty() ? sanitized(options.input.stem().string()) : sanitized(options.id);
-                std::string label = options.label.empty() ? id : options.label;
-                fs::path destination = options.output;
-                if (destination.extension() != ".pbrmaterial") destination += ".pbrmaterial";
-                deriveOne(options.input, destination, id, label, options);
-            }
-            return 0;
-        } catch (const std::exception& e) {
-            std::cerr << "material-lab: " << e.what() << '\n';
+        } @catch (NSException* exception) {
+            std::cerr << "material-lab: internal error: " << str(exception.name) << ": " << str(exception.reason) << '\n';
             return 1;
         }
     }

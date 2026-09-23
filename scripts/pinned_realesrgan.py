@@ -43,14 +43,33 @@ def vendor_module(project: Path):
     return module
 
 
+def to_8bit_gray(image):
+    """Scale 16/32-bit integer grayscale (PIL modes I;16*, I) to 8-bit L with rounding, not truncation."""
+    from PIL import Image
+    import numpy as np
+
+    values = np.asarray(image, dtype=np.int64)
+    maximum = 65535 if image.mode.startswith("I;16") or int(values.max(initial=0)) > 255 else 255
+    scaled = (np.clip(values, 0, maximum) * 255 + maximum // 2) // maximum
+    return Image.fromarray(scaled.astype(np.uint8), "L")
+
+
 def source_pixels(path: Path):
     from PIL import Image, ImageCms, ImageOps
     import numpy as np
 
     with Image.open(path) as opened:
         image = ImageOps.exif_transpose(opened)
-        alpha = image.getchannel("A") if "A" in image.getbands() else None
         source_profile = image.info.get("icc_profile")
+        if image.mode.startswith("I;16") or image.mode == "I":
+            image = to_8bit_gray(image)
+        elif image.mode == "P" or "transparency" in image.info:
+            # Palette/tRNS transparency is not a band until expanded; keep it as real alpha.
+            image = image.convert("RGBA" if image.mode in ("P", "RGB", "PA") else "LA")
+        alpha = image.getchannel("A") if "A" in image.getbands() else None
+        base = {"RGBA": "RGB", "RGBa": "RGB", "LA": "L", "La": "L", "PA": "RGB"}.get(image.mode, image.mode)
+        if base != image.mode:
+            image = image.convert(base)
         if source_profile:
             profile = ImageCms.ImageCmsProfile(io.BytesIO(source_profile))
             target = ImageCms.createProfile("sRGB")
@@ -104,7 +123,11 @@ def main() -> None:
     parser.add_argument("--device", choices=("cpu", "mps"), default="cpu")
     parser.add_argument("--tile", type=int, default=128)
     parser.add_argument("--pad", type=int, default=48)
+    parser.add_argument("--threads", type=int, default=os.cpu_count() or 1,
+                        help="CPU inference threads (default: all cores)")
     args = parser.parse_args()
+    if args.threads < 1 or args.threads > 256:
+        parser.error("threads must be 1..256")
     if args.tile < 16 or args.tile > 1024 or args.pad < 0 or args.pad > 256:
         parser.error("tile must be 16..1024 and pad must be 0..256")
     if args.scale == 2 and (args.tile % 2 or args.pad % 2):
@@ -132,11 +155,13 @@ def main() -> None:
 
     if args.device == "mps" and not torch.backends.mps.is_available():
         raise RuntimeError("MPS unavailable; select CPU explicitly")
-    torch.set_num_threads(2)
+    torch.set_num_threads(args.threads)
     if args.device == "cpu":
         torch.use_deterministic_algorithms(True)
     pixels, alpha, color_conversion = source_pixels(args.input)
     height, width = pixels.shape[:2]
+    if height != width:
+        raise RuntimeError(f"Material Lab input must be square; got {width}x{height} (crop before upscaling)")
     if min(height, width) < 2 or max(height, width) * args.scale > 4096:
         raise RuntimeError("upscaled dimensions must remain within the 2..4096 pixel Material Lab input limit")
 
@@ -171,7 +196,7 @@ def main() -> None:
         "model": model_name, "modelSHA256": digest(weight),
         "pinnedSourceCommit": vendor.COMMIT, "device": args.device,
         "python": sys.version.split()[0], "torch": torch.__version__,
-        "tile": args.tile, "pad": args.pad, "colorConversion": color_conversion,
+        "tile": args.tile, "pad": args.pad, "threads": args.threads, "colorConversion": color_conversion,
         "alpha": "source alpha resized; not inferred" if alpha is not None else "none",
     }
     receipt_path = args.output.with_name(args.output.name + ".upscale.json")
