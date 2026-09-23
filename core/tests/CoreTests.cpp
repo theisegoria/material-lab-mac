@@ -338,6 +338,25 @@ int main() {
         PBRLabFreeResult(stripeBlend);
         std::cout << "seam cut: intermediate pixels " << mixed << " (blend " << blendedMixed << ")\n";
         assert(mixed < m * m / 20 && blendedMixed > mixed * 2);
+        // 4. An axis that already tiles (period 8 fits 96) is left untouched; the other axis is still cut.
+        std::vector<uint8_t> fitting(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            // x-periodic; a slow ramp in y makes the vertical wrap far rougher than any interior row pair.
+            uint8_t val = static_cast<uint8_t>(((x / 4) % 2 ? 40 : 180) + y * 60 / (m - 1));
+            size_t i = (y * m + x) * 4;
+            fitting[i] = fitting[i + 1] = fitting[i + 2] = val;
+        }
+        cutRecipe.seamless_mode = 1;
+        auto* fit = derive(fitting, m, cutRecipe);
+        auto fitAlbedo = map(fit, PBRLabMapAlbedo);
+        size_t xTouched = 0, yTouched = 0;
+        for (unsigned y = 24; y < 72; ++y) for (unsigned x = 0; x < 19; ++x)
+            if (fitAlbedo.pixels[(y * m + x) * 4] != fitting[(y * m + x) * 4]) ++xTouched;
+        for (unsigned y = 0; y < 19; ++y) for (unsigned x = 24; x < 72; ++x)
+            if (fitAlbedo.pixels[(y * m + x) * 4] != fitting[(y * m + x) * 4]) ++yTouched;
+        std::cout << "seam cut: already-tiling axis touched " << xTouched << " px, non-tiling axis " << yTouched << " px\n";
+        assert(xTouched == 0 && yTouched > 0);
+        PBRLabFreeResult(fit);
         cutRecipe.seamless_mode = 2;
         PBRLabInput bad{stripes.data(), m * 4, nullptr, 0, nullptr, 0, m, m, nullptr, 0};
         char err[128]{};

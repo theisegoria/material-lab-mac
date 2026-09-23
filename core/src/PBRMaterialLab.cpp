@@ -441,6 +441,23 @@ void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, in
         return sum + da * da;
     };
     constexpr float kFeather = 2.0f;
+    // Cost of leaving this axis alone: the source's own mismatch across the wrap, compared with the mean
+    // mismatch between ordinary adjacent columns. A wrap no rougher than the texture's interior already
+    // tiles, and cutting it would only add a defect where none exists.
+    auto adjacentCost = [&](int a, int b) {
+        double sum = 0;
+        for (int v = 0; v < n; ++v) {
+            size_t i = index(a, v), j = index(b, v);
+            for (int c = 0; c < 3; ++c) { float d = original[i * 3 + c] - original[j * 3 + c]; sum += d * d; }
+            float da = (static_cast<float>(originalAlpha[i]) - static_cast<float>(originalAlpha[j])) / 255.0f;
+            sum += da * da;
+        }
+        return sum;
+    };
+    const double wrapCost = adjacentCost(n - 1, 0);
+    double interiorCost = 0;
+    for (int k = 0; k + 1 < n; ++k) interiorCost += adjacentCost(k, k + 1);
+    if (wrapCost <= 1.5 * interiorCost / static_cast<double>(n - 1)) return;
     std::vector<float> weight(static_cast<size_t>(n) * n, 0.0f); // Weight of the offset copy, indexed by index().
     for (int zone = 0; zone < 2; ++zone) {
         const int lo = zone == 0 ? 0 : n - band;
