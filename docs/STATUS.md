@@ -1,33 +1,33 @@
-# Material Lab implementation status — 2026-09-23
+# Material Lab implementation status — 2026-09-23 (algorithm 1.2.0)
 
 Material Lab is a standalone, general-purpose local tool. Its C++23 derivation core is compiled into the macOS 27 and iOS 27 apps and exposed through the Mac CLI. Materials remain estimates, and no bundle is automatically admitted into a game runtime.
 
 ## Implemented
 
-- CLI derivation of one image or a reviewed catalog batch; flat-safe and material-prior recipes; optional relief mask or authored R16 height; +Y normal, roughness prior, heightfield AO, bent normal option, cavity/convexity/slope/edge, seam checks, and metalness-gated ORM.
-- Versioned `.pbrmaterial` exports with semantic labels, complete recipe, per-map encoding/hash/provenance, source hashes, and a strict validator. An optional no-shell local pre-upscale hook can invoke the offline pinned Real-ESRGAN adapter; [the workflow](UPSCALE.md) retains an original-input and processed-image hash plus a verified receipt.
-- Native Mac app with editable labels/categories, source and camera inbox, inspected maps, 3×3 and relighting previews, seam diagnostics, reviewed batch progress/cancellation, explicit export, and Bonjour/TLS pairing with Mac approval.
-- Native iPhone app with guided capture, Constant Color when supported and fallback provenance, crop-aware confidence, Photos/Files import, semantic labeling, on-device derivation, map preview, Files export, and pinned local transfer to Mac.
-- Coordinated, text-free app icons generated with imagegen, packaged in native Mac and iPhone sizes, and [visually inspected](../assets/branding/README.md).
+- **Core 1.2.0.** +Y / green-up normals with a DirectX option; GTAO cosine-weighted horizon AO with per-pixel open-sky normalization and an analytic bent normal; Scharr gradients and Gaussian-approximating relief bands; micro-contrast roughness variation centred on the prior; delighting; make-tileable with an aligned minimum-error seam cut (default) or a histogram-preserving blend; a guide-normal input that integrates learned normals to height with a multigrid Poisson solver; deterministic row-parallel derivation.
+- **Learned geometry.** MoGe-2 ViT-S normals (MIT) converted to a 518² fp16 Core ML model, run with 50 %-overlap tiles. CLI (`--learned-normals`), macOS (Settings › Learned Geometry, built-in model, Learned geometry slider) and iOS. Every export records the model identity, compute units, tiling and a hash of the guide normals.
+- **CLI.** Hardened JSON handling (orderly exit 1, no aborts), symlink- and traversal-safe catalogs, a validator that rejects forged manifests, atomic in-memory PNG writing with adaptive filtering, concurrent map encoding, EXIF orientation, unpremultiplied decode, a timed-out and signal-forwarded pre-upscale child, and order-independent recipe flags.
+- **macOS app.** Native Liquid Glass design: sidebar, canvas with floating glass controls, inspector with grouped recipe sections, map strip with ⌘1–9, before/after split, 3×3 tile view with a tiling-quality card, RealityKit PBR preview, debounced live re-derivation, per-source recipes, drag and drop, Bonjour/TLS pairing with per-capture approval. Core compiled at -O3.
+- **iOS app.** Full-bleed camera with glass controls, level and glare hints, Vision auto-crop, detented recipe sheet, live 512² preview, 512–4K output, tiled / lit sphere / compare modes, capture persistence, always-on privacy scrubbing of originals, Files export and pinned local transfer.
 
 ## Verified here
 
 | Gate | Result |
 | --- | --- |
-| `./scripts/build_and_run.sh cli` | Build succeeded; 2/2 CTests passed, including synthetic geometry, encoding, catalog, bundle-tamper, and pre-upscale-stub cases. |
-| `./scripts/build_and_run.sh mac-build` | Native macOS 27 arm64 app built successfully. |
-| `./scripts/build_and_run.sh ios-sim` | Native iOS 27 simulator app built successfully. |
-| iOS simulator test suite | 11 discovered: 9 passed, 2 short-lived live-link fixture tests skipped in the ordinary suite, 0 failures. Those link cases ran separately against a live Mac listener. |
-| iOS Files export | UI test selected a simulator Photos image, assigned a semantic label, derived maps, tapped Save in Files, and produced a `.pbrcapture`. The final Mac CLI accepted its nine maps. |
-| Mac/iOS shared-core parity | All nine decoded maps from actual simulator `.pbrcapture` fixtures matched Mac rederivation pixel for pixel at 256²; [exact method and hashes](verification/MAC_IOS_PARITY_2026-09-23.md). |
-| Mac export | The Mac app exporter produced `/private/tmp/painted-tile-6cb97b19.pbrmaterial`; final CLI validation passed nine maps, semantic label, and `runtime_admitted=false`. |
-| Direct local link | A simulator-to-Mac Bonjour/TLS pinned transfer received an ACK and imported to the camera inbox. Wrong certificate pin, token, interrupted frame, duplicate ID, expired token, and explicit Mac decline were rejected without a new completed inbox item. |
-| Optional pinned upscale | Offline pinned Real-ESRGAN x2 and x4 ran on a tiny synthetic CPU input. A fresh x2 run through the CLI hook exported a validated nine-map bundle; forged pre-upscale hashes, dimensions, and receipt fields are rejected. |
-| Visual QA | [Synthetic map/relighting sheet](verification/analytic-maps-and-relighting.png), [Mac native views](verification/README.md), and [iOS simulator views](verification/README.md) were visually inspected. |
+| `./scripts/build_and_run.sh cli` | Build succeeded; both CTests pass, including the 1K threaded-determinism test. Core tests assert in Release builds. |
+| Core convention and AO | Tests assert +Y ramp encoding, the DirectX flip, exactly unoccluded tilted planes, pit occlusion, and a guide-normal round trip within 0.45 8-bit levels. |
+| Core performance (M5, -O3) | 1024² stone: 234 ms (1.0.0) → 106 ms; 2048²: 955 ms → 643 ms, with 2.7× more AO samples. Guided 1024²: 188 ms. |
+| Tiling | Seam cut: smooth-pattern wrap mismatch 0.039 → 0.008; 192 vs 1224 intermediate pixels against the blend on stripes. [Brick comparison](verification/tiling-seam-cut-vs-blend.png). |
+| Learned normals | Core ML matches stock PyTorch within 0.045° mean / 0.23° p99; brick tops read up (+0.034 green) and bottoms down (−0.045). [Analytic vs learned on brick](verification/learned-normals-brick-compare.png). 1K learned CLI export 1.15 s warm. |
+| `./scripts/build_and_run.sh mac-build` | Native macOS 27 arm64 app builds with no warnings; a weight-1 export validates with nine maps. Off-screen renders of every view in light and dark: `verification/macos-1.1-*.png`, `macos-1.2-learned-*.png`. |
+| `./scripts/build_and_run.sh ios-sim` | Native iOS 27 simulator app builds; 17 unit tests pass (2 live-link fixtures skipped), 3 UI tests pass; exported `.pbrcapture` files validate with the CLI. Simulator screenshots in light and dark: `verification/ios-1.1-*.png`. |
+| Mac/iOS parity (1.0.0) | [Pixel-exact decoded maps](verification/MAC_IOS_PARITY_2026-09-23.md) from real simulator captures. Not yet repeated for 1.2.0. |
 
 ## Remaining proof limits
 
-- The user chose simulator-only validation. A simulator cannot establish real-camera focus/glare behavior, Constant Color hardware output, or physical-device local-network permission behavior.
-- The Mac console became locked before the final GUI Export click. The native app had been visually inspected during derivation and preview, and its current exporter produced a CLI-validated bundle headlessly. Repeat the click after the desktop is unlocked.
-- The successful direct link preceded the final listener cleanup; rejection cases were repeated after it. A final positive transfer on a live unlocked session remains useful confirmation.
-- The saved bundle validator proves manifest/map integrity and internal pre-upscale claim consistency. The processed image is temporary and is not included in `.pbrmaterial`, so its hash cannot be independently recomputed from a saved bundle alone. Tiny model smoke runs do not establish texture quality or performance at 1K.
+- Simulator-only validation on iOS. No physical camera, Constant Color hardware, or real-device local-network permission behaviour has been tested.
+- Whole-window screen capture is unavailable on this machine, so the macOS Liquid Glass surfaces were verified through the app's own off-screen renders, which draw glass and vibrancy as flat regions. The layout, controls and map rendering were checked; the material of the glass itself was not.
+- The Neural Engine runs the learned model in fp16; output can differ slightly between chips and OS versions. CPU-only mode is more reproducible.
+- Mac/iOS pixel parity has not been re-measured for algorithm 1.2.0.
+- Algorithm 1.0.0 bundles have inverted green in their normal maps; the validator warns, and they should be re-derived.
+- The release app is Developer ID signed but not notarized.
