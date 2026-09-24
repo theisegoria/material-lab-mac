@@ -1,4 +1,4 @@
-# Material Lab implementation status — 2026-09-24 (algorithm 1.3.0)
+# Material Lab implementation status — 2026-09-24 (algorithm 1.4.0)
 
 Material Lab is a standalone, general-purpose local tool. Its C++23 derivation core is compiled into the macOS 27 and iOS 27 apps and exposed through the Mac CLI. Materials remain estimates, and no bundle is automatically admitted into a game runtime.
 
@@ -24,6 +24,7 @@ Material Lab is a standalone, general-purpose local tool. Its C++23 derivation c
 | `./scripts/build_and_run.sh ios-sim` (1.3.0) | App and test bundle build (`build-for-testing`); the 1.3.0 unit tests were not run. |
 | `./scripts/build_and_run.sh ios-sim` (1.1.0) | Native iOS 27 simulator app builds; 17 unit tests pass (2 live-link fixtures skipped), 3 UI tests pass; exported `.pbrcapture` files validate with the CLI. Simulator screenshots in light and dark: `verification/ios-1.1-*.png`. |
 | 1.3.0 rock and terrain review (2026-09-24) | 12 tileable 1K rock albedos and 3 decoded 4K terrain albedos, both paths. Learned border offset (5 % border minus interior, of the height range) from up to −0.23 to within ±0.04; learned height clipping on 4K clover 68 % → 0 %; mean normal xy 0.01–0.07 → 0.18–0.25 (learned) and 0.02–0.04 → 0.15–0.22 (4K analytic); learned AO mean 0.97–1.00 → 0.76–0.92; roughness std 0.01 → 0.07 at the default variation. Remaining wrap seams follow the sources' own seams and disappear with `--seamless 0.1`. Review sheets were kept outside the repository. |
+| 1.4.0 albedo repair (2026-09-24) | Nine seamed 4K decoded terrain albedos with `--repair-albedo auto --learned-normals`: albedo tone seam ratio 1.4–2.7 → 0.7–1.2, pixel 0.13–0.35 → 0.8–1.2 (an edge blend had hidden the step at pixel scale), height seam 0.8–3.8 → 0.8–1.2; seven quilted, two blended. Wrap-cross views inspected: no step, no doubled elements; the blend softens leaves slightly. Coated-metal deck AO mean 0.992 → 0.965 (p1 0.90 → 0.67). Limestone `--polarity -1` with learned geometry: height correlation with +1 was 1.000, now −1.000. |
 | Guide tiler | Core test: a fake estimator with a view-fixed tilt and bowl gives back the source slope field within 0.26 levels, with no wrap step. Moving the tiling into the core left CLI output bit-identical. |
 | Mac/iOS parity (1.0.0) | [Pixel-exact decoded maps](verification/MAC_IOS_PARITY_2026-09-23.md) from real simulator captures. Not yet repeated for 1.2.0. |
 
