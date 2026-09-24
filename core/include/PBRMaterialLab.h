@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-// Version 1.3 ABI. All buffers in a PBRLabResult remain owned by the result.
+// Version 1.4 ABI. All buffers in a PBRLabResult remain owned by the result.
 // Derivation uses internal worker threads; the progress callback runs only on the calling thread.
 typedef enum PBRLabPreset {
     PBRLabPresetFlat = 0,
@@ -76,6 +76,11 @@ typedef struct PBRLabRecipe {
     uint32_t seamless_mode;          // With seamless_blend > 0: 1 (default) = aligned minimum-error seam cut, best for
                                      // structured textures (brick, tiles, planks) and most photos; 0 = histogram-
                                      // preserving blend, for fine stochastic textures with soft lighting drift.
+    // Added in 1.4.0. Explicit albedo repair: the albedo itself is rebuilt to tile (both axes, always), and the
+    // repaired albedo feeds every derived map. 0 = off (legacy seamless_blend / seamless_mode behaviour), 1 = blend
+    // (histogram-preserving), 2 = quilt (minimum-error cut, multi-band), 3 = auto (quilt unless its cut ratio > 4).
+    // The band is seamless_blend of the tile per edge, or 0.12 when that is 0.
+    uint32_t albedo_repair;
 } PBRLabRecipe;
 
 typedef struct PBRLabMap {
@@ -103,6 +108,20 @@ typedef struct PBRLabDerivationInfo {
     float height_wrap_seam_ratio;    // Mean opposite-edge height step / mean adjacent step (about 1 = seamless).
 } PBRLabDerivationInfo;
 
+// Added in 1.4.0. Wrap-seam measures of linear-light luminance (see docs/DERIVATION.md).
+typedef struct PBRLabWrapSeam {
+    float pixel_x, pixel_y;          // Opposite-edge step / mean adjacent step (about 1 or below = no step).
+    float tone_x, tone_y;            // The same at a sigma 8 reference-px blur (lighting or colour steps).
+    float detail;                    // Fine contrast near the wrap lines / elsewhere (below 1 = smeared band).
+} PBRLabWrapSeam;
+typedef struct PBRLabAlbedoRepairInfo {
+    uint32_t method;                 // 0 none, 1 blend, 2 quilt (the method actually applied).
+    float cut_cost_ratio;            // Quilt: mean mismatch on the cut / mean mismatch of neighbouring pixels in the band.
+    float band_fraction;             // Band per edge as a fraction of the tile.
+    uint32_t offset_x, offset_y;     // Offset of the copy used on each axis (0 = axis left alone).
+    PBRLabWrapSeam before, after;    // Measured when albedo_repair is set; zero otherwise.
+} PBRLabAlbedoRepairInfo;
+
 typedef struct PBRLabResult PBRLabResult;
 typedef int (*PBRLabProgressCallback)(float progress, void *context); // Return zero to cancel.
 
@@ -114,6 +133,12 @@ PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabRecipe *recipe,
 int PBRLabGetMap(const PBRLabResult *result, PBRLabMapKind kind, PBRLabMap *out_map);
 PBRLabSeamMetrics PBRLabGetSeamMetrics(const PBRLabResult *result);
 PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *result);
+PBRLabAlbedoRepairInfo PBRLabGetAlbedoRepairInfo(const PBRLabResult *result);
+// Added in 1.4.0. Runs only the albedo conditioning of PBRLabDerive (delighting, tiling or repair) and writes the
+// resulting sRGB RGBA8 albedo, exactly as PBRLabDerive would export it. Clients run learned inference on this
+// albedo, then derive from it with conditioning turned off, so every map sees the repaired image. Returns 0 on error.
+int PBRLabConditionAlbedo(const PBRLabInput *input, const PBRLabRecipe *recipe, uint8_t *out_rgba8, size_t out_row_bytes,
+                          PBRLabAlbedoRepairInfo *out_info, char *error, size_t error_capacity);
 void PBRLabFreeResult(PBRLabResult *result);
 
 // Added in 1.3.0: the learned-guide tiling contract (docs/LEARNED_NORMALS.md), shared by every client so that

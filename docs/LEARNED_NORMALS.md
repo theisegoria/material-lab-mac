@@ -55,7 +55,9 @@ The core implements this contract as `PBRLabGuideTiler` (`PBRLabGuideTilerCreate
 6. Weight each tile by `w(x, y) = s(x) · s(y)`, where `s(t) = max(sin²(π u), 10⁻⁶)` and `u = clamp((t + 0.5 − 48) / (518 − 96), 0, 1)`: a Hann window over the tile minus a 48-pixel margin, where a ViT's predictions bend. Accumulate the weighted unit normals `normalize(slope_x, slope_y, 1)`.
 7. When tiling, fold the padded field onto the tile: for every working pixel, sum the unit-normalized accumulations at `P + x + kW` (k = −1, 0, 1) weighted by `f(u) = smoothstep((u + 0.5 − (P − 64)) / 128) · (1 − smoothstep((u + 0.5 − (P + W − 64)) / 128))`. `f(u) + f(u ± W) = 1` inside both cross-fades, so the field is exactly periodic.
 8. Resample the `W × W` normal field to `N × N` bilinearly (wrapping when tiling), renormalize, and encode it as linear RGBA8: `round((n · 0.5 + 0.5) · 255)`, alpha 255.
-9. Pass the result as `PBRLabInput.guide_normal_rgba8`, with `recipe.guide_normal_weight` in [0, 1]. The core integrates it to height (periodically when tiling), keeps the band between wavelengths of about 16 reference pixels and a fifth of the tile as form, uses it to orient the albedo-derived fine detail, and fuses both ([derivation](DERIVATION.md)).
+With albedo repair (1.4.0) the tiler is given the repaired albedo (from `PBRLabConditionAlbedo`), so learned relief never reads the old seam.
+
+9. Pass the result as `PBRLabInput.guide_normal_rgba8`, with `recipe.guide_normal_weight` in [0, 1]. The core integrates it to height (periodically when tiling), keeps the band between wavelengths of about 16 reference pixels and a fifth of the tile as form, uses it to orient the albedo-derived fine detail, and fuses both ([derivation](DERIVATION.md)). `height_polarity` −1 inverts the fused learned relief (1.4.0).
 
 A 1K source runs 50 predictions (about 3 s on an M5 Neural Engine), a 4K source 162 (about 19 s). The 1.2.0 contract (`W = clamp(N, 518, 1036)`, clamped sine-window tiles, no padding) left a frame of edge predictions at the border and a blurred pillow in the height.
 

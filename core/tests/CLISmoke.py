@@ -118,7 +118,8 @@ def main() -> None:
         assert manifest["maps"]["normal"]["pixel_format"] == "rgba8_linear_png"
         assert "orm" in manifest["maps"] and "bent_normal" in manifest["maps"]
         # 1.3.0: estimated height is range-normalized and the manifest records the depth it spans.
-        assert manifest["algorithm_version"] == "1.3.0"
+        assert manifest["algorithm_version"] == "1.4.0"
+        assert manifest["recipe"]["albedo_repair"] == "off" and "albedo_repair" not in manifest
         relief = manifest["relief"]
         assert relief["height_span_tile_widths"] > 0 and relief["rms_slope"] > 0
         assert relief["learned_form_share"] == 0 and relief["detail_polarity"] == 1
@@ -368,6 +369,37 @@ def main() -> None:
         forge_guide(lambda m: m["guide_normals"].__setitem__("contract", "something_else"))
         (guided / "manifest.json").write_text(json.dumps(guided_good))
         run(cli, "--validate", str(guided))
+
+        # 1.4.0 explicit albedo repair: the albedo is derived data with hashes and seam measures, and is enforced.
+        repaired = root / "repaired.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(repaired), "--preset", "organic", "--repair-albedo", "auto")
+        run(cli, "--validate", str(repaired))
+        repaired_good = json.loads((repaired / "manifest.json").read_text())
+        block = repaired_good["albedo_repair"]
+        assert repaired_good["recipe"]["albedo_repair"] == "auto" and block["mode"] == "auto"
+        assert block["method"] in ("quilt", "blend") and abs(block["band_fraction"] - 0.12) < 1e-6
+        assert block["source_sha256"] == repaired_good["source"]["sha256"]
+        assert repaired_good["maps"]["albedo"]["provenance"] == "repaired_tileable_albedo_derived_from_source"
+        for key in ("pixel_x", "pixel_y", "tone_x", "tone_y", "detail"):
+            assert key in block["seam_before"] and key in block["seam_after"]
+        run(cli, "--input", str(image), "--output", str(root / "repair-no-tile"), "--repair-albedo", "quilt", "--no-tile",
+            expect_success=False)
+        run(cli, "--input", str(image), "--output", str(root / "repair-bad"), "--repair-albedo", "magic", expect_success=False)
+        def forge_repair(mutate):
+            tampered = json.loads(json.dumps(repaired_good))
+            mutate(tampered)
+            (repaired / "manifest.json").write_text(json.dumps(tampered))
+            run(cli, "--validate", str(repaired), expect_success=False)
+        forge_repair(lambda m: m.pop("albedo_repair"))
+        forge_repair(lambda m: m["albedo_repair"].update(mode="quilt"))
+        forge_repair(lambda m: m["albedo_repair"].update(source_sha256="0" * 64))
+        forge_repair(lambda m: m["albedo_repair"].update(repaired_rgba8_sha256="nope"))
+        forge_repair(lambda m: m["albedo_repair"]["seam_after"].pop("tone_x"))
+        forge_repair(lambda m: m["maps"]["albedo"].update(provenance="source_color_converted_to_srgb"))
+        forge_repair(lambda m: m["recipe"].update(albedo_repair="off"))
+        forge_repair(lambda m: m["recipe"].update(albedo_repair="sometimes"))
+        (repaired / "manifest.json").write_text(json.dumps(repaired_good))
+        run(cli, "--validate", str(repaired))
 
         # Non-ASCII labels survive; a bare relative --output lands in the working directory.
         label = "ardoise \u00e9clat \u77f3"

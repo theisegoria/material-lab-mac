@@ -1,6 +1,6 @@
 # Derivation model and provenance
 
-Material Lab 1.3.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations. Unless the recipe asks for delighting or tiling, the albedo output is a byte-exact copy of the source.
+Material Lab 1.4.0 is a deterministic, analytical image-to-map estimator. It accepts a color-managed, square, straight RGBA8 image in sRGB. The shared C++23 core converts sRGB channels to linear values for calculations. Unless the recipe asks for delighting, tiling or albedo repair, the albedo output is a byte-exact copy of the source.
 
 ## What the source can and cannot tell us
 
@@ -14,7 +14,7 @@ References:
 - Heitz & Neyret 2018, *High-Performance By-Example Noise using a Histogram-Preserving Blending Operator* (HPG)
 - [glTF 2.0 material texture conventions](https://github.com/KhronosGroup/glTF/blob/main/specification/2.0/Specification.adoc)
 
-## Algorithm (1.3.0)
+## Algorithm (1.4.0)
 
 Every spatial scale below is given in pixels at a **1024-pixel reference** and scales with the tile (`s = size / 1024`), so a 512² preview and a 4K export describe the same surface. This includes `ao_radius_pixels`.
 
@@ -33,9 +33,14 @@ Every spatial scale below is given in pixels at a **1024-pixel reference** and s
        - This preserves contrast in fine stochastic textures, such as noise, sand and grain, whose soft lighting drift would make a cut visible.
      - When a pattern's period does not divide the tile size, a defect somewhere is unavoidable. The cut hides it in one place; the blend spreads it as ghosting.
      - Comparison: [seam cut vs blend on brick](verification/tiling-seam-cut-vs-blend.png).
+   - *Albedo repair* (`albedo_repair`, 1.4.0; CLI `--repair-albedo off|blend|quilt|auto`) is the explicit mode for a source that does not tile, for example an image whose wrap was hidden by an edge blend that left a smeared strip and a tone step. It always repairs both axes over a band of `seamless_blend` (0.12 of the tile per edge when unset), and the repaired albedo becomes both the exported albedo and the image every derived map and the learned estimator see.
+     - **Quilt** is the seam cut above with these changes: the copy offset is searched within 3/8–5/8 of the tile (duplicated elements sit far from their twins); the cut cost includes the difference in local contrast, so a sharp region is not joined to a soft one; the cut stays in the inner half of the band, so the strip along the old wrap is replaced rather than threaded; the image is split at σ = max(4 reference px, band/8), with detail following the cut (feathered ±3 reference px) and the low band following the same cut feathered at its own scale, so tone differences never form a step and one region's low band is never paired with another's detail (which reads as a milky haze); and an axis is never skipped.
+     - **Blend** is the histogram-preserving blend above, using the copy alone over the outer half of the band and blending across the inner half only.
+     - **Auto** quilts, then measures the cut's visibility: its mean mismatch divided by that of ordinary neighbouring pixels in the band. Up to 4 the quilt is kept; above it auto uses the blend. Quilt is preferred because the blend softens and ghosts large discrete elements such as leaves, twigs and pebbles; on nine seamed 4K terrain albedos the quilt looked as good or better wherever it was kept.
+     - Seam measures before and after (linear-light luminance) are recorded: *pixel* (opposite-edge step / mean adjacent step), *tone* (the same after a σ 8 reference-px blur, which exposes a lighting or colour step that an edge blend hides at pixel scale) and *detail* (fine contrast within 24 reference px of either wrap line / elsewhere; below 1 means a smeared strip).
    - Equalize runs before tiling, so lighting gradients do not become seams. Pseudo-height uses the conditioned image.
 2. **Relief cue.** Compute Rec. 709 luminance in linear light and take its logarithm (`log(L + 0.01)`). Shading multiplies albedo, so the log makes the same relief give the same cue on dark basalt and pale limestone; 1.2.0 used linear differences, which flattened dark materials. Gaussian-approximating filters (three box passes each) at 2, 8 and 24 reference pixels split it into high, middle and coarse bands, weighted by the preset (stone 1.0 / 1.2 / 0.7). Flat produces no inferred relief.
-3. **Relief amplitude is a prior.** The inferred field is scaled so that its root-mean-square surface slope equals the preset target × `height_strength` / 0.22 (stone 0.30, organic 0.26, fabric 0.20, bare metal 0.09, coated metal 0.05). The photo decides the *shape*; the target decides how deep it is, independent of albedo contrast or resolution. `height_polarity` sets the sign.
+3. **Relief amplitude is a prior.** The inferred field is scaled so that its root-mean-square surface slope equals the preset target × `height_strength` / 0.22 (stone 0.30, organic 0.26, fabric 0.20, coated metal 0.12, bare metal 0.09). The photo decides the *shape*; the target decides how deep it is, independent of albedo contrast or resolution. `height_polarity` sets the sign. Coated metal (1.4.0) weights the bands 0.6 / 0.5 / 0.15 so panel seams become grooves with width, deep enough for GTAO; at 1.3.0's 0.05 target a panelled deck had AO ≈ 0.99.
 4. **Learned geometry (optional).** With guide normals (MoGe-2, [learned normals](LEARNED_NORMALS.md)) and weight `w`:
    - The guide slopes are integrated to height with a multigrid Poisson solver, **periodic when tiling** (Neumann otherwise). The CLI already delivers a periodic guide field when tiling.
    - *Form* is the learned height band-limited to wavelengths between the **crossover** (Gaussian σ = 3 reference px, wavelength ≈ 16 px) and σ = tile/20. Longer wavelengths are estimator bias (bowls, tilt) or image composition and would repeat visibly in a tiled texture; shorter ones are beyond the estimator's resolution.
@@ -43,6 +48,7 @@ Every spatial scale below is given in pixels at a **1024-pixel reference** and s
    - The form's share of the slope energy is 3 × (the learned form's own rms slope) / target, capped at 0.7. An estimator that sees an almost flat surface contributes little form instead of having its noise amplified.
    - The fused field `(1 − w)·heuristic + w·(√share·form + √(1 − share)·detail)` is scaled to the target rms slope. This is a frequency split in height rather than reoriented normal mapping, so height, normals, AO and the diagnostics all describe one surface.
    - Flat preset: the learned band alone, in the estimator's own units.
+   - `height_polarity` −1 inverts the learned form and the learned-oriented detail as well (1.4.0; 1.3.0 ignored polarity at guide weight 1). The manifest's `relief.detail_polarity` is the sign actually applied to albedo detail.
 5. **Geometry and height.** The optional 8-bit relief mask scales the geometry (0 removes it). `normal_strength` then scales the whole surface, so it changes normals, AO, the diagnostics and the recorded height span in every mode. An authored 16-bit height replaces inference and is exported byte-exact (full range = 8 reference px of depth × `normal_strength`). Estimated height is exported **range-normalized** to the full 16-bit range (lowest point 0, highest 65535; never clamped), and the manifest records `relief.height_span_tile_widths`, the depth between 0 and 1 in tile widths. A flat result is a constant 0.5.
 6. **Normal.** A Scharr derivative of the geometry (pixels of depth) gives the tangent normal `normalize(−∂h/∂x, −∂h/∂y, 1)`.
    - The default encoding is **+Y / green-up** (glTF, OpenGL, Blender). Image rows grow downward, so height that rises toward the bottom of the image faces up and encodes green > 128.
@@ -61,6 +67,13 @@ Every spatial scale below is given in pixels at a **1024-pixel reference** and s
 The tile option wraps all local filters, the Poisson solve and all samples. Opposite-edge differences are reported separately: height value and first-gradient differences, and linear-light albedo differences. Wrapping a filter does not make a non-seamless source seamless; use `seamless_blend` for that.
 
 The core derives in parallel across rows, using worker threads plus the calling thread. Results are bit-identical to a serial run, and the progress callback only runs on the calling thread. A 1024² stone derivation with bent normals takes about 0.1 s in an optimized build on an M5 (10 cores); 4096² takes about 7 s.
+
+### What changed from 1.3.0
+
+- Explicit albedo repair (`albedo_repair`) with repaired-albedo provenance, hashes and seam measures; the CLI runs learned inference on the repaired albedo.
+- `height_polarity` flips learned relief.
+- Coated metal relief target 0.05 → 0.12 and band weights 0.65 / 0.25 / 0 → 0.6 / 0.5 / 0.15.
+- Legacy `seamless_blend` without `albedo_repair` is unchanged.
 
 ### What changed from 1.2.0
 

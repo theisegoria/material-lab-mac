@@ -23,6 +23,9 @@ constexpr float kNormalDepthPixels = 8.0f;
 constexpr float kReferenceSize = 1024.0f;
 constexpr float kLogLuminanceFloor = 0.01f;   // Linear luminance floor of the log relief cue (about sRGB 25/255).
 constexpr float kDefaultHeightStrength = 0.22f;
+constexpr float kDefaultRepairBand = 0.12f;     // Albedo repair band per edge (fraction of the tile) when unset.
+constexpr float kAutoCutCostRatio = 4.0f;      // Auto repair: keep the quilt unless its cut is this many times more
+                                                // visible than ordinary neighbouring pixels, else blend.
 // Learned-geometry frequency split, in reference pixels of box-equivalent radius (Gaussian sigma = radius/sqrt 3).
 constexpr float kCrossoverPixels = 5.2f;       // sigma 3 px: below it detail comes from the albedo bands.
 constexpr float kFormCutFraction = 0.0866f;    // sigma = tile/20: longer wavelengths are estimator bias (bowls, tilt)
@@ -179,7 +182,7 @@ float presetSignal(PBRLabPreset preset, float high, float mid, float coarse) {
     case PBRLabPresetStone: return high * 1.0f + mid * 1.2f + coarse * 0.7f;
     case PBRLabPresetFabric: return high * 1.75f + mid * 0.45f;
     case PBRLabPresetOrganic: return high * 1.0f + mid * 1.2f + coarse * 0.8f;
-    case PBRLabPresetCoatedMetal: return high * 0.65f + mid * 0.25f;
+    case PBRLabPresetCoatedMetal: return high * 0.6f + mid * 0.5f + coarse * 0.15f;
     case PBRLabPresetBareMetal: return high * 0.9f + mid * 0.6f;
     case PBRLabPresetFlat: return 0;
     }
@@ -192,7 +195,7 @@ float reliefTarget(PBRLabPreset preset) {
     case PBRLabPresetStone: return .3f;
     case PBRLabPresetFabric: return .2f;
     case PBRLabPresetOrganic: return .26f;
-    case PBRLabPresetCoatedMetal: return .05f;
+    case PBRLabPresetCoatedMetal: return .12f;
     case PBRLabPresetBareMetal: return .09f;
     case PBRLabPresetFlat: return 0;
     }
@@ -246,7 +249,7 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
         !in01(r->ao_radius_pixels, 64) || !in01(r->assigned_metalness, 1) ||
         !in01(r->normal_strength, 16) || !in01(r->ao_strength, 4) ||
         !in01(r->albedo_equalize, 1) || !in01(r->seamless_blend, .45f) ||
-        !in01(r->guide_normal_weight, 1) || r->seamless_mode > 1) {
+        !in01(r->guide_normal_weight, 1) || r->seamless_mode > 1 || r->albedo_repair > 3) {
         why = "recipe contains an invalid preset or out-of-range parameter"; return false;
     }
     return true;
@@ -442,8 +445,10 @@ std::vector<float> guideHeight(const PBRLabInput *input, int width, int height, 
 // (at n - offset) must stay outside both edge bands. The offset that best aligns the texture with itself in
 // the bands (e.g. a whole number of brick courses) makes the cut nearly invisible. Coarse search on a
 // subsampled grid, then refinement at full resolution.
-int bestCopyOffset(const std::vector<float> &rgb, int n, int band, bool vertical) {
-    const int lo = std::max(band + 2, n / 4), hi = std::min(n - band - 2, n - n / 4);
+// Repair searches only 3/8..5/8 of the tile: the copy duplicates content at the offset, and the nearer the offset is
+// to half a tile the farther any duplicated element sits from its twin.
+int bestCopyOffset(const std::vector<float> &rgb, int n, int band, bool vertical, bool repair = false) {
+    const int lo = std::max(band + 2, repair ? 3 * n / 8 : n / 4), hi = std::min(n - band - 2, repair ? n - 3 * n / 8 : n - n / 4);
     if (lo >= hi) return n / 2;
     auto lum = [&](int across, int along) {
         size_t i = vertical ? at(along, across, n) : at(across, along, n);
@@ -476,22 +481,53 @@ int bestCopyOffset(const std::vector<float> &rgb, int n, int band, bool vertical
     return best;
 }
 
-void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, int band, bool vertical) {
+// `repair` (explicit albedo repair, 1.4.0): the axis is always repaired; the cut stays in the inner half of the band,
+// so a smeared or low-contrast strip along the old wrap is replaced rather than threaded by the cut; and the image is
+// split into bands: detail (above sigma = max(4 reference px, band / 8)) follows the cut sharply while the low band
+// follows it feathered at its own scale, so lighting or tone differences never form a step along the cut.
+// Returns the copy offset (0 when the axis was left alone).
+int seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, int band, bool vertical,
+                bool repair = false, float scale = 1.0f, float *cutCostRatio = nullptr) {
     band = std::clamp(band, 4, n / 2 - 4);
-    const int half = bestCopyOffset(rgb, n, band, vertical);
+    const int half = bestCopyOffset(rgb, n, band, vertical, repair);
     auto index = [&](int across, int along) {
         return vertical ? at(along, across, n) : at(across, along, n); // vertical: cut runs along x.
     };
     const std::vector<float> original(rgb);
     const std::vector<uint8_t> originalAlpha(alpha);
+    std::vector<float> low, detail, contrast;         // Repair only: low band, detail and local contrast of the original.
+    const float lowSigma = std::max(4.0f * scale, static_cast<float>(band) / 8.0f);
+    const int lowRadius = std::max(1, static_cast<int>(std::lround(lowSigma * std::numbers::sqrt3_v<float>)));
+    if (repair) {
+        const int radius = lowRadius;
+        low.resize(original.size());
+        std::vector<float> channel(static_cast<size_t>(n) * n);
+        for (int c = 0; c < 3; ++c) {
+            for (size_t i = 0; i < channel.size(); ++i) channel[i] = original[i * 3 + c];
+            auto blurred = smoothBlur(channel, n, n, radius, true);
+            for (size_t i = 0; i < channel.size(); ++i) low[i * 3 + c] = blurred[i];
+        }
+        detail.resize(original.size());
+        for (size_t i = 0; i < original.size(); ++i) detail[i] = original[i] - low[i];
+        // Local contrast (mean |detail| over ~4 reference px): the cut avoids joining a sharp region to a soft or
+        // smeared one, which reads as an edge even where the pixels themselves match.
+        std::vector<float> magnitude(static_cast<size_t>(n) * n);
+        for (size_t i = 0; i < magnitude.size(); ++i)
+            magnitude[i] = std::abs(detail[i * 3]) + std::abs(detail[i * 3 + 1]) + std::abs(detail[i * 3 + 2]);
+        contrast = smoothBlur(magnitude, n, n, std::max(1, static_cast<int>(std::lround(4.0f * scale * std::numbers::sqrt3_v<float>))), true);
+    }
+    const std::vector<float> &matched = repair ? detail : original;
     auto difference = [&](int across, int along) {
         size_t i = index(across, along), j = index((across + half) % n, along);
         float sum = 0;
-        for (int c = 0; c < 3; ++c) { float d = original[i * 3 + c] - original[j * 3 + c]; sum += d * d; }
+        for (int c = 0; c < 3; ++c) { float d = matched[i * 3 + c] - matched[j * 3 + c]; sum += d * d; }
+        if (repair) { float dc = contrast[i] - contrast[j]; sum += dc * dc; }
         float da = (static_cast<float>(originalAlpha[i]) - static_cast<float>(originalAlpha[j])) / 255.0f;
         return sum + da * da;
     };
-    constexpr float kFeather = 2.0f;
+    // Repair feathers the detail cut over +/- 3 reference px (12 px at 4K) so contrast changes across it read as
+    // texture, not as an edge; legacy tiling keeps +/- 2 px.
+    const float kFeather = repair ? std::max(2.0f, 3.0f * scale) : 2.0f;
     // Cost of leaving this axis alone: the source's own mismatch across the wrap, compared with the mean
     // mismatch between ordinary adjacent columns. A wrap no rougher than the texture's interior already
     // tiles, and cutting it would only add a defect where none exists.
@@ -508,16 +544,21 @@ void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, in
     const double wrapCost = adjacentCost(n - 1, 0);
     double interiorCost = 0;
     for (int k = 0; k + 1 < n; ++k) interiorCost += adjacentCost(k, k + 1);
-    if (wrapCost <= 1.5 * interiorCost / static_cast<double>(n - 1)) return;
+    if (!repair && wrapCost <= 1.5 * interiorCost / static_cast<double>(n - 1)) return 0;
+    // Zone 0 spans [0, band) with the copy toward the image edge (u < path); zone 1 mirrors it. Repair keeps the
+    // cut out of the outer half, next to the old wrap.
+    const int innerMin = repair ? band / 2 : 1;
     std::vector<float> weight(static_cast<size_t>(n) * n, 0.0f); // Weight of the offset copy, indexed by index().
+    double pathCost = 0, bandCost = 0;
     for (int zone = 0; zone < 2; ++zone) {
         const int lo = zone == 0 ? 0 : n - band;
         std::vector<float> cost(static_cast<size_t>(n) * band);
         for (int v = 0; v < n; ++v) for (int u = 0; u < band; ++u) cost[static_cast<size_t>(v) * band + u] = difference(lo + u, v);
         // Start at the band column with the least total difference; end at the same column.
-        int start = 1;
+        const int uLo = zone == 0 ? innerMin : 1, uHi = zone == 0 ? band - 1 : band - innerMin;
+        int start = uLo;
         double best = std::numeric_limits<double>::max();
-        for (int u = 1; u < band - 1; ++u) {
+        for (int u = uLo; u < uHi; ++u) {
             double total = 0;
             for (int v = 0; v < n; ++v) total += cost[static_cast<size_t>(v) * band + u];
             if (total < best) { best = total; start = u; }
@@ -526,7 +567,7 @@ void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, in
         std::vector<float> energy(static_cast<size_t>(n) * band, inf);
         std::vector<int8_t> step(static_cast<size_t>(n) * band, 0);
         energy[start] = cost[start];
-        for (int v = 1; v < n; ++v) for (int u = 1; u < band - 1; ++u) {
+        for (int v = 1; v < n; ++v) for (int u = uLo; u < uHi; ++u) {
             float bestPrev = inf; int8_t move = 0;
             for (int8_t d = -1; d <= 1; ++d) {
                 float e = energy[static_cast<size_t>(v - 1) * band + u + d];
@@ -540,23 +581,212 @@ void seamCutAxis(std::vector<float> &rgb, std::vector<uint8_t> &alpha, int n, in
         int u = start;
         if (energy[static_cast<size_t>(n - 1) * band + u] == inf) { // Unreachable only for tiny images.
             float e = inf;
-            for (int k = 1; k < band - 1; ++k) if (energy[static_cast<size_t>(n - 1) * band + k] < e) { e = energy[static_cast<size_t>(n - 1) * band + k]; u = k; }
+            for (int k = uLo; k < uHi; ++k) if (energy[static_cast<size_t>(n - 1) * band + k] < e) { e = energy[static_cast<size_t>(n - 1) * band + k]; u = k; }
         }
         for (int v = n - 1; v >= 0; --v) { path[v] = u; u += step[static_cast<size_t>(v) * band + u]; }
+        // Visibility of the cut: its mean mismatch against the mismatch of ordinary neighbouring pixels (across the
+        // cut direction) in the same band. Near or below 1 the join reads like any other pair of neighbours.
+        for (int v = 0; v < n; ++v) {
+            pathCost += cost[static_cast<size_t>(v) * band + path[v]];
+            for (int k = uLo; k < uHi; ++k) {
+                size_t i = index(lo + k, v), j = index(lo + k + 1, v);
+                float sum = 0;
+                for (int c = 0; c < 3; ++c) { float d = matched[i * 3 + c] - matched[j * 3 + c]; sum += d * d; }
+                bandCost += sum / (uHi - uLo);
+            }
+        }
         for (int v = 0; v < n; ++v) for (int k = 0; k < band; ++k) {
             // Signed distance toward the image edge, where the offset copy is used.
             float d = zone == 0 ? static_cast<float>(path[v] - k) : static_cast<float>(k - path[v]);
             weight[index(lo + k, v)] = smoothstep01((d + kFeather) / (2.0f * kFeather));
         }
     }
-    for (int across = 0; across < n; ++across) for (int along = 0; along < n; ++along) {
-        size_t i = index(across, along);
-        float w = weight[i];
-        if (w <= 0) continue;
-        size_t j = index((across + half) % n, along);
-        for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = original[i * 3 + c] + (original[j * 3 + c] - original[i * 3 + c]) * w;
-        alpha[i] = static_cast<uint8_t>(std::lround(originalAlpha[i] + (static_cast<float>(originalAlpha[j]) - originalAlpha[i]) * w));
+    // Multi-band join (repair): the low band follows the same cut, feathered by the low band's own scale, so each
+    // region keeps its own low band and detail together (mixing one image's low band with another's detail reads as
+    // a milky haze) while tone still changes smoothly across the cut.
+    if (cutCostRatio) *cutCostRatio = bandCost > 0 ? static_cast<float>(pathCost / bandCost) : 0.0f;
+    std::vector<float> lowWeight;
+    if (repair) lowWeight = smoothBlur(weight, n, n, lowRadius, true);
+    for (int across = 0; across < n; ++across) {
+        for (int along = 0; along < n; ++along) {
+            size_t i = index(across, along);
+            float w = weight[i];
+            const float lw = repair ? lowWeight[i] : 0.0f;
+            if (w <= 0 && lw <= 1e-6f) continue;
+            size_t j = index((across + half) % n, along);
+            if (repair) {
+                for (int c = 0; c < 3; ++c)
+                    rgb[i * 3 + c] = low[i * 3 + c] + (low[j * 3 + c] - low[i * 3 + c]) * lw +
+                                     detail[i * 3 + c] + (detail[j * 3 + c] - detail[i * 3 + c]) * w;
+            } else {
+                for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = original[i * 3 + c] + (original[j * 3 + c] - original[i * 3 + c]) * w;
+            }
+            alpha[i] = static_cast<uint8_t>(std::lround(originalAlpha[i] + (static_cast<float>(originalAlpha[j]) - originalAlpha[i]) * w));
+        }
     }
+    return half;
+}
+
+// Wrap-seam measures of a linear-light luminance image (1.4.0). Pixel: mean opposite-edge step / mean adjacent step.
+// Tone: the same on a Gaussian (sigma 8 reference px) blur, which shows lighting or colour steps that an edge-blended
+// seam hides at pixel scale. Detail: fine contrast within 24 reference px of either wrap line / elsewhere (a
+// smeared band reads below 1).
+PBRLabWrapSeam wrapSeam(const std::vector<uint8_t> &rgba, int n, const std::array<float, 256> &lut) {
+    const size_t count = static_cast<size_t>(n) * n;
+    std::vector<float> lum(count);
+    for (size_t i = 0; i < count; ++i)
+        lum[i] = kLinearLuminance[0] * lut[rgba[i * 4]] + kLinearLuminance[1] * lut[rgba[i * 4 + 1]] + kLinearLuminance[2] * lut[rgba[i * 4 + 2]];
+    const float scale = static_cast<float>(n) / kReferenceSize;
+    auto ratios = [&](const std::vector<float> &f, float &rx, float &ry) {
+        double sx = 0, sy = 0, ax = 0, ay = 0;
+        for (int k = 0; k < n; ++k) {
+            sx += std::abs(f[at(0, k, n)] - f[at(n - 1, k, n)]);
+            sy += std::abs(f[at(k, 0, n)] - f[at(k, n - 1, n)]);
+        }
+        for (int y = 0; y < n; ++y) for (int x = 0; x + 1 < n; ++x) {
+            ax += std::abs(f[at(x + 1, y, n)] - f[at(x, y, n)]);
+            ay += std::abs(f[at(y, x + 1, n)] - f[at(y, x, n)]);
+        }
+        rx = ax > 0 ? static_cast<float>((sx / n) / (ax / (static_cast<double>(n) * (n - 1)))) : 0.0f;
+        ry = ay > 0 ? static_cast<float>((sy / n) / (ay / (static_cast<double>(n) * (n - 1)))) : 0.0f;
+    };
+    PBRLabWrapSeam seam{};
+    ratios(lum, seam.pixel_x, seam.pixel_y);
+    const int toneRadius = std::max(1, static_cast<int>(std::lround(8.0f * scale * std::numbers::sqrt3_v<float>)));
+    ratios(smoothBlur(lum, n, n, toneRadius, true), seam.tone_x, seam.tone_y);
+    auto fine = smoothBlur(lum, n, n, std::max(1, static_cast<int>(std::lround(2.0f * scale))), true);
+    const int reach = std::max(1, static_cast<int>(std::lround(24.0f * scale)));
+    double nearSum = 0, farSum = 0; size_t nearCount = 0, farCount = 0;
+    for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
+        const float d = std::abs(lum[at(x, y, n)] - fine[at(x, y, n)]);
+        const bool near = std::min(x, n - 1 - x) < reach || std::min(y, n - 1 - y) < reach;
+        (near ? nearSum : farSum) += d; ++(near ? nearCount : farCount);
+    }
+    seam.detail = farSum > 0 && nearCount ? static_cast<float>((nearSum / nearCount) / (farSum / farCount)) : 1.0f;
+    return seam;
+}
+
+// Optional source conditioning (delighting, then tiling or explicit albedo repair), shared by PBRLabDerive and
+// PBRLabConditionAlbedo. Both steps work in linear light and re-encode sRGB albedo; with both disabled the albedo
+// stays a byte-exact copy of the source.
+void conditionAlbedo(std::vector<uint8_t> &albedo, int width, const PBRLabRecipe *recipe, bool tiled,
+                     const std::array<float, 256> &lut, PBRLabAlbedoRepairInfo &info) {
+    const size_t count = static_cast<size_t>(width) * width;
+    const bool repair = recipe->albedo_repair != 0;
+    const float bandFraction = repair && recipe->seamless_blend <= 0 ? kDefaultRepairBand : recipe->seamless_blend;
+    const int blendWidth = static_cast<int>(std::lround(bandFraction * static_cast<float>(width)));
+    const bool seamless = blendWidth >= 1 && width >= 8;
+    const float scale = static_cast<float>(width) / kReferenceSize;
+    info.band_fraction = seamless ? bandFraction : 0.0f;
+    const bool equalize = recipe->albedo_equalize > 0.0f;
+    if (repair) info.before = wrapSeam(albedo, width, lut);
+    if (seamless || equalize) {
+        std::vector<float> rgb(count * 3);
+        for (size_t i = 0; i < count; ++i)
+            for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = lut[albedo[i * 4 + c]];
+        std::vector<uint8_t> alpha(count);
+        for (size_t i = 0; i < count; ++i) alpha[i] = albedo[i * 4 + 3];
+        if (equalize) {
+            // Divide out low-frequency illumination (a smooth luminance field ~1/8 of the tile)
+            // toward the mean, preserving hue. Wraps when tiled so the correction is tileable.
+            std::vector<float> lum(count);
+            double mean = 0;
+            for (size_t i = 0; i < count; ++i) {
+                lum[i] = kLinearLuminance[0] * rgb[i * 3] + kLinearLuminance[1] * rgb[i * 3 + 1] +
+                         kLinearLuminance[2] * rgb[i * 3 + 2];
+                mean += lum[i];
+            }
+            mean /= static_cast<double>(count);
+            // Clamp rather than wrap when the source is about to be made tileable: its edges do not match yet.
+            auto lowFrequency = smoothBlur(lum, width, width, std::max(2, width / 8), tiled && !seamless);
+            const float target = static_cast<float>(mean);
+            for (size_t i = 0; i < count; ++i) {
+                float gain = std::pow(target / std::max(lowFrequency[i], 1e-4f), recipe->albedo_equalize);
+                gain = std::clamp(gain, .25f, 4.0f);
+                for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = std::min(rgb[i * 3 + c] * gain, 1.0f);
+            }
+        }
+        // Legacy tiling follows seamless_mode; explicit repair uses the requested method, or auto (below).
+        // Auto quilts first and keeps the quilt unless a cut is far more visible than ordinary neighbouring pixels
+        // (its mean mismatch over 4x that of adjacent pixels in the band); then it falls back to the
+        // histogram-preserving blend, which cannot leave an edge but ghosts large discrete elements (leaves, twigs,
+        // pebbles). On nine seamed 4K terrain albedos the quilt looked as good or better in every case.
+        uint32_t method = recipe->seamless_mode == 1 ? 2u : 1u;
+        if (repair) method = recipe->albedo_repair == 3 ? 2u : recipe->albedo_repair;
+        if (seamless && method == 2) {
+            const std::vector<float> rgbBefore = recipe->albedo_repair == 3 ? rgb : std::vector<float>{};
+            const std::vector<uint8_t> alphaBefore = recipe->albedo_repair == 3 ? alpha : std::vector<uint8_t>{};
+            float ratioX = 0, ratioY = 0;
+            info.offset_x = static_cast<uint32_t>(seamCutAxis(rgb, alpha, width, blendWidth, false, repair, scale, &ratioX));
+            info.offset_y = static_cast<uint32_t>(seamCutAxis(rgb, alpha, width, blendWidth, true, repair, scale, &ratioY));
+            info.cut_cost_ratio = std::max(ratioX, ratioY);
+            if (recipe->albedo_repair == 3 && info.cut_cost_ratio > kAutoCutCostRatio) {
+                rgb = rgbBefore; alpha = alphaBefore; method = 1;
+            }
+        }
+        if (seamless) info.method = method;
+        if (seamless && method == 1) {
+            info.offset_x = info.offset_y = static_cast<uint32_t>(width / 2);
+            // Histogram-preserving half-period offset blend (Heitz & Neyret 2018). The offset copy
+            // is continuous across the wrap and its own seam sits where the weight is zero, so one
+            // pass per axis removes that axis' seam while the other stays continuous. Blending in
+            // Gaussianized space with variance renormalization keeps the texture's contrast and
+            // value distribution instead of washing out the blend zone like a linear cross-fade.
+            // Repair uses the copy alone over the outer half of the band (replacing any smeared strip along the old
+            // wrap) and blends only across the inner half, which also halves the width that can ghost.
+            auto weight = [&](int p) {
+                const float d = static_cast<float>(std::min(p, width - 1 - p));
+                if (repair) return 1.0f - smoothstep01((d - .5f * blendWidth) / (.5f * static_cast<float>(blendWidth)));
+                return 1.0f - smoothstep01(d / static_cast<float>(blendWidth));
+            };
+            const int half = width / 2;
+            std::vector<float> gauss(count);
+            for (int c = 0; c < 3; ++c) {
+                HistogramTransform transform;
+                transform.build(rgb, c, count);
+                for (size_t i = 0; i < count; ++i) gauss[i] = transform.forward(rgb[i * 3 + c]);
+                auto blendAxis = [&](bool vertical) {
+                    std::vector<float> source(gauss);
+                    for (int y = 0; y < width; ++y) for (int x = 0; x < width; ++x) {
+                        float w = weight(vertical ? y : x);
+                        if (w <= 0) continue;
+                        size_t i = at(x, y, width);
+                        size_t j = vertical ? at(x, (y + half) % width, width) : at((x + half) % width, y, width);
+                        gauss[i] = ((1.0f - w) * source[i] + w * source[j]) /
+                                   std::sqrt((1.0f - w) * (1.0f - w) + w * w);
+                    }
+                };
+                blendAxis(false);
+                blendAxis(true);
+                for (size_t i = 0; i < count; ++i) rgb[i * 3 + c] = transform.inverse(gauss[i]);
+            }
+            // Coverage is not a stochastic texture: cross-fade alpha linearly.
+            std::vector<uint8_t> alphaCopy(alpha);
+            for (int y = 0; y < width; ++y) for (int x = 0; x < width; ++x) {
+                float w = weight(x);
+                if (w <= 0) continue;
+                size_t i = at(x, y, width), j = at((x + half) % width, y, width);
+                alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
+            }
+            alphaCopy = alpha;
+            for (int y = 0; y < width; ++y) {
+                float w = weight(y);
+                if (w <= 0) continue;
+                for (int x = 0; x < width; ++x) {
+                    size_t i = at(x, y, width), j = at(x, (y + half) % width, width);
+                    alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
+                }
+            }
+        }
+        parallelRows(width, [&](int y0, int y1) {
+            for (int y = y0; y < y1; ++y) for (int x = 0; x < width; ++x) {
+                size_t i = at(x, y, width);
+                for (int c = 0; c < 3; ++c) albedo[i * 4 + c] = srgbByte(rgb[i * 3 + c]);
+                albedo[i * 4 + 3] = alpha[i];
+            }
+        }, nullptr, nullptr, 0, 0);
+    }
+    if (repair) info.after = wrapSeam(albedo, width, lut);
 }
 
 // Precomputed horizon sample for one side of one GTAO slice. Samples lie exactly on the slice line and
@@ -598,9 +828,10 @@ struct PBRLabResult {
     uint32_t width = 0;
     PBRLabSeamMetrics seam{};
     PBRLabDerivationInfo info{};
+    PBRLabAlbedoRepairInfo repair{};
 };
 
-extern "C" const char *PBRLabVersion(void) { return "1.3.0"; }
+extern "C" const char *PBRLabVersion(void) { return "1.4.0"; }
 
 extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     PBRLabRecipe r{};
@@ -626,6 +857,7 @@ extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     r.seamless_blend = 0.0f;
     r.guide_normal_weight = 0.0f;
     r.seamless_mode = 1;
+    r.albedo_repair = 0;
     return r;
 }
 
@@ -675,98 +907,9 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             std::memcpy(albedo.data() + static_cast<size_t>(y) * width * 4, src, static_cast<size_t>(width) * 4);
         }
 
-        // Optional source conditioning. Both steps work in linear light and re-encode sRGB albedo;
-        // with both disabled the albedo stays a byte-exact copy of the source.
-        const int blendWidth = static_cast<int>(std::lround(recipe->seamless_blend * static_cast<float>(width)));
-        const bool seamless = blendWidth >= 1 && width >= 8;
-        const bool equalize = recipe->albedo_equalize > 0.0f;
+        PBRLabAlbedoRepairInfo repairInfo{};
+        conditionAlbedo(albedo, width, recipe, tiled, lut, repairInfo);
         std::vector<float> luminance(count);
-        if (seamless || equalize) {
-            std::vector<float> rgb(count * 3);
-            for (size_t i = 0; i < count; ++i)
-                for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = lut[albedo[i * 4 + c]];
-            std::vector<uint8_t> alpha(count);
-            for (size_t i = 0; i < count; ++i) alpha[i] = albedo[i * 4 + 3];
-            if (equalize) {
-                // Divide out low-frequency illumination (a smooth luminance field ~1/8 of the tile)
-                // toward the mean, preserving hue. Wraps when tiled so the correction is tileable.
-                std::vector<float> lum(count);
-                double mean = 0;
-                for (size_t i = 0; i < count; ++i) {
-                    lum[i] = kLinearLuminance[0] * rgb[i * 3] + kLinearLuminance[1] * rgb[i * 3 + 1] +
-                             kLinearLuminance[2] * rgb[i * 3 + 2];
-                    mean += lum[i];
-                }
-                mean /= static_cast<double>(count);
-                // Clamp rather than wrap when the source is about to be made tileable: its edges do not match yet.
-                auto lowFrequency = smoothBlur(lum, width, height, std::max(2, width / 8), tiled && !seamless);
-                const float target = static_cast<float>(mean);
-                for (size_t i = 0; i < count; ++i) {
-                    float gain = std::pow(target / std::max(lowFrequency[i], 1e-4f), recipe->albedo_equalize);
-                    gain = std::clamp(gain, .25f, 4.0f);
-                    for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = std::min(rgb[i * 3 + c] * gain, 1.0f);
-                }
-            }
-            if (seamless && recipe->seamless_mode == 1) {
-                seamCutAxis(rgb, alpha, width, blendWidth, false);
-                seamCutAxis(rgb, alpha, width, blendWidth, true);
-            } else if (seamless) {
-                // Histogram-preserving half-period offset blend (Heitz & Neyret 2018). The offset copy
-                // is continuous across the wrap and its own seam sits where the weight is zero, so one
-                // pass per axis removes that axis' seam while the other stays continuous. Blending in
-                // Gaussianized space with variance renormalization keeps the texture's contrast and
-                // value distribution instead of washing out the blend zone like a linear cross-fade.
-                auto weight = [&](int p) {
-                    int d = std::min(p, width - 1 - p);
-                    return 1.0f - smoothstep01(static_cast<float>(d) / static_cast<float>(blendWidth));
-                };
-                const int half = width / 2;
-                std::vector<float> gauss(count);
-                for (int c = 0; c < 3; ++c) {
-                    HistogramTransform transform;
-                    transform.build(rgb, c, count);
-                    for (size_t i = 0; i < count; ++i) gauss[i] = transform.forward(rgb[i * 3 + c]);
-                    auto blendAxis = [&](bool vertical) {
-                        std::vector<float> source(gauss);
-                        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
-                            float w = weight(vertical ? y : x);
-                            if (w <= 0) continue;
-                            size_t i = at(x, y, width);
-                            size_t j = vertical ? at(x, (y + half) % height, width) : at((x + half) % width, y, width);
-                            gauss[i] = ((1.0f - w) * source[i] + w * source[j]) /
-                                       std::sqrt((1.0f - w) * (1.0f - w) + w * w);
-                        }
-                    };
-                    blendAxis(false);
-                    blendAxis(true);
-                    for (size_t i = 0; i < count; ++i) rgb[i * 3 + c] = transform.inverse(gauss[i]);
-                }
-                // Coverage is not a stochastic texture: cross-fade alpha linearly.
-                std::vector<uint8_t> alphaCopy(alpha);
-                for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
-                    float w = weight(x);
-                    if (w <= 0) continue;
-                    size_t i = at(x, y, width), j = at((x + half) % width, y, width);
-                    alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
-                }
-                alphaCopy = alpha;
-                for (int y = 0; y < height; ++y) {
-                    float w = weight(y);
-                    if (w <= 0) continue;
-                    for (int x = 0; x < width; ++x) {
-                        size_t i = at(x, y, width), j = at(x, (y + half) % height, width);
-                        alpha[i] = static_cast<uint8_t>(std::lround(alphaCopy[i] + (alphaCopy[j] - alphaCopy[i]) * w));
-                    }
-                }
-            }
-            parallelRows(height, [&](int y0, int y1) {
-                for (int y = y0; y < y1; ++y) for (int x = 0; x < width; ++x) {
-                    size_t i = at(x, y, width);
-                    for (int c = 0; c < 3; ++c) albedo[i * 4 + c] = srgbByte(rgb[i * 3 + c]);
-                    albedo[i * 4 + 3] = alpha[i];
-                }
-            }, nullptr, nullptr, 0, 0);
-        }
         for (size_t i = 0; i < count; ++i)
             luminance[i] = kLinearLuminance[0] * lut[albedo[i * 4]] +
                            kLinearLuminance[1] * lut[albedo[i * 4 + 1]] +
@@ -840,7 +983,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                         sab += la * sb; saa += la * la; sbb += sb * sb;
                     }
                     const double correlation = saa > 0 && sbb > 0 ? sab / std::sqrt(saa * sbb) : 0.0;
-                    const float detailSign = std::abs(correlation) >= kPolarityConfidence ? (correlation < 0 ? -1.0f : 1.0f) : polarity;
+                    const float detailSign = std::abs(correlation) >= kPolarityConfidence ? (correlation < 0 ? -1.0f : 1.0f) : 1.0f;
                     auto signalLow = smoothBlur(signal, width, height, crossover, tiled);
                     std::vector<float> detail(count);
                     for (size_t i = 0; i < count; ++i) detail[i] = signal[i] - signalLow[i];
@@ -853,19 +996,21 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     const float formScale = share > 0 ? static_cast<float>(std::sqrt(share) / formRms) : 0.0f;
                     const float detailScale = detailRms > 1e-9 ? static_cast<float>(std::sqrt(1.0 - share) / detailRms) * detailSign : 0.0f;
                     const float heuristicScale = static_cast<float>(polarity / signalRms);
+                    // height_polarity -1 inverts the learned relief too (1.4.0): the learned field decides the
+                    // direction, the recipe can still flip it.
                     std::vector<float> mixed(count);
                     for (size_t i = 0; i < count; ++i)
                         mixed[i] = (1.0f - guideWeight) * heuristicScale * signal[i] +
-                                   guideWeight * (formScale * form[i] + detailScale * detail[i]);
+                                   guideWeight * polarity * (formScale * form[i] + detailScale * detail[i]);
                     const double mixedRms = rmsSlope(mixed, width, height, tiled);
                     const float normalize = mixedRms > 1e-9 ? static_cast<float>(target / mixedRms) : 0.0f;
                     for (size_t i = 0; i < count; ++i) geometry[i] = mixed[i] * normalize;
                     info.learned_form_share = static_cast<float>(share) * guideWeight;
                     info.learned_detail_correlation = static_cast<float>(correlation);
-                    info.detail_polarity = static_cast<int32_t>(guideWeight >= .5f ? detailSign : polarity);
+                    info.detail_polarity = static_cast<int32_t>(guideWeight >= .5f ? detailSign * polarity : polarity);
                 } else {
                     // No albedo relief (flat preset): the learned band alone, in the estimator's own units.
-                    for (size_t i = 0; i < count; ++i) geometry[i] = guideWeight * band[i];
+                    for (size_t i = 0; i < count; ++i) geometry[i] = guideWeight * polarity * band[i];
                     info.learned_form_share = guideWeight;
                 }
             } else if (hasSignal) {
@@ -1108,6 +1253,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
         adjacent /= 2.0 * width * (width - 1);
         info.height_wrap_seam_ratio = adjacent > 1e-12 ? static_cast<float>(heightDelta / (2.0 * width) / adjacent) : 0.0f;
         result->info = info;
+        result->repair = repairInfo;
         result->seam = {heightDelta / (2.0f * width), gradientDelta / (2.0f * width),
                         albedoSeam / (2.0f * width)};
         checkpoint(progress, context, 1.0f);
@@ -1132,6 +1278,33 @@ extern "C" PBRLabSeamMetrics PBRLabGetSeamMetrics(const PBRLabResult *result) {
 }
 extern "C" PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *result) {
     return result ? result->info : PBRLabDerivationInfo{};
+}
+extern "C" PBRLabAlbedoRepairInfo PBRLabGetAlbedoRepairInfo(const PBRLabResult *result) {
+    return result ? result->repair : PBRLabAlbedoRepairInfo{};
+}
+extern "C" int PBRLabConditionAlbedo(const PBRLabInput *input, const PBRLabRecipe *recipe, uint8_t *out_rgba8,
+                                     size_t out_row_bytes, PBRLabAlbedoRepairInfo *out_info, char *error, size_t error_capacity) {
+    setError(error, error_capacity, "");
+    std::string why;
+    if (!valid(input, recipe, why)) { setError(error, error_capacity, why.c_str()); return 0; }
+    if (!out_rgba8 || out_row_bytes < static_cast<size_t>(input->width) * 4) { setError(error, error_capacity, "output buffer is too small"); return 0; }
+    try {
+        const int n = static_cast<int>(input->width);
+        std::vector<uint8_t> albedo(static_cast<size_t>(n) * n * 4);
+        for (int y = 0; y < n; ++y)
+            std::memcpy(&albedo[static_cast<size_t>(y) * n * 4], input->rgba8 + y * input->rgba_row_bytes, static_cast<size_t>(n) * 4);
+        std::array<float, 256> lut{};
+        for (unsigned i = 0; i < 256; ++i) lut[i] = linear(static_cast<uint8_t>(i));
+        PBRLabAlbedoRepairInfo info{};
+        conditionAlbedo(albedo, n, recipe, recipe->tile_wrap != 0, lut, info);
+        for (int y = 0; y < n; ++y)
+            std::memcpy(out_rgba8 + y * out_row_bytes, &albedo[static_cast<size_t>(y) * n * 4], static_cast<size_t>(n) * 4);
+        if (out_info) *out_info = info;
+        return 1;
+    } catch (const std::exception &e) {
+        setError(error, error_capacity, e.what());
+        return 0;
+    }
 }
 extern "C" void PBRLabFreeResult(PBRLabResult *result) { delete result; }
 

@@ -261,6 +261,8 @@ constexpr const char* kUsage =
     "  --equalize 0..1 (albedo delighting)  --no-tile  --bent-normal\n"
     "  --seamless 0..0.45 (make tileable: edge band width)  --seamless-mode cut|blend (default cut: aligned\n"
     "    minimum-error seam for structured textures; blend: histogram-preserving cross-fade for fine noise)\n"
+    "  --repair-albedo off|blend|quilt|auto  rebuild the albedo itself so it tiles (band = --seamless, default 0.12);\n"
+    "    the repaired albedo feeds every derived map and the learned estimator (auto: quilt unless its cut is costly)\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
     "Learned geometry (see docs/LEARNED_NORMALS.md):\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
@@ -303,6 +305,12 @@ Options parse(int argc, const char** argv) {
             if (mode != "cut" && mode != "blend") throw std::runtime_error("--seamless-mode must be cut or blend");
             overrides.push_back([=](PBRLabRecipe& r) { r.seamless_mode = mode == "cut" ? 1 : 0; });
         }
+        else if (flag == "--repair-albedo") {
+            std::string mode = value();
+            uint32_t v = mode == "off" ? 0 : mode == "blend" ? 1 : mode == "quilt" ? 2 : mode == "auto" ? 3 : 99;
+            if (v == 99) throw std::runtime_error("--repair-albedo must be off, blend, quilt or auto");
+            overrides.push_back([=](PBRLabRecipe& r) { r.albedo_repair = v; });
+        }
         else if (flag == "--normal-dx") overrides.push_back([](PBRLabRecipe& r) { r.normal_y_down = 1; });
         else if (flag == "--no-tile") overrides.push_back([](PBRLabRecipe& r) { r.tile_wrap = 0; });
         else if (flag == "--bent-normal") overrides.push_back([](PBRLabRecipe& r) { r.bent_normal_enabled = 1; });
@@ -336,6 +344,8 @@ Options parse(int argc, const char** argv) {
     for (auto& apply : overrides) apply(o.recipe);
     if (o.recipe.guide_normal_weight > 0 && !hasGuide)
         throw std::runtime_error("--guide-weight needs --learned-normals or --guide-normals");
+    if (o.recipe.albedo_repair != 0 && o.recipe.tile_wrap == 0)
+        throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
         throw std::runtime_error("--save-guide-normals needs --learned-normals and a single --input");
     if (!o.validate.empty()) {
@@ -662,6 +672,26 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
     Image image = decodeSRGB(pre.processed ?: sourceData);
     if (pre.provenance) pre.provenance[@"output_dimensions_px"] = @[@(image.width), @(image.height)];
     const size_t count = static_cast<size_t>(image.width) * image.height;
+    // Explicit albedo repair runs first: the repaired albedo is both the exported albedo and the image every
+    // derived map and the learned estimator see. The derivation then runs with conditioning switched off.
+    const bool repairAlbedo = options.recipe.albedo_repair != 0;
+    PBRLabRecipe derivationRecipe = options.recipe;
+    PBRLabAlbedoRepairInfo repairInfo{};
+    const std::string sourcePixelsHash = hash(image.pixels.data(), image.pixels.size());
+    if (repairAlbedo) {
+        PBRLabInput plain{image.pixels.data(), static_cast<size_t>(image.width) * 4, nullptr, 0, nullptr, 0,
+                          image.width, image.height, nullptr, 0};
+        std::vector<uint8_t> repaired(image.pixels.size());
+        char repairError[256]{};
+        if (!PBRLabConditionAlbedo(&plain, &options.recipe, repaired.data(), static_cast<size_t>(image.width) * 4,
+                                   &repairInfo, repairError, sizeof(repairError)))
+            throw std::runtime_error(std::string("albedo repair failed: ") + repairError);
+        image.pixels.swap(repaired);
+        derivationRecipe.albedo_equalize = 0;
+        derivationRecipe.seamless_blend = 0;
+        derivationRecipe.albedo_repair = 0;
+        checkInterrupted();
+    }
     auto mask = options.mask.empty() ? std::vector<uint8_t>{} : rawFile(options.mask, count);
     auto authored = options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
     GuideNormals guide;
@@ -684,7 +714,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                       useGuide ? static_cast<size_t>(image.width) * 4 : 0};
     char error[256]{};
     std::unique_ptr<PBRLabResult, decltype(&PBRLabFreeResult)> result(
-        PBRLabDerive(&input, &options.recipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);
+        PBRLabDerive(&input, &derivationRecipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);
     checkInterrupted();
     if (!result) throw std::runtime_error(std::string("derivation failed: ") + error);
     if (!outputPath.parent_path().empty()) fs::create_directories(outputPath.parent_path());
@@ -719,6 +749,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                 !pbrlab::writeFileAtomically((temp / str(filename)).string(), png, pngError))
                 throw std::runtime_error(pngError);
             NSString* provenance = @(role.provenance);
+            if (role.kind == PBRLabMapAlbedo && repairAlbedo) provenance = @"repaired_tileable_albedo_derived_from_source";
             if (role.kind == PBRLabMapHeight) provenance = !authored.empty() ? @"authored_height_override" :
                 useGuide ? (options.recipe.preset == PBRLabPresetFlat ? @"learned_normals"
                                                                       : @"estimated_from_albedo_and_learned_normals") :
@@ -745,7 +776,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"albedo_equalize": @(r.albedo_equalize),
             @"seamless_blend": @(r.seamless_blend),
             @"guide_normal_weight": @(useGuide ? r.guide_normal_weight : 0.0f),
-            @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend"
+            @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
+            @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
         };
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
@@ -769,6 +801,28 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"runtime_admitted": @NO
         } mutableCopy];
         if (useGuide) manifest[@"guide_normals"] = guide.provenance;
+        if (repairAlbedo) {
+            auto seamJSON = [](const PBRLabWrapSeam& seam) {
+                return @{@"pixel_x": @(seam.pixel_x), @"pixel_y": @(seam.pixel_y), @"tone_x": @(seam.tone_x),
+                         @"tone_y": @(seam.tone_y), @"detail": @(seam.detail)};
+            };
+            PBRLabMap albedoMap{};
+            PBRLabGetMap(result.get(), PBRLabMapAlbedo, &albedoMap);
+            manifest[@"albedo_repair"] = @{
+                @"mode": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair],
+                @"method": repairInfo.method == 2 ? @"quilt" : @"blend",
+                @"band_fraction": @(repairInfo.band_fraction),
+                @"cut_cost_ratio": @(repairInfo.cut_cost_ratio),
+                @"offset_px": @[@(repairInfo.offset_x), @(repairInfo.offset_y)],
+                @"albedo_equalize": @(r.albedo_equalize),
+                @"source_sha256": sourceManifest[@"processed_sha256"] ?: sourceManifest[@"sha256"],
+                @"source_rgba8_sha256": ns(sourcePixelsHash),
+                @"repaired_rgba8_sha256": ns(hash(albedoMap.pixels, albedoMap.byte_count)),
+                @"seam_before": seamJSON(repairInfo.before),
+                @"seam_after": seamJSON(repairInfo.after),
+                @"seam_measure": @"linear_light_luminance_v1"
+            };
+        }
         const PBRLabDerivationInfo info = PBRLabGetDerivationInfo(result.get());
         manifest[@"relief"] = @{@"height_span_tile_widths": @(info.height_span_tile_widths),
                                 @"rms_slope": @(info.rms_slope),
@@ -797,12 +851,13 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
 
 // ---------------------------------------------------------------------------------------------
 // Bundle validation.
-// version: 0 = 1.0.0, 1 = 1.1.0, 2 = 1.2.0, 3 = 1.3.0. Fields introduced by a version are required from it on.
+// version: 0 = 1.0.0, 1 = 1.1.0, 2 = 1.2.0, 3 = 1.3.0, 4 = 1.4.0. Fields introduced by a version are required from it on.
 int algorithmLevel(NSString* algorithm) {
     if ([algorithm isEqualToString:@"1.0.0"]) return 0;
     if ([algorithm isEqualToString:@"1.1.0"]) return 1;
     if ([algorithm isEqualToString:@"1.2.0"]) return 2;
     if ([algorithm isEqualToString:@"1.3.0"]) return 3;
+    if ([algorithm isEqualToString:@"1.4.0"]) return 4;
     return -1;
 }
 bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string& why) {
@@ -831,6 +886,13 @@ bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string
         if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
     }
     if (!unitPolarity(recipe[key("height_polarity", "heightPolarity")])) { why = "height polarity"; return false; }
+    // Optional (absent means off); from 1.4.0 on.
+    if (id repair = recipe[key("albedo_repair", "albedoRepair")]) {
+        NSString* text = asString(repair);
+        if (!text || ![@[@"off", @"blend", @"quilt", @"auto"] containsObject:text] || (level < 4 && ![text isEqualToString:@"off"])) {
+            why = "albedo repair"; return false;
+        }
+    }
     // Optional (absent means the pre-cut behaviour, "blend"); when present it must name a known method.
     if (id mode = recipe[key("seamless_mode", "seamlessMode")]) {
         NSString* text = asString(mode);
@@ -923,6 +985,32 @@ void validate(const fs::path& bundle) {
         throw std::runtime_error("manifest source identity or hash is invalid");
     for (NSString* key in @[@"height_value_delta", @"height_gradient_delta", @"albedo_value_delta"])
         if (!finiteNumber(seamMetrics[key], 0, 2)) throw std::runtime_error("manifest seam metrics are missing or invalid");
+    // 1.4.0: a repaired albedo is derived data; its provenance, hashes and seam measures must be recorded.
+    NSString* repairMode = asString(recipe[@"albedo_repair"]);
+    const bool repaired = repairMode && ![repairMode isEqualToString:@"off"];
+    NSDictionary* repair = asDictionary(manifest[@"albedo_repair"]);
+    if (repaired) {
+        auto seamValid = [](id value) {
+            NSDictionary* seam = asDictionary(value);
+            if (!seam) return false;
+            for (NSString* k in @[@"pixel_x", @"pixel_y", @"tone_x", @"tone_y", @"detail"])
+                if (!finiteNumber(seam[k], 0, 1e6)) return false;
+            return true;
+        };
+        NSArray* offsets = [repair[@"offset_px"] isKindOfClass:[NSArray class]] ? repair[@"offset_px"] : nil;
+        NSString* method = asString(repair[@"method"]);
+        NSString* expectedSource = asString(source[@"processed_sha256"]) ?: asString(source[@"sha256"]);
+        if (!repair || ![asString(repair[@"mode"]) isEqualToString:repairMode] ||
+            !(([method isEqualToString:@"quilt"] && ![repairMode isEqualToString:@"blend"]) ||
+              ([method isEqualToString:@"blend"] && ![repairMode isEqualToString:@"quilt"])) ||
+            !finiteNumber(repair[@"band_fraction"], 1e-6, .45 + 1e-6) || !finiteNumber(repair[@"cut_cost_ratio"], 0, 1e6) ||
+            offsets.count != 2 || !finiteNumber(offsets[0], 0, 4096) || !finiteNumber(offsets[1], 0, 4096) ||
+            !sameDigest(repair[@"source_sha256"], expectedSource) ||
+            !validSHA256String(repair[@"source_rgba8_sha256"]) || !validSHA256String(repair[@"repaired_rgba8_sha256"]) ||
+            !seamValid(repair[@"seam_before"]) || !seamValid(repair[@"seam_after"]) ||
+            ![asString(asDictionary(maps[@"albedo"])[@"provenance"]) isEqualToString:@"repaired_tileable_albedo_derived_from_source"])
+            throw std::runtime_error("albedo_repair requires mode, method, band, offsets, source and repaired hashes, seam measures and repaired albedo provenance");
+    } else if (manifest[@"albedo_repair"]) throw std::runtime_error("albedo_repair present but recipe.albedo_repair is off");
     // 1.3.0: estimated height is range-normalized, so the depth it spans must be recorded.
     NSDictionary* relief = asDictionary(manifest[@"relief"]);
     if (level >= 3 || manifest[@"relief"]) {

@@ -44,7 +44,7 @@ int main() {
     constexpr unsigned n = 32;
     auto source = solid(n, 128);
     auto recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    assert(std::strcmp(PBRLabVersion(), "1.3.0") == 0);
+    assert(std::strcmp(PBRLabVersion(), "1.4.0") == 0);
     auto* flat = derive(source, n, recipe);
     auto a = map(flat, PBRLabMapAlbedo), hm = map(flat, PBRLabMapHeight);
     auto no = map(flat, PBRLabMapNormal), ro = map(flat, PBRLabMapRoughness);
@@ -463,6 +463,16 @@ int main() {
         assert(info.learned_detail_correlation < -.1f && info.detail_polarity == -1);
         auto fh = map(fused, PBRLabMapHeight);
         assert(h(fh, 70, 60) > h(fh, 85, 60) && h(fh, 180, 110) < h(fh, 195, 110)); // Bumps up, pits down.
+        // height_polarity -1 inverts the learned relief as well (1.4.0).
+        {
+            auto flipped = stoneGuided;
+            flipped.height_polarity = -1;
+            auto* inverse = guided(spotted, guide, flipped);
+            auto ih = map(inverse, PBRLabMapHeight);
+            assert(h(ih, 70, 60) < h(ih, 85, 60) && h(ih, 180, 110) > h(ih, 195, 110));
+            assert(PBRLabGetDerivationInfo(inverse).detail_polarity == 1);
+            PBRLabFreeResult(inverse);
+        }
         // 4. Detail preservation: fused normals keep the albedo's fine grain, which the smooth guide lacks.
         auto fineEnergy = [&](const PBRLabMap& nm) {
             double sum = 0;
@@ -602,6 +612,85 @@ int main() {
         std::cout << "guide tiler: mean error " << error << " levels (bias 0.2 tilt + bowl removed), wrap step " << seam / m
                   << " vs neighbour " << inner / m << "\n";
         assert(error < 3 && seam < 1.5 * inner + m);
+    }
+
+    // 1.4.0 albedo repair: a non-tileable albedo becomes tileable; ConditionAlbedo matches Derive byte for byte.
+    {
+        constexpr unsigned m = 256;
+        // Litter-like: random oriented strokes over a lighting ramp, plus a smeared, darker strip along both wraps.
+        std::vector<uint8_t> src(m * m * 4, 255);
+        std::vector<float> field(m * m);
+        uint32_t seed = 31337;
+        auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return (seed >> 8) / 16777216.0f; };
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) field[y * m + x] = .35f + .25f * x / m;
+        for (int s = 0; s < 900; ++s) {
+            float cx = rnd() * m, cy = rnd() * m, a = rnd() * 3.14159f, len = 6 + rnd() * 18, v = .3f + .6f * rnd();
+            for (float t = -len; t <= len; t += .5f) {
+                int px = int(cx + t * std::cos(a)), py = int(cy + t * std::sin(a));
+                if (px >= 0 && py >= 0 && px < int(m) && py < int(m)) field[py * m + px] = v;
+            }
+        }
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            unsigned d = std::min(std::min(x, m - 1 - x), std::min(y, m - 1 - y));
+            float v = field[y * m + x];
+            if (d < 6) v = .5f * v + .5f * .3f;  // Smeared, darker wrap strip.
+            size_t i = (y * m + x) * 4;
+            src[i] = static_cast<uint8_t>(std::lround(255 * v)); src[i + 1] = static_cast<uint8_t>(std::lround(230 * v));
+            src[i + 2] = static_cast<uint8_t>(std::lround(200 * v));
+        }
+        for (uint32_t mode : {1u, 2u, 3u}) {
+            auto r = PBRLabDefaultRecipe(PBRLabPresetOrganic);
+            r.albedo_repair = mode;
+            PBRLabInput in{src.data(), m * 4, nullptr, 0, nullptr, 0, m, m, nullptr, 0};
+            std::vector<uint8_t> repaired(m * m * 4);
+            PBRLabAlbedoRepairInfo info{};
+            char err[128]{};
+            assert(PBRLabConditionAlbedo(&in, &r, repaired.data(), m * 4, &info, err, sizeof(err)));
+            std::cout << "albedo repair mode " << mode << ": method " << info.method << ", tone seam " << info.before.tone_x
+                      << "/" << info.before.tone_y << " -> " << info.after.tone_x << "/" << info.after.tone_y << ", pixel "
+                      << info.before.pixel_x << " -> " << info.after.pixel_x << ", detail " << info.before.detail << " -> "
+                      << info.after.detail << ", cut ratio " << info.cut_cost_ratio << "\n";
+            assert(info.method == (mode == 3 ? (info.cut_cost_ratio <= 4.0f ? 2u : 1u) : mode));
+            assert(std::fabs(info.band_fraction - .12f) < 1e-6f);
+            assert(info.before.tone_x > 1.0f && info.before.detail < .5f); // Ramp step in x, smeared strip on both.
+            assert(info.after.tone_x < 1.3f && info.after.tone_y < 1.3f && info.after.detail > .85f);
+            assert(info.after.pixel_x < 1.5f && info.after.pixel_y < 1.5f);
+            // Derive with the same recipe exports exactly this albedo and reports the same repair.
+            auto* result = PBRLabDerive(&in, &r, nullptr, nullptr, err, sizeof(err));
+            assert(result);
+            auto am = map(result, PBRLabMapAlbedo);
+            assert(std::memcmp(am.pixels, repaired.data(), repaired.size()) == 0);
+            assert(PBRLabGetAlbedoRepairInfo(result).method == info.method);
+            PBRLabFreeResult(result);
+        }
+        auto bad = PBRLabDefaultRecipe(PBRLabPresetOrganic);
+        bad.albedo_repair = 4;
+        PBRLabInput in{src.data(), m * 4, nullptr, 0, nullptr, 0, m, m, nullptr, 0};
+        char err[128]{};
+        assert(!PBRLabDerive(&in, &bad, nullptr, nullptr, err, sizeof(err)));
+        // Off: the albedo stays a byte-exact copy of the source.
+        auto off = PBRLabDefaultRecipe(PBRLabPresetOrganic);
+        auto* plain = PBRLabDerive(&in, &off, nullptr, nullptr, err, sizeof(err));
+        assert(plain && std::memcmp(map(plain, PBRLabMapAlbedo).pixels, src.data(), src.size()) == 0);
+        assert(PBRLabGetAlbedoRepairInfo(plain).method == 0);
+        PBRLabFreeResult(plain);
+    }
+
+    // Coated metal: dark panel seams on a flat plate occlude visibly (1.3.0 left them almost unoccluded).
+    {
+        constexpr unsigned m = 256;
+        std::vector<uint8_t> plate(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            const bool seam = x % 64 < 2 || y % 64 < 2;
+            size_t i = (y * m + x) * 4;
+            plate[i] = plate[i + 1] = plate[i + 2] = seam ? 40 : 120;
+        }
+        auto r = PBRLabDefaultRecipe(PBRLabPresetCoatedMetal);
+        auto* result = derive(plate, m, r);
+        auto aoMap = map(result, PBRLabMapAO);
+        std::cout << "coated-metal seam AO " << int(v(aoMap, 32, 0)) << " vs panel " << int(v(aoMap, 32, 32)) << "\n";
+        assert(v(aoMap, 32, 0) < 200 && v(aoMap, 32, 32) >= 250);
+        PBRLabFreeResult(result);
     }
 
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.

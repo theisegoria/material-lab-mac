@@ -11,7 +11,7 @@ A Mac import validates a .pbrcapture file, saves it in the separate camera inbox
 
 ## Algorithm versions and recipe fields
 
-Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0`, `1.2.0` and `1.3.0`. A field introduced by a version is required from that version on:
+Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0`, `1.2.0`, `1.3.0` and `1.4.0`. A field introduced by a version is required from that version on:
 
 | Since | `.pbrmaterial` recipe (snake_case) | `.pbrcapture` recipe (camelCase) | Range |
 | --- | --- | --- | --- |
@@ -34,7 +34,26 @@ Algorithm 1.3.0 keeps the recipe fields but changes three meanings: `ao_radius_p
 | `detail_polarity` | ±1 | Sign applied to albedo-derived fine relief (+1 = bright raised). |
 | `height_wrap_seam_ratio` | ≥ 0 | Mean opposite-edge height step divided by the mean adjacent step; about 1 means the height tiles without a visible seam. Use it instead of `seam_metrics.height_value_delta`, whose scale now depends on the relief. |
 
-Validators reject a 1.3.0 material without a valid `relief` and validate one on any version when present. `.pbrcapture` envelopes do not carry it.
+### Albedo repair (1.4.0)
+
+`recipe.albedo_repair` is `"off"`, `"blend"`, `"quilt"` or `"auto"` (absent means off; values other than off need 1.4.0). When it is not off, the albedo is **derived data**, not the source: `maps.albedo.provenance` is `repaired_tileable_albedo_derived_from_source`, and a top-level `albedo_repair` object is required:
+
+| Field | Meaning |
+| --- | --- |
+| `mode` | Equal to `recipe.albedo_repair`. |
+| `method` | `quilt` or `blend`, the method applied (auto records its choice). |
+| `band_fraction` | Band per edge, fraction of the tile (0.12 when `seamless_blend` was 0). |
+| `cut_cost_ratio` | Quilt cut visibility (cut mismatch / neighbouring-pixel mismatch); auto keeps the quilt at ≤ 4. |
+| `offset_px` | `[x, y]` offsets of the copy used on each axis. |
+| `albedo_equalize` | Delighting applied before the repair. |
+| `source_sha256` | Hash of the source file (the processed file after a pre-upscale), equal to `source.sha256` / `source.processed_sha256`. |
+| `source_rgba8_sha256`, `repaired_rgba8_sha256` | Hashes of the decoded source and repaired RGBA8 pixels. |
+| `seam_before`, `seam_after` | Wrap-seam measures of linear-light luminance: `pixel_x`, `pixel_y`, `tone_x`, `tone_y`, `detail` ([derivation](DERIVATION.md)). |
+| `seam_measure` | `linear_light_luminance_v1`. |
+
+Validators reject a repaired material without this object, with a mismatched mode, method or source hash, malformed hashes or seam measures, or without the repaired-albedo provenance, and reject the object when the recipe says off. Bundles without repair are unchanged apart from `recipe.albedo_repair: "off"`.
+
+Validators reject a 1.3.0 or later material without a valid `relief` and validate one on any version when present. `.pbrcapture` envelopes do not carry it.
 
 From 1.1.0 on, a material manifest also records `normal_convention` (`+Y` or `-Y`, matching `normal_y_down`). **Algorithm 1.0.0 normal and bent-normal maps are green-down even though they are labelled +Y.** Validators print a warning for these bundles; re-derive them or flip green. When `guide_normal_weight > 0`, the manifest has a top-level `guide_normals` provenance object ([learned normals](LEARNED_NORMALS.md)). Validators reject a guide weight without provenance, and provenance without a guide weight.
 
