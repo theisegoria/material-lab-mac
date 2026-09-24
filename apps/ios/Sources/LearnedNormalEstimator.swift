@@ -50,10 +50,12 @@ struct GuideNormalsProvenance: Codable, Equatable, Sendable {
     let computeUnits: String
     let workResolution: Int
     let tiles: Int
+    /// Tiling contract name (docs/LEARNED_NORMALS.md); absent in captures made before 1.3.0.
+    var tiling: String? = nil
     let normalsSHA256: String
 
     private enum CodingKeys: String, CodingKey {
-        case estimator, contract, tiles
+        case estimator, contract, tiles, tiling
         case weightsSHA256 = "weights_sha256"
         case mogeCommit = "moge_commit"
         case modelFile = "model_file"
@@ -70,71 +72,49 @@ struct GuideNormals: Sendable {
     let provenance: GuideNormalsProvenance
 }
 
-/// The blended, per-pixel normalized W×W learned normal field (+X right, +Y up, +Z out), before resampling.
-/// Kept so the 512² live preview and every recipe edit reuse one inference.
+/// A finished learned normal field (the core's `PBRLabGuideTiler` after every pass), kept so the 512² live preview,
+/// the export and every recipe edit reuse one inference. The tiling contract itself lives in the core, so the CLI,
+/// the Mac app and this app feed identical guide normals for identical model output.
 final class LearnedNormalField: @unchecked Sendable {
     let work: Int
     let tiles: Int
-    /// Interleaved unit xyz, `work * work * 3` floats.
-    let normals: [Float]
+    let wrap: Bool
+    let tiling: String
     let model: LearnedModelInfo
     let computeUnits: String
+    private let tiler: OpaquePointer
+    private let lock = NSLock()
 
-    init(work: Int, tiles: Int, normals: [Float], model: LearnedModelInfo, computeUnits: String) {
-        self.work = work
-        self.tiles = tiles
-        self.normals = normals
+    fileprivate init(tiler: OpaquePointer, wrap: Bool, model: LearnedModelInfo, computeUnits: String) {
+        self.tiler = tiler
+        self.work = Int(PBRLabGuideTilerWorkResolution(tiler))
+        self.tiles = Int(PBRLabGuideTilerTileCount(tiler))
+        self.tiling = String(cString: PBRLabGuideTilerContract(tiler))
+        self.wrap = wrap
         self.model = model
         self.computeUnits = computeUnits
     }
 
-    /// Bilinearly resamples to `size`², renormalizes and encodes linear RGBA8 (`round((n·0.5+0.5)·255)`, alpha 255).
+    deinit { PBRLabGuideTilerFree(tiler) }
+
+    /// Guide normals at `size`² (bilinear, wrapping when tiled), encoded linear RGBA8 for `PBRLabInput`.
     func guide(size: Int) -> GuideNormals {
         var output = [UInt8](repeating: 255, count: size * size * 4)
-        let work = work
-        let scale = Float(work) / Float(size)
-        @inline(__always) func byte(_ c: Float) -> UInt8 { UInt8(max(0, min(255, ((c * 0.5 + 0.5) * 255).rounded()))) }
-        normals.withUnsafeBufferPointer { unit in
-            output.withUnsafeMutableBufferPointer { dst in
-                for y in 0..<size {
-                    let fy = max(0, min(Float(work - 1), (Float(y) + 0.5) * scale - 0.5))
-                    let iy = Int(fy), ty = fy - Float(iy), iy1 = min(work - 1, iy + 1)
-                    for x in 0..<size {
-                        var n: SIMD3<Float>
-                        if work == size {
-                            let i = (y * work + x) * 3
-                            n = SIMD3(unit[i], unit[i + 1], unit[i + 2])
-                        } else {
-                            let fx = max(0, min(Float(work - 1), (Float(x) + 0.5) * scale - 0.5))
-                            let ix = Int(fx), tx = fx - Float(ix), ix1 = min(work - 1, ix + 1)
-                            @inline(__always) func at(_ px: Int, _ py: Int) -> SIMD3<Float> {
-                                let i = (py * work + px) * 3
-                                return SIMD3(unit[i], unit[i + 1], unit[i + 2])
-                            }
-                            let top = at(ix, iy) * (1 - tx) + at(ix1, iy) * tx
-                            let bottom = at(ix, iy1) * (1 - tx) + at(ix1, iy1) * tx
-                            n = top * (1 - ty) + bottom * ty
-                            let length = (n * n).sum().squareRoot()
-                            n = length > 1e-6 ? n / length : SIMD3(0, 0, 1)
-                        }
-                        let o = (y * size + x) * 4
-                        dst[o] = byte(n.x); dst[o + 1] = byte(n.y); dst[o + 2] = byte(n.z)
-                    }
-                }
-            }
+        let ok = lock.withLock {
+            output.withUnsafeMutableBufferPointer { PBRLabGuideTilerFinish(tiler, UInt32(size), $0.baseAddress, size * 4) }
         }
+        if ok == 0 { for i in Swift.stride(from: 0, to: output.count, by: 4) { output[i] = 128; output[i + 1] = 128 } }
         let hash = SHA256.hash(data: output).map { String(format: "%02x", $0) }.joined()
         let provenance = GuideNormalsProvenance(
             estimator: LearnedNormalEstimator.estimatorName, contract: LearnedNormalEstimator.contract,
             weightsSHA256: model.weightsSHA256, mogeCommit: model.mogeCommit, modelFile: model.modelFile,
-            computeUnits: computeUnits, workResolution: work, tiles: tiles, normalsSHA256: hash)
+            computeUnits: computeUnits, workResolution: work, tiles: tiles, tiling: tiling, normalsSHA256: hash)
         return GuideNormals(rgba8: output, size: size, provenance: provenance)
     }
 }
 
-/// Runs the Material Lab learned-normal contract (docs/LEARNED_NORMALS.md) through Core ML: a W = clamp(N, 518, 1036)
-/// working image, 518² tiles at stride 259 plus a final aligned tile, sine-window blending and per-pixel
-/// normalization. Thread-safe and synchronous: call from a detached task. The model is loaded once, and fields are
+/// Runs the Material Lab learned-normal contract (docs/LEARNED_NORMALS.md) through Core ML; the core's
+/// `PBRLabGuideTiler` prepares every model input and folds the predictions back. Thread-safe and synchronous: call from a detached task. The model is loaded once, and fields are
 /// cached by the SHA-256 of the working image so recipe edits never re-run inference.
 final class LearnedNormalEstimator: @unchecked Sendable {
     static let shared = LearnedNormalEstimator()
@@ -142,9 +122,8 @@ final class LearnedNormalEstimator: @unchecked Sendable {
     static let contract = "tangent_normals_plus_y_v1"
     static let estimatorName = "moge-2-vits-normal"
     static let bundledName = "MoGe2Normals"
-    static let tile = 518
-    static let stride = 259
-    static let maximumWork = 1036
+    static let tile = Int(PBRLAB_GUIDE_TILE)
+    static let maximumWork = 4 * tile
     #if targetEnvironment(simulator)
     /// The simulator's GPU (MPSGraph) Core ML backend returns a constant field for this model; use the CPU there.
     static let computeUnits = "cpu_only"
@@ -279,22 +258,25 @@ final class LearnedNormalEstimator: @unchecked Sendable {
 
     static func workResolution(for size: Int) -> Int { min(maximumWork, max(tile, size)) }
 
-    /// Origins start at 0 and step by 259; a final origin at W − 518 closes any gap.
-    static func tileOrigins(_ work: Int) -> [Int] {
-        let last = work - tile
-        var origins = Array(Swift.stride(from: 0, through: last, by: stride))
-        if let final = origins.last, final < last { origins.append(last) }
-        return origins
+    /// The core tiler's plan for a `size`² source: working size, tile positions and contract name.
+    static func tilingPlan(size: Int, wrap: Bool) -> (work: Int, tiles: Int, passes: Int, contract: String)? {
+        let pixels = [UInt8](repeating: 128, count: size * size * 4)
+        guard let tiler = pixels.withUnsafeBufferPointer({
+            PBRLabGuideTilerCreate($0.baseAddress, size * 4, UInt32(size), wrap ? 1 : 0)
+        }) else { return nil }
+        defer { PBRLabGuideTilerFree(tiler) }
+        return (Int(PBRLabGuideTilerWorkResolution(tiler)), Int(PBRLabGuideTilerTileCount(tiler)),
+                Int(PBRLabGuideTilerPassCount(tiler)), String(cString: PBRLabGuideTilerContract(tiler)))
     }
 
-    /// Learned normals for a square, straight sRGB RGBA8 image of `size`². `shouldContinue` is polled between tiles;
-    /// `progress` receives tile progress in [0, 1] on a cache miss.
-    func field(rgba: [UInt8], size: Int, shouldContinue: () -> Bool = { true },
+    /// Learned normals for a square, straight sRGB RGBA8 image of `size`²; `wrap` (the recipe's tile option) makes
+    /// the field periodic. `shouldContinue` is polled between passes; `progress` receives pass progress in [0, 1]
+    /// on a cache miss.
+    func field(rgba: [UInt8], size: Int, wrap: Bool = true, shouldContinue: () -> Bool = { true },
                progress: (Double) -> Void = { _ in }) throws -> LearnedNormalField {
         guard let info = locateModel() else { throw LearnedNormalError.notInstalled }
-        let work = Self.workResolution(for: size)
-        let workImage = work == size ? rgba : try Self.resample(rgba, from: size, to: work)
-        let key = SHA256.hash(data: workImage).map { String(format: "%02x", $0) }.joined() + "|" + info.identity
+        let key = SHA256.hash(data: rgba).map { String(format: "%02x", $0) }.joined() +
+            "|\(size)|\(wrap)|" + info.identity
         if let hit = cached(key) { return hit }
         inferenceLock.lock()
         defer { inferenceLock.unlock() }
@@ -302,48 +284,45 @@ final class LearnedNormalEstimator: @unchecked Sendable {
         guard shouldContinue() else { throw CaptureError.cancelled }
         progress(0)
         let model = try loadModel(info)
-        let origins = Self.tileOrigins(work)
-        let tileCount = origins.count * origins.count
-        let window = (0..<Self.tile).map { t in max(sinf(Float.pi * (Float(t) + 0.5) / Float(Self.tile)), 1e-3) }
-        // The only float allocation at working size: weighted xyz, then normalized in place.
-        var field = [Float](repeating: 0, count: work * work * 3)
+        guard let tiler = rgba.withUnsafeBufferPointer({
+            PBRLabGuideTilerCreate($0.baseAddress, size * 4, UInt32(size), wrap ? 1 : 0)
+        }) else { throw LearnedNormalError.unexpectedOutput("could not prepare the estimator input") }
+        // Owned by the field from here on, so every exit frees it.
+        let result = LearnedNormalField(tiler: tiler, wrap: wrap, model: info, computeUnits: Self.computeUnits)
+        let passes = PBRLabGuideTilerPassCount(tiler)
         let buffer = try Self.makePixelBuffer()
-        var done = 0
-        for oy in origins {
-            for ox in origins {
-                guard shouldContinue() else { throw CaptureError.cancelled }
-                try autoreleasepool {
-                    try Self.fill(buffer, from: workImage, work: work, x0: ox, y0: oy)
-                    let inputs = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: buffer)])
-                    let output = try model.prediction(from: inputs)
-                    guard let normals = output.featureValue(for: "normals")?.multiArrayValue else {
-                        throw LearnedNormalError.unexpectedOutput("missing “normals” output")
-                    }
-                    try Self.accumulate(normals, into: &field, work: work, x0: ox, y0: oy, window: window)
-                }
-                done += 1
-                progress(Double(done) / Double(tileCount))
-            }
-        }
-        // A backend that silently fails (seen with the simulator GPU path) yields one constant vector.
+        var planar = [Float](repeating: 0, count: 3 * Self.tile * Self.tile)
         var spread: Float = 0
-        field.withUnsafeBufferPointer { f in
-            for i in Swift.stride(from: 0, to: f.count, by: 3 * 97) {
-                spread = max(spread, abs(f[i] - f[0]), abs(f[i + 1] - f[1]))
+        var first: (Float, Float)?
+        for pass in 0..<passes {
+            guard shouldContinue() else { throw CaptureError.cancelled }
+            try autoreleasepool {
+                CVPixelBufferLockBaseAddress(buffer, [])
+                let filled = PBRLabGuideTilerFillInput(tiler, pass,
+                    CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self), CVPixelBufferGetBytesPerRow(buffer))
+                CVPixelBufferUnlockBaseAddress(buffer, [])
+                guard filled != 0 else { throw LearnedNormalError.unexpectedOutput("could not fill the estimator input") }
+                let inputs = try MLDictionaryFeatureProvider(dictionary: ["image": MLFeatureValue(pixelBuffer: buffer)])
+                let output = try model.prediction(from: inputs)
+                guard let normals = output.featureValue(for: "normals")?.multiArrayValue else {
+                    throw LearnedNormalError.unexpectedOutput("missing “normals” output")
+                }
+                try Self.copyPlanar(normals, into: &planar)
+                // A backend that silently fails (seen with the simulator GPU path) yields one constant vector.
+                if first == nil { first = (planar[0], planar[Self.tile * Self.tile]) }
+                if let first {
+                    for i in Swift.stride(from: 0, to: Self.tile * Self.tile, by: 97) {
+                        spread = max(spread, abs(planar[i] - first.0), abs(planar[Self.tile * Self.tile + i] - first.1))
+                    }
+                }
+                let added = planar.withUnsafeBufferPointer {
+                    PBRLabGuideTilerAddPrediction(tiler, pass, $0.baseAddress, Self.tile * Self.tile, Self.tile, 1)
+                }
+                guard added != 0 else { throw LearnedNormalError.unexpectedOutput("could not add a prediction") }
             }
+            progress(Double(pass + 1) / Double(passes))
         }
         guard spread > 1e-4 else { throw LearnedNormalError.unexpectedOutput("a constant normal field") }
-        // Normalizing the weighted sum divides out the window weights.
-        field.withUnsafeMutableBufferPointer { f in
-            for i in 0..<(work * work) {
-                let x = f[i * 3], y = f[i * 3 + 1], z = f[i * 3 + 2]
-                let length = (x * x + y * y + z * z).squareRoot()
-                if length > 1e-12 { f[i * 3] = x / length; f[i * 3 + 1] = y / length; f[i * 3 + 2] = z / length }
-                else { f[i * 3] = 0; f[i * 3 + 1] = 0; f[i * 3 + 2] = 1 }
-            }
-        }
-        let result = LearnedNormalField(work: work, tiles: tileCount, normals: field, model: info,
-                                        computeUnits: Self.computeUnits)
         lock.lock()
         cache.removeAll { $0.key == key }
         cache.insert((key, result), at: 0)
@@ -359,22 +338,6 @@ final class LearnedNormalEstimator: @unchecked Sendable {
 
     func clearCache() { lock.lock(); cache.removeAll(); lock.unlock() }
 
-    /// High-quality (Lanczos) sRGB resample to the working size.
-    static func resample(_ rgba: [UInt8], from size: Int, to work: Int) throws -> [UInt8] {
-        var output = [UInt8](repeating: 0, count: work * work * 4)
-        let error = rgba.withUnsafeBufferPointer { src in
-            output.withUnsafeMutableBufferPointer { dst in
-                var from = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: src.baseAddress), height: vImagePixelCount(size),
-                                         width: vImagePixelCount(size), rowBytes: size * 4)
-                var to = vImage_Buffer(data: dst.baseAddress, height: vImagePixelCount(work),
-                                       width: vImagePixelCount(work), rowBytes: work * 4)
-                return vImageScale_ARGB8888(&from, &to, nil, vImage_Flags(kvImageHighQualityResampling))
-            }
-        }
-        guard error == kvImageNoError else { throw LearnedNormalError.unexpectedOutput("could not resample the source") }
-        return output
-    }
-
     private static func makePixelBuffer() throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
@@ -385,55 +348,25 @@ final class LearnedNormalEstimator: @unchecked Sendable {
         return buffer
     }
 
-    /// Copies one tile of raw sRGB values (no colour conversion) into the BGRA input buffer.
-    private static func fill(_ buffer: CVPixelBuffer, from rgba: [UInt8], work: Int, x0: Int, y0: Int) throws {
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        guard let base = CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self) else {
-            throw LearnedNormalError.unexpectedOutput("input pixel buffer is not addressable")
-        }
-        let rowBytes = CVPixelBufferGetBytesPerRow(buffer)
-        rgba.withUnsafeBufferPointer { src in
-            guard let src = src.baseAddress else { return }
-            for y in 0..<tile {
-                let s = src + ((y0 + y) * work + x0) * 4
-                let d = base + y * rowBytes
-                for x in 0..<tile {
-                    let i = x * 4
-                    d[i] = s[i + 2]; d[i + 1] = s[i + 1]; d[i + 2] = s[i]; d[i + 3] = 255
-                }
-            }
-        }
-    }
-
-    private static func accumulate(_ array: MLMultiArray, into field: inout [Float], work: Int,
-                                   x0: Int, y0: Int, window: [Float]) throws {
+    /// Copies a (1, 3, 518, 518) prediction of any float type into dense planar Float.
+    static func copyPlanar(_ array: MLMultiArray, into planar: inout [Float]) throws {
         let shape = array.shape.map(\.intValue)
         guard shape.count == 4, shape[0] == 1, shape[1] == 3, shape[2] == tile, shape[3] == tile else {
             throw LearnedNormalError.unexpectedOutput("shape \(shape)")
         }
         let strides = array.strides.map(\.intValue)
         let cs = strides[1], ys = strides[2], xs = strides[3]
-        func add<T>(_ pointer: UnsafeBufferPointer<T>, _ value: (T) -> Float) {
-            field.withUnsafeMutableBufferPointer { out in
-                for y in 0..<tile {
-                    let wy = window[y]
-                    let row = (y0 + y) * work + x0
-                    for x in 0..<tile {
-                        let w = wy * window[x]
-                        let o = (row + x) * 3
-                        let p = y * ys + x * xs
-                        out[o] += w * value(pointer[p])
-                        out[o + 1] += w * value(pointer[p + cs])
-                        out[o + 2] += w * value(pointer[p + 2 * cs])
-                    }
-                }
+        func copy<T>(_ pointer: UnsafeBufferPointer<T>, _ value: (T) -> Float) {
+            planar.withUnsafeMutableBufferPointer { out in
+                for c in 0..<3 { for y in 0..<tile { for x in 0..<tile {
+                    out[(c * tile + y) * tile + x] = value(pointer[c * cs + y * ys + x * xs])
+                } } }
             }
         }
         switch array.dataType {
-        case .float16: array.withUnsafeBufferPointer(ofType: Float16.self) { add($0) { Float($0) } }
-        case .float32: array.withUnsafeBufferPointer(ofType: Float.self) { add($0) { $0 } }
-        case .double: array.withUnsafeBufferPointer(ofType: Double.self) { add($0) { Float($0) } }
+        case .float16: array.withUnsafeBufferPointer(ofType: Float16.self) { copy($0) { Float($0) } }
+        case .float32: array.withUnsafeBufferPointer(ofType: Float.self) { copy($0) { $0 } }
+        case .double: array.withUnsafeBufferPointer(ofType: Double.self) { copy($0) { Float($0) } }
         default: throw LearnedNormalError.unexpectedOutput("data type \(array.dataType.rawValue)")
         }
     }

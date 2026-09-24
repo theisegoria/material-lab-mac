@@ -240,7 +240,7 @@ private struct LearnedGeometryRow: View {
             ParameterRow(
                 title: "Learned geometry", value: $store.recipe.guideNormalWeight,
                 range: MaterialRecipe.Range.guideNormalWeight, digits: 2,
-                help: "Blends height integrated from MoGe-2 learned normals over the analytic estimate: 0 analytic only, 1 learned only. Fine detail still comes from the analytic path below 1."
+                help: "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface."
             )
             .disabled(!available)
             footnote

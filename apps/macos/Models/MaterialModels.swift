@@ -213,6 +213,16 @@ struct MaterialSeamMetrics: Sendable {
     let albedoValue: Float
 }
 
+/// How the core built the geometry (PBRLabDerivationInfo, manifest `relief`, algorithm 1.3.0).
+struct MaterialRelief: Sendable {
+    let heightSpanTileWidths: Float
+    let rmsSlope: Float
+    let learnedFormShare: Float
+    let learnedDetailCorrelation: Float
+    let detailPolarity: Int
+    let heightWrapSeamRatio: Float
+}
+
 struct WorkingImageInfo: Sendable {
     let sourceWidth: Int
     let sourceHeight: Int
@@ -232,6 +242,7 @@ struct DerivedMaterial: @unchecked Sendable {
     let working: WorkingImageInfo
     let maps: [MaterialMapKind: MaterialMapData]
     let seams: MaterialSeamMetrics
+    let relief: MaterialRelief
     let warnings: [String]
     /// Display images created off the main thread; they wrap the map bytes without copying.
     let previews: [MaterialMapKind: CGImage]

@@ -411,6 +411,14 @@ enum MaterialBundle {
                 "height_gradient_delta": tidy(material.seams.heightGradient),
                 "albedo_value_delta": tidy(material.seams.albedoValue)
             ],
+            "relief": [
+                "height_span_tile_widths": tidy(material.relief.heightSpanTileWidths),
+                "rms_slope": tidy(material.relief.rmsSlope),
+                "learned_form_share": tidy(material.relief.learnedFormShare),
+                "learned_detail_correlation": tidy(material.relief.learnedDetailCorrelation),
+                "detail_polarity": material.relief.detailPolarity,
+                "height_wrap_seam_ratio": tidy(material.relief.heightWrapSeamRatio)
+            ] as [String: Any],
             "estimation_notice": "Geometry and reflectance maps are estimates, not measured surface properties.",
             "runtime_admitted": false
         ]
@@ -435,6 +443,7 @@ enum MaterialBundle {
                 "compute_units": guide.computeUnits.rawValue,
                 "work_resolution": guide.workResolution,
                 "tiles": guide.tiles,
+                "tiling": guide.tiling,
                 "normals_sha256": guide.sha256
             ] as [String: Any]
         }

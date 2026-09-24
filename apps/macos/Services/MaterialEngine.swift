@@ -161,7 +161,7 @@ enum MaterialEngine {
             do {
                 defer { control.reportLearned(nil) }
                 guide = try LearnedNormalEstimator.shared.guideNormals(
-                    rgba: working.payload, size: targetSize, sourceSHA256: working.sha256,
+                    rgba: working.payload, size: targetSize, sourceSHA256: working.sha256, wrap: recipe.tileWrap,
                     shouldContinue: { control.shouldContinue },
                     progress: { control.reportLearned($0) }
                 )
@@ -260,6 +260,7 @@ enum MaterialEngine {
             previews[.learnedNormal] = previewImage(map)
         }
         let seams = PBRLabGetSeamMetrics(nativeResult)
+        let geometryInfo = PBRLabGetDerivationInfo(nativeResult)
         var warnings = [
             "Height, normals, AO and roughness are editable estimates from one color image.",
             "Metalness is an artist assignment; physical surface properties were not measured."
@@ -270,7 +271,7 @@ enum MaterialEngine {
         if source.reviewStatus.lowercased().contains("candidate") {
             warnings.append("This source is still a review candidate.")
         }
-        if seams.height_value_delta > 0.02 || seams.albedo_value_delta > 0.03 {
+        if geometryInfo.height_wrap_seam_ratio > 1.5 || seams.albedo_value_delta > 0.03 {
             warnings.append("Opposite image edges differ; inspect the tiled view before repeating.")
         }
         if let guide {
@@ -296,6 +297,11 @@ enum MaterialEngine {
                 heightValue: seams.height_value_delta,
                 heightGradient: seams.height_gradient_delta,
                 albedoValue: seams.albedo_value_delta
+            ),
+            relief: MaterialRelief(
+                heightSpanTileWidths: geometryInfo.height_span_tile_widths, rmsSlope: geometryInfo.rms_slope,
+                learnedFormShare: geometryInfo.learned_form_share, learnedDetailCorrelation: geometryInfo.learned_detail_correlation,
+                detailPolarity: Int(geometryInfo.detail_polarity), heightWrapSeamRatio: geometryInfo.height_wrap_seam_ratio
             ),
             warnings: warnings,
             previews: previews,

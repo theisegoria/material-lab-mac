@@ -66,7 +66,8 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     var aoStrength: Float
     var albedoEqualize: Float
     var seamlessBlend: Float
-    /// Core 1.2.0 blend of learned (MoGe-2) geometry over the inferred height: 0 = analytic only, 1 = learned only.
+    /// Weight of learned (MoGe-2) form and detail orientation over the analytic relief (core 1.3.0): 0 = analytic only,
+    /// 1 = learned form with photo detail oriented by it.
     var guideNormalWeight: Float = 0
     /// Core 1.2.0 seam method for Make tileable; the core default is the seam cut.
     var seamlessMode: SeamlessMode = .cut
@@ -239,8 +240,7 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
     /// Height provenance names learned normals when they contributed (docs/LEARNED_NORMALS.md).
     func provenance(recipe: MaterialRecipe, guided: Bool) -> String {
         guard self == .height, guided else { return provenance }
-        return recipe.preset == .flat || recipe.guideNormalWeight >= 1
-            ? "learned_normals" : "estimated_from_albedo_and_learned_normals"
+        return recipe.preset == .flat ? "learned_normals" : "estimated_from_albedo_and_learned_normals"
     }
     var provenance: String {
         switch self {
@@ -367,7 +367,7 @@ enum MaterialProcessor {
             case .field(let field): learnedField = field
             case .estimate(let estimator):
                 // Inference owns the first 35% of the progress bar; the estimator cache makes repeats free.
-                learnedField = try estimator.field(rgba: rgba, size: resolution,
+                learnedField = try estimator.field(rgba: rgba, size: resolution, wrap: recipe.tileWrap,
                                                    shouldContinue: { control?.isCancelled != true },
                                                    progress: { control?.report($0 * 0.35, absolute: true) })
                 control?.setPhaseOffset(0.35)

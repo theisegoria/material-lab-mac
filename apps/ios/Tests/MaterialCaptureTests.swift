@@ -353,23 +353,17 @@ final class MaterialCaptureTests: XCTestCase {
 
     // MARK: Learned normals
 
-    func testLearnedTilingFollowsTheContract() {
+    func testLearnedTilingFollowsTheContract() throws {
         XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 256), 518)
         XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 800), 800)
-        XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 4096), 1036)
-        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(518), [0])
-        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(800), [0, 259, 282])
-        XCTAssertEqual(LearnedNormalEstimator.tileOrigins(1036), [0, 259, 518])
-        // A +Z field encodes to (128, 128, 255) and resamples without drift.
-        let model = LearnedModelInfo(compiledURL: URL(filePath: "/dev/null"), modelFile: "m.mlpackage",
-                                     weightsSHA256: "w", mogeCommit: "c", origin: .bundled)
-        var flat = [Float](repeating: 0, count: 518 * 518 * 3)
-        for i in 0..<(518 * 518) { flat[i * 3 + 2] = 1 }
-        let guide = LearnedNormalField(work: 518, tiles: 1, normals: flat, model: model, computeUnits: "all").guide(size: 64)
-        XCTAssertEqual(guide.rgba8.count, 64 * 64 * 4)
-        XCTAssertEqual(Array(guide.rgba8.prefix(4)), [128, 128, 255, 255])
-        XCTAssertEqual(guide.provenance.workResolution, 518)
-        XCTAssertEqual(guide.provenance.contract, "tangent_normals_plus_y_v1")
+        XCTAssertEqual(LearnedNormalEstimator.workResolution(for: 4096), 2072)
+        // The core's tiler owns the contract: wrap padding adds half a tile on every side when tiling.
+        let tiled = try XCTUnwrap(LearnedNormalEstimator.tilingPlan(size: 256, wrap: true))
+        XCTAssertEqual(tiled.work, 518)
+        XCTAssertEqual(tiled.tiles, 9)
+        XCTAssertEqual(tiled.passes, 18)
+        XCTAssertEqual(tiled.contract, "wrap_padded_rot180_detilted_v2")
+        XCTAssertEqual(LearnedNormalEstimator.tilingPlan(size: 256, wrap: false)?.tiles, 1)
     }
 
     func testRecipeGuideNormalWeightRoundTripsAndSurvivesPresetChange() throws {
@@ -401,18 +395,17 @@ final class MaterialCaptureTests: XCTestCase {
         var progress: [Double] = []
         let field = try estimator.field(rgba: rgba, size: 256, progress: { progress.append($0) })
         XCTAssertEqual(field.work, 518)
-        XCTAssertEqual(field.tiles, 1)
+        XCTAssertEqual(field.tiles, 9)
         XCTAssertEqual(progress.last, 1)
+        let guidePixels = field.guide(size: 256).rgba8
         var unit = 0, facingOut = 0
-        let pixels = field.work * field.work
-        for i in 0..<pixels {
-            let x = field.normals[i * 3], y = field.normals[i * 3 + 1], z = field.normals[i * 3 + 2]
-            if abs((x * x + y * y + z * z).squareRoot() - 1) < 1e-3 { unit += 1 }
+        for i in Swift.stride(from: 0, to: guidePixels.count, by: 4) {
+            let x = Float(guidePixels[i]) / 127.5 - 1, y = Float(guidePixels[i + 1]) / 127.5 - 1, z = Float(guidePixels[i + 2]) / 127.5 - 1
+            if abs((x * x + y * y + z * z).squareRoot() - 1) < 0.02 { unit += 1 }
             if z > 0.7 { facingOut += 1 }
         }
-        XCTAssertEqual(unit, pixels, "Every blended normal must be unit length")
-        XCTAssertGreaterThan(Double(facingOut) / Double(pixels), 0.8, "A flat wall should face mostly +Z")
-        let guidePixels = field.guide(size: 256).rgba8
+        XCTAssertEqual(unit, 256 * 256, "Every guide normal must be unit length")
+        XCTAssertGreaterThan(Double(facingOut) / Double(256 * 256), 0.8, "A flat wall should face mostly +Z")
         let greens = stride(from: 1, to: guidePixels.count, by: 4).map { Double(guidePixels[$0]) }
         let mean = greens.reduce(0, +) / Double(greens.count)
         let deviation = (greens.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(greens.count)).squareRoot()
@@ -430,7 +423,8 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertNil(analytic.guideNormals)
         let provenance = try XCTUnwrap(learned.guideNormals)
         XCTAssertEqual(provenance.estimator, "moge-2-vits-normal")
-        XCTAssertEqual(provenance.tiles, 1)
+        XCTAssertEqual(provenance.tiles, 9)
+        XCTAssertEqual(provenance.tiling, "wrap_padded_rot180_detilted_v2")
         XCTAssertEqual(provenance.normalsSHA256.count, 64)
         XCTAssertNotEqual(analytic.maps[.height]?.png, learned.maps[.height]?.png,
                           "Guided derivation must differ from the analytic height")
@@ -443,12 +437,12 @@ final class MaterialCaptureTests: XCTestCase {
         let capture = try XCTUnwrap(document["capture"] as? [String: Any])
         let guide = try XCTUnwrap(capture["guideNormals"] as? [String: Any])
         for key in ["estimator", "contract", "weights_sha256", "moge_commit", "model_file", "compute_units",
-                    "work_resolution", "tiles", "normals_sha256"] {
+                    "work_resolution", "tiles", "tiling", "normals_sha256"] {
             XCTAssertNotNil(guide[key], "guideNormals.\(key) missing")
         }
         let derived = try XCTUnwrap(document["derived"] as? [String: Any])
         let height = try XCTUnwrap(derived["height"] as? [String: Any])
-        XCTAssertEqual(height["provenance"] as? String, "learned_normals")
+        XCTAssertEqual(height["provenance"] as? String, "estimated_from_albedo_and_learned_normals")
         let fixture = try XCTUnwrap(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first)
             .appendingPathComponent("material-capture-learned.pbrcapture")
         try encoded.write(to: fixture, options: .atomic)

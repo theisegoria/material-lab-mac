@@ -71,11 +71,12 @@ final class CaptureStore {
     var hasExportableMaps: Bool { derived != nil && derivedRevision == inputRevision }
     var trimmedLabel: String { semanticLabel.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    /// Learned normals depend only on the source pixels under the crop, never on the recipe.
+    /// Learned normals depend only on the source pixels under the crop and the recipe's tile option (a tiled field
+    /// is periodic).
     private var geometryKey: String? {
         guard let source else { return nil }
         let q = crop
-        return "\(source.id)|\(q.topLeft.x),\(q.topLeft.y),\(q.topRight.x),\(q.topRight.y)," +
+        return "\(source.id)|\(recipe.tileWrap)|\(q.topLeft.x),\(q.topLeft.y),\(q.topRight.x),\(q.topRight.y)," +
             "\(q.bottomRight.x),\(q.bottomRight.y),\(q.bottomLeft.x),\(q.bottomLeft.y)"
     }
 
@@ -246,7 +247,7 @@ final class CaptureStore {
         if recipe.guideNormalWeight > 0 {
             // Reuse the preview's inference only when it ran at this resolution's working size (the tiling contract).
             if let field = currentLearnedField(),
-               field.work == LearnedNormalEstimator.workResolution(for: resolution) {
+               field.work == LearnedNormalEstimator.workResolution(for: resolution), field.wrap == recipe.tileWrap {
                 guide = .field(field)
             } else {
                 guide = .estimate(estimator)
@@ -300,6 +301,7 @@ final class CaptureStore {
         let image = source.selectedImage(for: crop)
         let quad = crop
         let resolution = resolution
+        let wrap = recipe.tileWrap
         let estimator = estimator
         let report: @Sendable (Double) -> Void = { [weak self] value in
             Task { @MainActor in
@@ -311,7 +313,7 @@ final class CaptureStore {
             let result: Result<LearnedNormalField, Error> = await Task.detached(priority: .userInitiated) {
                 Result {
                     let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
-                    return try estimator.field(rgba: rgba, size: resolution,
+                    return try estimator.field(rgba: rgba, size: resolution, wrap: wrap,
                                                shouldContinue: { !control.isCancelled },
                                                progress: report)
                 }

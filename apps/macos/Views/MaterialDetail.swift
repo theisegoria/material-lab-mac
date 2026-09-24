@@ -226,8 +226,8 @@ private struct DiagnosticsCard: View {
                 }
             }
             SeamRow(label: "Color across edges", value: material.seams.albedoValue, threshold: 0.03)
-            SeamRow(label: "Height across edges", value: material.seams.heightValue, threshold: 0.02)
-            SeamRow(label: "Slope across edges", value: material.seams.heightGradient, threshold: 0.02)
+            // Height is range-normalized from 1.3.0, so its seam is judged against its own adjacent steps.
+            SeamRow(label: "Height across edges", value: max(0, material.relief.heightWrapSeamRatio - 1), threshold: 1)
         }
         .padding(12)
         .background(.fill.quinary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
