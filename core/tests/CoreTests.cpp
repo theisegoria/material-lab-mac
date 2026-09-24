@@ -550,6 +550,60 @@ int main() {
         assert(lo2 >= std::lround(.45 * 255) && hi2 <= std::lround(.98 * 255));
     }
 
+    // Guide tiler contract: a fake estimator that reads slopes from the tile it is shown, plus a bias fixed in its
+    // own view (tilt and a bowl), must give back the source's slope field, periodic, with the bias removed.
+    {
+        constexpr unsigned m = 518;
+        constexpr double kSlope = 1.0 / 400.0;
+        std::vector<uint8_t> src(m * m * 4, 255);
+        auto value = [&](double x, double y) {
+            return 128 + 60 * std::sin(6.283185307 * 7 * x / m) * std::sin(6.283185307 * 5 * y / m) +
+                   30 * std::sin(6.283185307 * (11 * x + 3 * y) / m);
+        };
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            size_t i = (y * m + x) * 4;
+            src[i] = src[i + 1] = src[i + 2] = static_cast<uint8_t>(std::lround(value(x, y)));
+        }
+        auto* tiler = PBRLabGuideTilerCreate(src.data(), m * 4, m, 1);
+        assert(tiler && PBRLabGuideTilerWorkResolution(tiler) == m && PBRLabGuideTilerPassCount(tiler) == 18);
+        assert(std::string(PBRLabGuideTilerContract(tiler)) == "wrap_padded_rot180_detilted_v2");
+        constexpr int T = PBRLAB_GUIDE_TILE;
+        std::vector<uint8_t> input(T * T * 4);
+        std::vector<float> prediction(3 * T * T);
+        for (uint32_t pass = 0; pass < PBRLabGuideTilerPassCount(tiler); ++pass) {
+            assert(PBRLabGuideTilerFillInput(tiler, pass, input.data(), T * 4));
+            for (int y = 0; y < T; ++y) for (int x = 0; x < T; ++x) {
+                auto R = [&](int xx, int yy) { return double(input[(std::clamp(yy, 0, T - 1) * T + std::clamp(xx, 0, T - 1)) * 4 + 2]); };
+                double u = (x + .5) / T - .5, v = (y + .5) / T - .5;
+                double nx = (R(x + 1, y) - R(x - 1, y)) * .5 * kSlope + .2 + .3 * u;
+                double ny = (R(x, y + 1) - R(x, y - 1)) * .5 * kSlope - .1 + .2 * v;
+                double len = std::sqrt(nx * nx + ny * ny + 1);
+                prediction[(0 * T + y) * T + x] = float(nx / len);
+                prediction[(1 * T + y) * T + x] = float(ny / len);
+                prediction[(2 * T + y) * T + x] = float(1 / len);
+            }
+            assert(PBRLabGuideTilerAddPrediction(tiler, pass, prediction.data(), T * T, T, 1));
+        }
+        std::vector<uint8_t> guide(m * m * 4);
+        assert(PBRLabGuideTilerFinish(tiler, m, guide.data(), m * 4));
+        PBRLabGuideTilerFree(tiler);
+        // The source is flattened only at very low frequency, so its slopes are unchanged in this band.
+        double error = 0, seam = 0, inner = 0;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            double gx = (value(x + 1, y) - value(x - 1.0, y)) * .5 * kSlope, gy = (value(x, y + 1) - value(x, y - 1.0)) * .5 * kSlope;
+            double len = std::sqrt(gx * gx + gy * gy + 1);
+            error += std::fabs(guide[(y * m + x) * 4] - (gx / len * .5 + .5) * 255) + std::fabs(guide[(y * m + x) * 4 + 1] - (gy / len * .5 + .5) * 255);
+        }
+        for (unsigned y = 0; y < m; ++y) {
+            seam += std::abs(int(guide[(y * m) * 4]) - int(guide[(y * m + m - 1) * 4]));
+            inner += std::abs(int(guide[(y * m + 1) * 4]) - int(guide[(y * m) * 4]));
+        }
+        error /= 2.0 * m * m;
+        std::cout << "guide tiler: mean error " << error << " levels (bias 0.2 tilt + bowl removed), wrap step " << seam / m
+                  << " vs neighbour " << inner / m << "\n";
+        assert(error < 3 && seam < 1.5 * inner + m);
+    }
+
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
     {
         constexpr unsigned big = 1024;

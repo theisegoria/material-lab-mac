@@ -100,6 +100,7 @@ typedef struct PBRLabDerivationInfo {
     float learned_form_share;        // Share of slope energy taken from learned form (0 without a guide).
     float learned_detail_correlation;// Correlation of learned and albedo relief in the 3..8 px band (0 without a guide).
     int32_t detail_polarity;         // Sign applied to albedo-derived fine relief (+1 bright raised).
+    float height_wrap_seam_ratio;    // Mean opposite-edge height step / mean adjacent step (about 1 = seamless).
 } PBRLabDerivationInfo;
 
 typedef struct PBRLabResult PBRLabResult;
@@ -114,6 +115,28 @@ int PBRLabGetMap(const PBRLabResult *result, PBRLabMapKind kind, PBRLabMap *out_
 PBRLabSeamMetrics PBRLabGetSeamMetrics(const PBRLabResult *result);
 PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *result);
 void PBRLabFreeResult(PBRLabResult *result);
+
+// Added in 1.3.0: the learned-guide tiling contract (docs/LEARNED_NORMALS.md), shared by every client so that
+// identical model output gives identical guide normals. The caller only runs the model: for every pass it fills
+// the model input, predicts, and adds the prediction; Finish then returns guide normals for PBRLabInput.
+#define PBRLAB_GUIDE_TILE 518
+typedef struct PBRLabGuideTiler PBRLabGuideTiler;
+// Square straight sRGB RGBA8 source, 2..4096. tile_wrap nonzero makes the guide field periodic. NULL on error.
+PBRLabGuideTiler *PBRLabGuideTilerCreate(const uint8_t *rgba8, size_t row_bytes, uint32_t size, uint32_t tile_wrap);
+uint32_t PBRLabGuideTilerWorkResolution(const PBRLabGuideTiler *tiler);
+uint32_t PBRLabGuideTilerTileCount(const PBRLabGuideTiler *tiler); // Tile positions; each runs twice (two passes).
+uint32_t PBRLabGuideTilerPassCount(const PBRLabGuideTiler *tiler); // 2 x tile count.
+const char *PBRLabGuideTilerContract(const PBRLabGuideTiler *tiler);
+// Writes the 518x518 model input of `pass` as BGRA8 (alpha 255, raw sRGB values).
+int PBRLabGuideTilerFillInput(const PBRLabGuideTiler *tiler, uint32_t pass, uint8_t *bgra8, size_t row_bytes);
+// Adds the model's +Y tangent normals for `pass`: value (c, y, x) is at
+// normals[c * channel_stride + y * row_stride + x * column_stride]. Passes must be added in order.
+int PBRLabGuideTilerAddPrediction(PBRLabGuideTiler *tiler, uint32_t pass, const float *normals,
+                                  ptrdiff_t channel_stride, ptrdiff_t row_stride, ptrdiff_t column_stride);
+// After every pass: writes out_size x out_size linear RGBA8 guide normals (alpha 255), normally out_size = the
+// source size. May be called again for other sizes (e.g. a preview and an export) without re-running the model.
+int PBRLabGuideTilerFinish(PBRLabGuideTiler *tiler, uint32_t out_size, uint8_t *rgba8, size_t row_bytes);
+void PBRLabGuideTilerFree(PBRLabGuideTiler *tiler);
 
 #ifdef __cplusplus
 }

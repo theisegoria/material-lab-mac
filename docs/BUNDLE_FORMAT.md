@@ -32,6 +32,7 @@ Algorithm 1.3.0 keeps the recipe fields but changes three meanings: `ao_radius_p
 | `learned_form_share` | 0–1 | Share of slope energy taken from learned form (0 without guide normals). |
 | `learned_detail_correlation` | −1–1 | Correlation of learned and albedo relief in the σ 3–8 px band. |
 | `detail_polarity` | ±1 | Sign applied to albedo-derived fine relief (+1 = bright raised). |
+| `height_wrap_seam_ratio` | ≥ 0 | Mean opposite-edge height step divided by the mean adjacent step; about 1 means the height tiles without a visible seam. Use it instead of `seam_metrics.height_value_delta`, whose scale now depends on the relief. |
 
 Validators reject a 1.3.0 material without a valid `relief` and validate one on any version when present. `.pbrcapture` envelopes do not carry it.
 

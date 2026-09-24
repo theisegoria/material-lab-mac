@@ -518,9 +518,8 @@ PreUpscaleResult runPreUpscale(const fs::path& inputPath, NSData* original, cons
 
 // ---------------------------------------------------------------------------------------------
 // Learned guide normals (docs/LEARNED_NORMALS.md). The Core ML model returns +Y tangent normals for a
-// 518x518 RGB tile; tiles are blended with a sine window at a working size of clamp(N, 518, 1036).
-constexpr int kLearnedTile = 518;
-constexpr int kLearnedStride = 259;
+// 518x518 RGB tile; the core's PBRLabGuideTiler owns the tiling contract (wrap padding, two orientations, fold).
+constexpr int kLearnedTile = PBRLAB_GUIDE_TILE;
 struct GuideNormals { std::vector<uint8_t> rgba; NSMutableDictionary* provenance = nil; };
 
 struct LoadedModel { MLModel* model = nil; NSDictionary* metadata = nil; std::string file; };
@@ -546,281 +545,58 @@ LoadedModel& learnedModel(const fs::path& path, bool cpuOnly) {
     return cache[key] = LoadedModel{model, metadata, path.filename().string()};
 }
 
-// Separable Lanczos-3 resample of straight RGBA8 (values treated as data; sRGB bytes stay sRGB). The kernel
-// widens by the scale factor when downsampling. `wrap` reads across opposite edges so a tileable source
-// stays tileable; otherwise edges clamp. Deterministic: fixed tap order, no platform resampler.
-std::vector<uint8_t> resampleRGBA(const std::vector<uint8_t>& src, int n, int m, bool wrap) {
-    if (n == m) return src;
-    const double scale = static_cast<double>(n) / m, support = 3.0 * std::max(1.0, scale);
-    auto lanczos = [](double x) {
-        x = std::abs(x);
-        if (x < 1e-9) return 1.0;
-        if (x >= 3.0) return 0.0;
-        const double px = M_PI * x;
-        return 3.0 * std::sin(px) * std::sin(px / 3.0) / (px * px);
-    };
-    struct Taps { int first = 0; std::vector<float> w; };
-    std::vector<Taps> taps(m);
-    for (int o = 0; o < m; ++o) {
-        const double center = (o + .5) * scale - .5;
-        const int first = static_cast<int>(std::ceil(center - support)), last = static_cast<int>(std::floor(center + support));
-        taps[o].first = first;
-        double sum = 0;
-        for (int k = first; k <= last; ++k) { double w = lanczos((k - center) / std::max(1.0, scale)); taps[o].w.push_back(static_cast<float>(w)); sum += w; }
-        for (auto& w : taps[o].w) w = static_cast<float>(w / sum);
-    }
-    auto index = [&](int k) { return wrap ? ((k % n) + n) % n : std::clamp(k, 0, n - 1); };
-    std::vector<float> horizontal(static_cast<size_t>(n) * m * 4);
-    for (int y = 0; y < n; ++y) for (int o = 0; o < m; ++o) {
-        float acc[4]{};
-        for (size_t t = 0; t < taps[o].w.size(); ++t) {
-            const uint8_t* p = &src[(static_cast<size_t>(y) * n + index(taps[o].first + static_cast<int>(t))) * 4];
-            for (int c = 0; c < 4; ++c) acc[c] += taps[o].w[t] * p[c];
-        }
-        for (int c = 0; c < 4; ++c) horizontal[(static_cast<size_t>(y) * m + o) * 4 + c] = acc[c];
-    }
-    std::vector<uint8_t> out(static_cast<size_t>(m) * m * 4);
-    for (int o = 0; o < m; ++o) for (int x = 0; x < m; ++x) {
-        float acc[4]{};
-        for (size_t t = 0; t < taps[o].w.size(); ++t) {
-            const float* p = &horizontal[(static_cast<size_t>(index(taps[o].first + static_cast<int>(t))) * m + x) * 4];
-            for (int c = 0; c < 4; ++c) acc[c] += taps[o].w[t] * p[c];
-        }
-        for (int c = 0; c < 4; ++c) out[(static_cast<size_t>(o) * m + x) * 4 + c] = static_cast<uint8_t>(std::lround(std::clamp(acc[c], 0.0f, 255.0f)));
-    }
-    return out;
-}
-
-// Removes luminance variation broader than about a sixteenth of the tile from the estimator's input (hue kept,
-// gain clamped to 0.5..2). Vignetting and uneven lighting are not geometry, but a monocular estimator reads them
-// as bowls and domes; the core discards learned wavelengths that long anyway. Wraps when tiling.
-void flattenLowFrequencyLuminance(std::vector<uint8_t>& rgba, int n, bool wrap) {
-    auto toLinear = [](uint8_t v) { float c = v / 255.0f; return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f); };
-    auto toSRGB = [](float c) {
-        c = std::clamp(c, 0.0f, 1.0f);
-        c = c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
-        return static_cast<uint8_t>(std::lround(c * 255.0f));
-    };
-    std::array<float, 256> lut{};
-    for (int i = 0; i < 256; ++i) lut[i] = toLinear(static_cast<uint8_t>(i));
-    const size_t count = static_cast<size_t>(n) * n;
-    std::vector<float> logLum(count);
-    double mean = 0;
-    for (size_t i = 0; i < count; ++i) {
-        float l = .2126f * lut[rgba[i * 4]] + .7152f * lut[rgba[i * 4 + 1]] + .0722f * lut[rgba[i * 4 + 2]];
-        logLum[i] = std::log(l + 0.01f);
-        mean += logLum[i];
-    }
-    mean /= static_cast<double>(count);
-    const int radius = std::max(2, static_cast<int>(std::lround(n / 16.0))); // Three passes: sigma ~ radius.
-    auto index = [&](int k) { return wrap ? ((k % n) + n) % n : std::clamp(k, 0, n - 1); };
-    std::vector<float> a(logLum), b(count);
-    for (int pass = 0; pass < 3; ++pass) {
-        for (int y = 0; y < n; ++y) {           // Horizontal box.
-            double sum = 0;
-            for (int d = -radius; d <= radius; ++d) sum += a[static_cast<size_t>(y) * n + index(d)];
-            for (int x = 0; x < n; ++x) {
-                b[static_cast<size_t>(y) * n + x] = static_cast<float>(sum / (2 * radius + 1));
-                sum += a[static_cast<size_t>(y) * n + index(x + radius + 1)] - a[static_cast<size_t>(y) * n + index(x - radius)];
-            }
-        }
-        for (int x = 0; x < n; ++x) {           // Vertical box.
-            double sum = 0;
-            for (int d = -radius; d <= radius; ++d) sum += b[static_cast<size_t>(index(d)) * n + x];
-            for (int y = 0; y < n; ++y) {
-                a[static_cast<size_t>(y) * n + x] = static_cast<float>(sum / (2 * radius + 1));
-                sum += b[static_cast<size_t>(index(y + radius + 1)) * n + x] - b[static_cast<size_t>(index(y - radius)) * n + x];
-            }
-        }
-    }
-    for (size_t i = 0; i < count; ++i) {
-        const float gain = std::clamp(std::exp(static_cast<float>(mean) - a[i]), 0.5f, 2.0f);
-        for (int c = 0; c < 3; ++c) rgba[i * 4 + c] = toSRGB(lut[rgba[i * 4 + c]] * gain);
-    }
-}
-
-// Tile-safe inference: when the recipe tiles, the working image is wrap-padded by half a tile on every side
-// so every source pixel, including the border, is predicted with real neighbours from across the wrap. The
-// padded prediction is folded back onto the tile with a partition of unity (a smoothstep cross-fade of
-// width 2 * kLearnedFold centred on each wrap line), which makes the guide field exactly periodic.
-constexpr int kLearnedPad = kLearnedTile / 2;
-constexpr int kLearnedFold = 64;
-constexpr int kLearnedMargin = 48;
-// Largest working size: 4K sources are inferred at 2072 (81 tiles, two orientations each) so learned form reaches
-// about 4x finer than the 1.2.0 cap of 1036.
-constexpr int kLearnedMaxWork = 4 * kLearnedTile;
+// The tiling contract lives in the core (PBRLabGuideTiler) so every client feeds identical guide normals.
 GuideNormals runLearnedNormals(const Image& image, const Options& options) {
     const int n = static_cast<int>(image.width);
-    const int work = std::clamp(n, kLearnedTile, kLearnedMaxWork);
-    const bool wrap = options.recipe.tile_wrap != 0;
     LoadedModel& loaded = learnedModel(options.learnedModel, options.learnedCpuOnly);
-    std::vector<uint8_t> scaled = resampleRGBA(image.pixels, n, work, wrap);
-    flattenLowFrequencyLuminance(scaled, work, wrap);
-    const int pad = wrap ? kLearnedPad : 0, padded = work + 2 * pad;
-    std::vector<int> origins;
-    for (int o = 0; o + kLearnedTile <= padded; o += kLearnedStride) origins.push_back(o);
-    if (origins.back() != padded - kLearnedTile) origins.push_back(padded - kLearnedTile);
-    // Hann window over the tile minus a margin: a ViT's predictions bend within a few patches of its field's edge,
-    // so those pixels get (almost) no weight; with 50 % overlap another tile always covers them from its centre.
-    std::array<float, kLearnedTile> window{};
-    for (int t = 0; t < kLearnedTile; ++t) {
-        const double u = std::clamp((t + .5 - kLearnedMargin) / (kLearnedTile - 2.0 * kLearnedMargin), 0.0, 1.0);
-        const double s = std::sin(M_PI * u);
-        window[t] = std::max(static_cast<float>(s * s), 1e-6f);
-    }
-    std::vector<float> accum(static_cast<size_t>(padded) * padded * 3, 0.0f);
-    auto source = [&](int u) { return ((u - pad) % work + work) % work; }; // Padded coordinate -> working pixel.
+    std::unique_ptr<PBRLabGuideTiler, decltype(&PBRLabGuideTilerFree)> tiler(
+        PBRLabGuideTilerCreate(image.pixels.data(), static_cast<size_t>(n) * 4, image.width, options.recipe.tile_wrap),
+        &PBRLabGuideTilerFree);
+    if (!tiler) throw std::runtime_error("cannot prepare the learned estimator input");
     CVPixelBufferRef tile = nullptr;
     NSDictionary* attributes = @{(__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{}};
     if (CVPixelBufferCreate(kCFAllocatorDefault, kLearnedTile, kLearnedTile, kCVPixelFormatType_32BGRA,
                             (__bridge CFDictionaryRef)attributes, &tile) != kCVReturnSuccess)
         throw std::runtime_error("cannot allocate Core ML input buffer");
     try {
-        std::vector<float> predicted(static_cast<size_t>(kLearnedTile) * kLearnedTile * 3), slopes(predicted.size());
-        for (int oy : origins) for (int ox : origins) {
-            std::fill(slopes.begin(), slopes.end(), 0.0f);
-            for (int rotated = 0; rotated < 2; ++rotated) {
-                checkInterrupted();
-                CVPixelBufferLockBaseAddress(tile, 0);
-                auto* base = static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(tile));
-                const size_t stride = CVPixelBufferGetBytesPerRow(tile);
-                for (int y = 0; y < kLearnedTile; ++y) {
-                    const int sy = rotated ? kLearnedTile - 1 - y : y;
-                    const uint8_t* srcRow = &scaled[static_cast<size_t>(source(oy + sy)) * work * 4];
-                    uint8_t* dst = base + static_cast<size_t>(y) * stride;
-                    for (int x = 0; x < kLearnedTile; ++x) {
-                        const int sx = rotated ? kLearnedTile - 1 - x : x;
-                        const uint8_t* src = srcRow + static_cast<size_t>(source(ox + sx)) * 4;
-                        dst[x * 4] = src[2]; dst[x * 4 + 1] = src[1];
-                        dst[x * 4 + 2] = src[0]; dst[x * 4 + 3] = 255;
-                    }
-                }
-                CVPixelBufferUnlockBaseAddress(tile, 0);
-                NSError* error = nil;
-                MLDictionaryFeatureProvider* input = [[MLDictionaryFeatureProvider alloc]
-                    initWithDictionary:@{@"image": [MLFeatureValue featureValueWithPixelBuffer:tile]} error:&error];
-                id<MLFeatureProvider> output = input ? [loaded.model predictionFromFeatures:input error:&error] : nil;
-                MLMultiArray* normals = [output featureValueForName:@"normals"].multiArrayValue;
-                if (!normals || normals.shape.count != 4 || normals.shape[1].intValue != 3 ||
-                    normals.shape[2].intValue != kLearnedTile || normals.shape[3].intValue != kLearnedTile)
-                    throw std::runtime_error("learned estimator failed: " + str(error.localizedDescription ?: @"unexpected output shape"));
-                const NSInteger cs = normals.strides[1].integerValue, ys = normals.strides[2].integerValue, xs = normals.strides[3].integerValue;
-                const MLMultiArrayDataType type = normals.dataType;
-                float* out = predicted.data();
-                [normals getBytesWithHandler:^(const void* bytes, NSInteger) {
-                    auto read = [&](NSInteger offset) -> float {
-                        if (type == MLMultiArrayDataTypeFloat16) return static_cast<float>(static_cast<const __fp16*>(bytes)[offset]);
-                        if (type == MLMultiArrayDataTypeDouble) return static_cast<float>(static_cast<const double*>(bytes)[offset]);
-                        return static_cast<const float*>(bytes)[offset];
-                    };
-                    for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x)
-                        for (int c = 0; c < 3; ++c) out[(static_cast<size_t>(y) * kLearnedTile + x) * 3 + c] = read(c * cs + y * ys + x * xs);
-                }];
-                // Back to the tile frame (a 180-degree turn negates the in-plane components), as slopes, averaged
-                // over both orientations: bias fixed in the estimator's view (e.g. "the top recedes") cancels.
-                for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x) {
-                    const int py = rotated ? kLearnedTile - 1 - y : y, px = rotated ? kLearnedTile - 1 - x : x;
-                    const float* nrm = &predicted[(static_cast<size_t>(py) * kLearnedTile + px) * 3];
-                    const float sign = rotated ? -1.0f : 1.0f, nz = std::max(nrm[2], .15f);
-                    float* sl = &slopes[(static_cast<size_t>(y) * kLearnedTile + x) * 3];
-                    sl[0] += .5f * std::clamp(sign * nrm[0] / nz, -4.0f, 4.0f);
-                    sl[1] += .5f * std::clamp(sign * nrm[1] / nz, -4.0f, 4.0f);
-                }
-            }
-            // Remove the tile's window-weighted affine slope trend (mean tilt plus a uniform bowl, dome or saddle):
-            // a stationary texture has neither across one tile, while a scene-trained estimator adds a per-view
-            // camera tilt and curvature that would otherwise stamp the tile grid into the integrated height.
-            double m[3][3]{}, rx[3]{}, ry[3]{};
-            for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x) {
-                const double w = static_cast<double>(window[x]) * window[y];
-                const double basis[3] = {1.0, (x + .5) / kLearnedTile - .5, (y + .5) / kLearnedTile - .5};
-                const float* sl = &slopes[(static_cast<size_t>(y) * kLearnedTile + x) * 3];
-                for (int r = 0; r < 3; ++r) {
-                    for (int c = 0; c < 3; ++c) m[r][c] += w * basis[r] * basis[c];
-                    rx[r] += w * basis[r] * sl[0]; ry[r] += w * basis[r] * sl[1];
-                }
-            }
-            auto solve = [&](const double rhs[3], double out[3]) { // Cramer's rule; m is symmetric positive definite.
-                auto det = [](const double a[3][3]) {
-                    return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) +
-                           a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+        std::vector<float> predicted(static_cast<size_t>(kLearnedTile) * kLearnedTile * 3);
+        const uint32_t passes = PBRLabGuideTilerPassCount(tiler.get());
+        for (uint32_t pass = 0; pass < passes; ++pass) {
+            checkInterrupted();
+            CVPixelBufferLockBaseAddress(tile, 0);
+            const int filled = PBRLabGuideTilerFillInput(tiler.get(), pass, static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(tile)),
+                                                         CVPixelBufferGetBytesPerRow(tile));
+            CVPixelBufferUnlockBaseAddress(tile, 0);
+            if (!filled) throw std::runtime_error("cannot fill the learned estimator input");
+            NSError* error = nil;
+            MLDictionaryFeatureProvider* input = [[MLDictionaryFeatureProvider alloc]
+                initWithDictionary:@{@"image": [MLFeatureValue featureValueWithPixelBuffer:tile]} error:&error];
+            id<MLFeatureProvider> output = input ? [loaded.model predictionFromFeatures:input error:&error] : nil;
+            MLMultiArray* normals = [output featureValueForName:@"normals"].multiArrayValue;
+            if (!normals || normals.shape.count != 4 || normals.shape[1].intValue != 3 ||
+                normals.shape[2].intValue != kLearnedTile || normals.shape[3].intValue != kLearnedTile)
+                throw std::runtime_error("learned estimator failed: " + str(error.localizedDescription ?: @"unexpected output shape"));
+            const NSInteger cs = normals.strides[1].integerValue, ys = normals.strides[2].integerValue, xs = normals.strides[3].integerValue;
+            const MLMultiArrayDataType type = normals.dataType;
+            float* out = predicted.data();
+            [normals getBytesWithHandler:^(const void* bytes, NSInteger) {
+                auto read = [&](NSInteger offset) -> float {
+                    if (type == MLMultiArrayDataTypeFloat16) return static_cast<float>(static_cast<const __fp16*>(bytes)[offset]);
+                    if (type == MLMultiArrayDataTypeDouble) return static_cast<float>(static_cast<const double*>(bytes)[offset]);
+                    return static_cast<const float*>(bytes)[offset];
                 };
-                const double d = det(m);
-                for (int k = 0; k < 3; ++k) {
-                    double t[3][3];
-                    for (int r = 0; r < 3; ++r) for (int c = 0; c < 3; ++c) t[r][c] = c == k ? rhs[r] : m[r][c];
-                    out[k] = det(t) / d;
-                }
-            };
-            double cx[3], cy[3];
-            solve(rx, cx); solve(ry, cy);
-            for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x) {
-                const double u = (x + .5) / kLearnedTile - .5, v = (y + .5) / kLearnedTile - .5;
-                float* sl = &slopes[(static_cast<size_t>(y) * kLearnedTile + x) * 3];
-                sl[0] -= static_cast<float>(cx[0] + cx[1] * u + cx[2] * v);
-                sl[1] -= static_cast<float>(cy[0] + cy[1] * u + cy[2] * v);
-            }
-            for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x) {
-                const float w = window[x] * window[y];
-                const float* sl = &slopes[(static_cast<size_t>(y) * kLearnedTile + x) * 3];
-                const float gx = sl[0], gy = sl[1], inv = 1.0f / std::sqrt(gx * gx + gy * gy + 1.0f);
-                const size_t i = static_cast<size_t>(oy + y) * padded + ox + x;
-                accum[i * 3] += w * gx * inv; accum[i * 3 + 1] += w * gy * inv; accum[i * 3 + 2] += w * inv;
-            }
+                for (int c = 0; c < 3; ++c) for (int y = 0; y < kLearnedTile; ++y) for (int x = 0; x < kLearnedTile; ++x)
+                    out[(static_cast<size_t>(c) * kLearnedTile + y) * kLearnedTile + x] = read(c * cs + y * ys + x * xs);
+            }];
+            if (!PBRLabGuideTilerAddPrediction(tiler.get(), pass, predicted.data(), kLearnedTile * kLearnedTile, kLearnedTile, 1))
+                throw std::runtime_error("cannot accumulate a learned estimator prediction");
         }
     } catch (...) { CVPixelBufferRelease(tile); throw; }
     CVPixelBufferRelease(tile);
-    // Fold the padded field onto the working tile. fold(u) rises across u = pad and falls across u = pad + work,
-    // so fold(u) + fold(u +/- work) = 1 inside both cross-fades (a partition of unity) and the result is periodic.
-    auto smooth = [](float t) { t = std::clamp(t, 0.0f, 1.0f); return t * t * (3.0f - 2.0f * t); };
-    auto fold = [&](int u) {
-        if (!wrap) return 1.0f;
-        const float c = static_cast<float>(u) + .5f;
-        return smooth((c - (pad - kLearnedFold)) / (2.0f * kLearnedFold)) *
-               (1.0f - smooth((c - (pad + work - kLearnedFold)) / (2.0f * kLearnedFold)));
-    };
-    std::vector<float> field(static_cast<size_t>(work) * work * 3, 0.0f);
-    for (int y = 0; y < work; ++y) for (int x = 0; x < work; ++x) {
-        float v[3]{};
-        for (int ky = -1; ky <= 1; ++ky) {
-            const int uy = pad + y + ky * work;
-            if (uy < 0 || uy >= padded) continue;
-            const float wy = fold(uy);
-            if (wy <= 0) continue;
-            for (int kx = -1; kx <= 1; ++kx) {
-                const int ux = pad + x + kx * work;
-                if (ux < 0 || ux >= padded) continue;
-                const float w = wy * fold(ux);
-                if (w <= 0) continue;
-                const float* a = &accum[(static_cast<size_t>(uy) * padded + ux) * 3];
-                const float length = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-                if (length < 1e-12f) continue;
-                for (int c = 0; c < 3; ++c) v[c] += w * a[c] / length;
-            }
-        }
-        for (int c = 0; c < 3; ++c) field[(static_cast<size_t>(y) * work + x) * 3 + c] = v[c];
-    }
-    auto sampleAt = [&](int x, int y, float out[3]) {
-        x = wrap ? (x % work + work) % work : std::clamp(x, 0, work - 1);
-        y = wrap ? (y % work + work) % work : std::clamp(y, 0, work - 1);
-        const size_t i = static_cast<size_t>(y) * work + x;
-        for (int c = 0; c < 3; ++c) out[c] = field[i * 3 + c];
-    };
     GuideNormals guide;
     guide.rgba.resize(static_cast<size_t>(n) * n * 4);
-    const float scale = static_cast<float>(work) / static_cast<float>(n);
-    for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
-        float fx = (x + .5f) * scale - .5f, fy = (y + .5f) * scale - .5f;
-        int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
-        float tx = fx - x0, ty = fy - y0, a[3], b[3], c[3], d[3], v[3];
-        sampleAt(x0, y0, a); sampleAt(x0 + 1, y0, b); sampleAt(x0, y0 + 1, c); sampleAt(x0 + 1, y0 + 1, d);
-        for (int k = 0; k < 3; ++k) v[k] = (a[k] + (b[k] - a[k]) * tx) * (1 - ty) + (c[k] + (d[k] - c[k]) * tx) * ty;
-        float length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        if (length < 1e-6f) { v[0] = v[1] = 0; v[2] = length = 1; }
-        uint8_t* out = &guide.rgba[(static_cast<size_t>(y) * n + x) * 4];
-        for (int k = 0; k < 3; ++k) out[k] = static_cast<uint8_t>(std::lround(std::clamp(v[k] / length * .5f + .5f, 0.0f, 1.0f) * 255));
-        out[3] = 255;
-    }
+    if (!PBRLabGuideTilerFinish(tiler.get(), image.width, guide.rgba.data(), static_cast<size_t>(n) * 4))
+        throw std::runtime_error("cannot finish the learned guide normals");
     NSString* weightsHash = asString(loaded.metadata[@"materiallab.weights_sha256"]);
     guide.provenance = [@{
         @"estimator": @"moge-2-vits-normal",
@@ -829,9 +605,9 @@ GuideNormals runLearnedNormals(const Image& image, const Options& options) {
         @"moge_commit": asString(loaded.metadata[@"materiallab.moge_commit"]) ?: @"unknown",
         @"model_file": ns(loaded.file),
         @"compute_units": options.learnedCpuOnly ? @"cpu_only" : @"all",
-        @"work_resolution": @(work),
-        @"tiles": @(origins.size() * origins.size()),
-        @"tiling": wrap ? @"wrap_padded_rot180_detilted_v2" : @"clamped_rot180_detilted_v2",
+        @"work_resolution": @(PBRLabGuideTilerWorkResolution(tiler.get())),
+        @"tiles": @(PBRLabGuideTilerTileCount(tiler.get())),
+        @"tiling": @(PBRLabGuideTilerContract(tiler.get())),
         @"normals_sha256": ns(hash(guide.rgba.data(), guide.rgba.size()))
     } mutableCopy];
     return guide;
@@ -998,7 +774,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                                 @"rms_slope": @(info.rms_slope),
                                 @"learned_form_share": @(info.learned_form_share),
                                 @"learned_detail_correlation": @(info.learned_detail_correlation),
-                                @"detail_polarity": @(info.detail_polarity)};
+                                @"detail_polarity": @(info.detail_polarity),
+                                @"height_wrap_seam_ratio": @(info.height_wrap_seam_ratio)};
         if (review) {
             manifest[@"source_review_status"] = review->reviewed ? @"reviewed" : @"unreviewed";
             manifest[@"included_by_opt_in"] = @(review->includedByOptIn);
@@ -1151,7 +928,7 @@ void validate(const fs::path& bundle) {
     if (level >= 3 || manifest[@"relief"]) {
         if (!relief || !finiteNumber(relief[@"height_span_tile_widths"], 0, 64) || !finiteNumber(relief[@"rms_slope"], 0, 1e4) ||
             !finiteNumber(relief[@"learned_form_share"], 0, 1 + 1e-6) || !finiteNumber(relief[@"learned_detail_correlation"], -1 - 1e-6, 1 + 1e-6) ||
-            !unitPolarity(relief[@"detail_polarity"]))
+            !unitPolarity(relief[@"detail_polarity"]) || !finiteNumber(relief[@"height_wrap_seam_ratio"], 0, 1e6))
             throw std::runtime_error("manifest relief (height span, slope, learned share/correlation, detail polarity) is missing or invalid");
     }
     id reviewStatus = manifest[@"source_review_status"];

@@ -415,6 +415,7 @@ def main() -> None:
         forge(lambda m: m["relief"].update(height_span_tile_widths=-1))
         forge(lambda m: m["relief"].update(detail_polarity=0))
         forge(lambda m: m["relief"].update(learned_form_share=2))
+        forge(lambda m: m["relief"].pop("height_wrap_seam_ratio"))
         (forged_bundle / "manifest.json").write_text("[1, 2]")
         run(cli, "--validate", str(forged_bundle), expect_success=False)
         upper = json.loads(json.dumps(good))

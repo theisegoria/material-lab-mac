@@ -40,6 +40,7 @@ constexpr int kAOStepsPerSide = 8;
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
 int wrap(int x, int n) { x %= n; return x < 0 ? x + n : x; }
+int wrap_index(int x, int n) { return wrap(x, n); }
 int border(int x, int n, bool tiled) { return tiled ? wrap(x, n) : std::clamp(x, 0, n - 1); }
 size_t at(int x, int y, int width) { return static_cast<size_t>(y) * width + x; }
 uint8_t byte(float v) { return static_cast<uint8_t>(std::lround(clamp01(v) * 255.0f)); }
@@ -1100,6 +1101,12 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             albedoSeam += colorDiff(at(0, i, width), at(width - 1, i, width));
             albedoSeam += colorDiff(at(i, 0, width), at(i, height - 1, width));
         }
+        double adjacent = 0;
+        for (int y = 0; y < height; ++y) for (int x = 0; x + 1 < width; ++x)
+            adjacent += std::abs(heights[at(x + 1, y, width)] - heights[at(x, y, width)]) +
+                        std::abs(heights[at(y, x + 1, width)] - heights[at(y, x, width)]);
+        adjacent /= 2.0 * width * (width - 1);
+        info.height_wrap_seam_ratio = adjacent > 1e-12 ? static_cast<float>(heightDelta / (2.0 * width) / adjacent) : 0.0f;
         result->info = info;
         result->seam = {heightDelta / (2.0f * width), gradientDelta / (2.0f * width),
                         albedoSeam / (2.0f * width)};
@@ -1127,3 +1134,280 @@ extern "C" PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *resu
     return result ? result->info : PBRLabDerivationInfo{};
 }
 extern "C" void PBRLabFreeResult(PBRLabResult *result) { delete result; }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Learned-guide tiling contract "wrap_padded_rot180_detilted_v2" (docs/LEARNED_NORMALS.md).
+namespace {
+constexpr int kGuideTile = PBRLAB_GUIDE_TILE;
+constexpr int kGuideStride = kGuideTile / 2;
+constexpr int kGuidePad = kGuideTile / 2;     // Wrap padding when tiling: half a tile of real context everywhere.
+constexpr int kGuideFold = 64;                // Half-width of the periodic fold cross-fade, working pixels.
+constexpr int kGuideMargin = 48;              // Tile margin with (almost) no weight: ViT predictions bend there.
+constexpr int kGuideMaxWork = 4 * kGuideTile; // 4K sources are inferred at 2072.
+
+// Separable Lanczos-3 resample of RGBA8 (values as data). The kernel widens by the scale factor when
+// downsampling; `wrap` reads across opposite edges, otherwise edges clamp.
+std::vector<uint8_t> resampleRGBA(const std::vector<uint8_t> &src, int n, int m, bool wrap) {
+    if (n == m) return src;
+    const double scale = static_cast<double>(n) / m, support = 3.0 * std::max(1.0, scale);
+    auto lanczos = [](double x) {
+        x = std::abs(x);
+        if (x < 1e-9) return 1.0;
+        if (x >= 3.0) return 0.0;
+        const double px = std::numbers::pi * x;
+        return 3.0 * std::sin(px) * std::sin(px / 3.0) / (px * px);
+    };
+    struct Taps { int first = 0; std::vector<float> w; };
+    std::vector<Taps> taps(m);
+    for (int o = 0; o < m; ++o) {
+        const double center = (o + .5) * scale - .5;
+        const int first = static_cast<int>(std::ceil(center - support)), last = static_cast<int>(std::floor(center + support));
+        taps[o].first = first;
+        double sum = 0;
+        for (int k = first; k <= last; ++k) { double w = lanczos((k - center) / std::max(1.0, scale)); taps[o].w.push_back(static_cast<float>(w)); sum += w; }
+        for (auto &w : taps[o].w) w = static_cast<float>(w / sum);
+    }
+    auto index = [&](int k) { return wrap ? wrap_index(k, n) : std::clamp(k, 0, n - 1); };
+    std::vector<float> horizontal(static_cast<size_t>(n) * m * 4);
+    for (int y = 0; y < n; ++y) for (int o = 0; o < m; ++o) {
+        float acc[4]{};
+        for (size_t t = 0; t < taps[o].w.size(); ++t) {
+            const uint8_t *p = &src[(static_cast<size_t>(y) * n + index(taps[o].first + static_cast<int>(t))) * 4];
+            for (int c = 0; c < 4; ++c) acc[c] += taps[o].w[t] * p[c];
+        }
+        for (int c = 0; c < 4; ++c) horizontal[(static_cast<size_t>(y) * m + o) * 4 + c] = acc[c];
+    }
+    std::vector<uint8_t> out(static_cast<size_t>(m) * m * 4);
+    for (int o = 0; o < m; ++o) for (int x = 0; x < m; ++x) {
+        float acc[4]{};
+        for (size_t t = 0; t < taps[o].w.size(); ++t) {
+            const float *p = &horizontal[(static_cast<size_t>(index(taps[o].first + static_cast<int>(t))) * m + x) * 4];
+            for (int c = 0; c < 4; ++c) acc[c] += taps[o].w[t] * p[c];
+        }
+        for (int c = 0; c < 4; ++c) out[(static_cast<size_t>(o) * m + x) * 4 + c] = static_cast<uint8_t>(std::lround(std::clamp(acc[c], 0.0f, 255.0f)));
+    }
+    return out;
+}
+
+// Removes luminance variation broader than about a sixteenth of the tile (hue kept, gain 0.5..2). Vignetting and
+// uneven lighting are not geometry, but a monocular estimator reads them as bowls and domes.
+void flattenLowFrequencyLuminance(std::vector<uint8_t> &rgba, int n, bool wrap) {
+    std::array<float, 256> lut{};
+    for (int i = 0; i < 256; ++i) lut[i] = linear(static_cast<uint8_t>(i));
+    const size_t count = static_cast<size_t>(n) * n;
+    std::vector<float> logLum(count);
+    double mean = 0;
+    for (size_t i = 0; i < count; ++i) {
+        float l = kLinearLuminance[0] * lut[rgba[i * 4]] + kLinearLuminance[1] * lut[rgba[i * 4 + 1]] + kLinearLuminance[2] * lut[rgba[i * 4 + 2]];
+        logLum[i] = std::log(l + kLogLuminanceFloor);
+        mean += logLum[i];
+    }
+    mean /= static_cast<double>(count);
+    const int radius = std::max(2, static_cast<int>(std::lround(n / 16.0))); // Three passes: sigma ~ radius.
+    auto index = [&](int k) { return wrap ? wrap_index(k, n) : std::clamp(k, 0, n - 1); };
+    std::vector<float> a(logLum), b(count);
+    for (int pass = 0; pass < 3; ++pass) {
+        for (int y = 0; y < n; ++y) {
+            double sum = 0;
+            for (int d = -radius; d <= radius; ++d) sum += a[static_cast<size_t>(y) * n + index(d)];
+            for (int x = 0; x < n; ++x) {
+                b[static_cast<size_t>(y) * n + x] = static_cast<float>(sum / (2 * radius + 1));
+                sum += a[static_cast<size_t>(y) * n + index(x + radius + 1)] - a[static_cast<size_t>(y) * n + index(x - radius)];
+            }
+        }
+        for (int x = 0; x < n; ++x) {
+            double sum = 0;
+            for (int d = -radius; d <= radius; ++d) sum += b[static_cast<size_t>(index(d)) * n + x];
+            for (int y = 0; y < n; ++y) {
+                a[static_cast<size_t>(y) * n + x] = static_cast<float>(sum / (2 * radius + 1));
+                sum += b[static_cast<size_t>(index(y + radius + 1)) * n + x] - b[static_cast<size_t>(index(y - radius)) * n + x];
+            }
+        }
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const float gain = std::clamp(std::exp(static_cast<float>(mean) - a[i]), 0.5f, 2.0f);
+        for (int c = 0; c < 3; ++c) rgba[i * 4 + c] = srgbByte(lut[rgba[i * 4 + c]] * gain);
+    }
+}
+} // namespace
+
+struct PBRLabGuideTiler {
+    int size = 0, work = 0, pad = 0, padded = 0;
+    bool wrap = false;
+    std::vector<uint8_t> image;          // Working-size, flattened sRGB RGBA8.
+    std::vector<int> origins;
+    std::array<float, kGuideTile> window{};
+    std::vector<float> accum, slopes;    // Padded field of weighted unit normals; current tile's averaged slopes.
+    std::vector<float> field;            // Folded working-size field, built on the first Finish.
+    uint32_t nextPass = 0;
+    int source(int u) const { return wrap_index(u - pad, work); }
+    uint32_t tiles() const { return static_cast<uint32_t>(origins.size() * origins.size()); }
+};
+
+extern "C" PBRLabGuideTiler *PBRLabGuideTilerCreate(const uint8_t *rgba8, size_t row_bytes, uint32_t size, uint32_t tile_wrap) {
+    if (!rgba8 || size < 2 || size > 4096 || row_bytes < static_cast<size_t>(size) * 4) return nullptr;
+    try {
+        auto tiler = std::make_unique<PBRLabGuideTiler>();
+        const int n = static_cast<int>(size);
+        tiler->size = n;
+        tiler->wrap = tile_wrap != 0;
+        tiler->work = std::clamp(n, kGuideTile, kGuideMaxWork);
+        std::vector<uint8_t> source(static_cast<size_t>(n) * n * 4);
+        for (int y = 0; y < n; ++y) std::memcpy(&source[static_cast<size_t>(y) * n * 4], rgba8 + y * row_bytes, static_cast<size_t>(n) * 4);
+        tiler->image = resampleRGBA(source, n, tiler->work, tiler->wrap);
+        flattenLowFrequencyLuminance(tiler->image, tiler->work, tiler->wrap);
+        tiler->pad = tiler->wrap ? kGuidePad : 0;
+        tiler->padded = tiler->work + 2 * tiler->pad;
+        for (int o = 0; o + kGuideTile <= tiler->padded; o += kGuideStride) tiler->origins.push_back(o);
+        if (tiler->origins.back() != tiler->padded - kGuideTile) tiler->origins.push_back(tiler->padded - kGuideTile);
+        for (int t = 0; t < kGuideTile; ++t) {
+            const double u = std::clamp((t + .5 - kGuideMargin) / (kGuideTile - 2.0 * kGuideMargin), 0.0, 1.0);
+            const double s = std::sin(std::numbers::pi * u);
+            tiler->window[t] = std::max(static_cast<float>(s * s), 1e-6f);
+        }
+        tiler->accum.assign(static_cast<size_t>(tiler->padded) * tiler->padded * 3, 0.0f);
+        tiler->slopes.assign(static_cast<size_t>(kGuideTile) * kGuideTile * 2, 0.0f);
+        return tiler.release();
+    } catch (...) { return nullptr; }
+}
+extern "C" uint32_t PBRLabGuideTilerWorkResolution(const PBRLabGuideTiler *t) { return t ? static_cast<uint32_t>(t->work) : 0; }
+extern "C" uint32_t PBRLabGuideTilerTileCount(const PBRLabGuideTiler *t) { return t ? t->tiles() : 0; }
+extern "C" uint32_t PBRLabGuideTilerPassCount(const PBRLabGuideTiler *t) { return t ? 2 * t->tiles() : 0; }
+extern "C" const char *PBRLabGuideTilerContract(const PBRLabGuideTiler *t) {
+    return t && t->wrap ? "wrap_padded_rot180_detilted_v2" : "clamped_rot180_detilted_v2";
+}
+extern "C" int PBRLabGuideTilerFillInput(const PBRLabGuideTiler *t, uint32_t pass, uint8_t *bgra8, size_t row_bytes) {
+    if (!t || !bgra8 || pass >= 2 * t->tiles() || row_bytes < static_cast<size_t>(kGuideTile) * 4) return 0;
+    const uint32_t index = pass / 2;
+    const bool rotated = pass % 2;
+    const int ox = t->origins[index % t->origins.size()], oy = t->origins[index / t->origins.size()];
+    for (int y = 0; y < kGuideTile; ++y) {
+        const int sy = rotated ? kGuideTile - 1 - y : y;
+        const uint8_t *srcRow = &t->image[static_cast<size_t>(t->source(oy + sy)) * t->work * 4];
+        uint8_t *dst = bgra8 + y * row_bytes;
+        for (int x = 0; x < kGuideTile; ++x) {
+            const int sx = rotated ? kGuideTile - 1 - x : x;
+            const uint8_t *src = srcRow + static_cast<size_t>(t->source(ox + sx)) * 4;
+            dst[x * 4] = src[2]; dst[x * 4 + 1] = src[1]; dst[x * 4 + 2] = src[0]; dst[x * 4 + 3] = 255;
+        }
+    }
+    return 1;
+}
+extern "C" int PBRLabGuideTilerAddPrediction(PBRLabGuideTiler *t, uint32_t pass, const float *normals,
+                                             ptrdiff_t cs, ptrdiff_t ys, ptrdiff_t xs) {
+    if (!t || !normals || pass != t->nextPass || pass >= 2 * t->tiles()) return 0;
+    const bool rotated = pass % 2;
+    if (!rotated) std::fill(t->slopes.begin(), t->slopes.end(), 0.0f);
+    // Back to the tile frame (a 180-degree turn negates the in-plane components), as slopes, averaged over both
+    // orientations: bias fixed in the estimator's view (e.g. "the top recedes") cancels.
+    for (int y = 0; y < kGuideTile; ++y) for (int x = 0; x < kGuideTile; ++x) {
+        const int py = rotated ? kGuideTile - 1 - y : y, px = rotated ? kGuideTile - 1 - x : x;
+        const float *p = normals + py * ys + px * xs;
+        const float sign = rotated ? -1.0f : 1.0f, nz = std::max(p[2 * cs], .15f);
+        float *sl = &t->slopes[(static_cast<size_t>(y) * kGuideTile + x) * 2];
+        sl[0] += .5f * std::clamp(sign * p[0] / nz, -4.0f, 4.0f);
+        sl[1] += .5f * std::clamp(sign * p[cs] / nz, -4.0f, 4.0f);
+    }
+    ++t->nextPass;
+    if (!rotated) return 1;
+    // Remove the tile's window-weighted affine slope trend (mean tilt plus a uniform bowl, dome or saddle): a
+    // stationary texture has neither across one tile, while the estimator adds a per-view camera tilt and
+    // curvature that would otherwise stamp the tile grid into the integrated height.
+    double m[3][3]{}, rx[3]{}, ry[3]{};
+    for (int y = 0; y < kGuideTile; ++y) for (int x = 0; x < kGuideTile; ++x) {
+        const double w = static_cast<double>(t->window[x]) * t->window[y];
+        const double basis[3] = {1.0, (x + .5) / kGuideTile - .5, (y + .5) / kGuideTile - .5};
+        const float *sl = &t->slopes[(static_cast<size_t>(y) * kGuideTile + x) * 2];
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) m[r][c] += w * basis[r] * basis[c];
+            rx[r] += w * basis[r] * sl[0]; ry[r] += w * basis[r] * sl[1];
+        }
+    }
+    auto det = [](const double a[3][3]) {
+        return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) +
+               a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    };
+    auto solve = [&](const double rhs[3], double out[3]) { // Cramer's rule; m is symmetric positive definite.
+        const double d = det(m);
+        for (int k = 0; k < 3; ++k) {
+            double a[3][3];
+            for (int r = 0; r < 3; ++r) for (int c = 0; c < 3; ++c) a[r][c] = c == k ? rhs[r] : m[r][c];
+            out[k] = det(a) / d;
+        }
+    };
+    double cx[3], cy[3];
+    solve(rx, cx); solve(ry, cy);
+    const uint32_t index = pass / 2;
+    const int ox = t->origins[index % t->origins.size()], oy = t->origins[index / t->origins.size()];
+    for (int y = 0; y < kGuideTile; ++y) for (int x = 0; x < kGuideTile; ++x) {
+        const double u = (x + .5) / kGuideTile - .5, v = (y + .5) / kGuideTile - .5;
+        const float *sl = &t->slopes[(static_cast<size_t>(y) * kGuideTile + x) * 2];
+        const float gx = sl[0] - static_cast<float>(cx[0] + cx[1] * u + cx[2] * v);
+        const float gy = sl[1] - static_cast<float>(cy[0] + cy[1] * u + cy[2] * v);
+        const float w = t->window[x] * t->window[y], inv = 1.0f / std::sqrt(gx * gx + gy * gy + 1.0f);
+        float *a = &t->accum[(static_cast<size_t>(oy + y) * t->padded + ox + x) * 3];
+        a[0] += w * gx * inv; a[1] += w * gy * inv; a[2] += w * inv;
+    }
+    return 1;
+}
+extern "C" int PBRLabGuideTilerFinish(PBRLabGuideTiler *t, uint32_t out_size, uint8_t *rgba8, size_t row_bytes) {
+    if (!t || !rgba8 || t->nextPass != 2 * t->tiles() || out_size < 2 || out_size > 4096 ||
+        row_bytes < static_cast<size_t>(out_size) * 4) return 0;
+    try {
+        const int work = t->work, pad = t->pad, padded = t->padded, n = static_cast<int>(out_size);
+        // Fold the padded field onto the working tile. fold(u) rises across u = pad and falls across u = pad + work,
+        // so fold(u) + fold(u +/- work) = 1 inside both cross-fades (a partition of unity): the field is periodic.
+        auto fold = [&](int u) {
+            if (!t->wrap) return 1.0f;
+            const float c = static_cast<float>(u) + .5f;
+            return smoothstep01((c - (pad - kGuideFold)) / (2.0f * kGuideFold)) *
+                   (1.0f - smoothstep01((c - (pad + work - kGuideFold)) / (2.0f * kGuideFold)));
+        };
+        if (t->field.empty()) {
+        std::vector<float> &field = t->field;
+        field.assign(static_cast<size_t>(work) * work * 3, 0.0f);
+        for (int y = 0; y < work; ++y) for (int x = 0; x < work; ++x) {
+            float v[3]{};
+            for (int ky = -1; ky <= 1; ++ky) {
+                const int uy = pad + y + ky * work;
+                if (uy < 0 || uy >= padded) continue;
+                const float wy = fold(uy);
+                if (wy <= 0) continue;
+                for (int kx = -1; kx <= 1; ++kx) {
+                    const int ux = pad + x + kx * work;
+                    if (ux < 0 || ux >= padded) continue;
+                    const float w = wy * fold(ux);
+                    if (w <= 0) continue;
+                    const float *a = &t->accum[(static_cast<size_t>(uy) * padded + ux) * 3];
+                    const float length = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+                    if (length < 1e-12f) continue;
+                    for (int c = 0; c < 3; ++c) v[c] += w * a[c] / length;
+                }
+            }
+            for (int c = 0; c < 3; ++c) field[(static_cast<size_t>(y) * work + x) * 3 + c] = v[c];
+        }
+        }
+        const std::vector<float> &field = t->field;
+        auto sampleAt = [&](int x, int y, float out[3]) {
+            x = t->wrap ? wrap_index(x, work) : std::clamp(x, 0, work - 1);
+            y = t->wrap ? wrap_index(y, work) : std::clamp(y, 0, work - 1);
+            const size_t i = static_cast<size_t>(y) * work + x;
+            for (int c = 0; c < 3; ++c) out[c] = field[i * 3 + c];
+        };
+        const float scale = static_cast<float>(work) / static_cast<float>(n);
+        for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
+            float fx = (x + .5f) * scale - .5f, fy = (y + .5f) * scale - .5f;
+            int x0 = static_cast<int>(std::floor(fx)), y0 = static_cast<int>(std::floor(fy));
+            float tx = fx - x0, ty = fy - y0, a[3], b[3], c[3], d[3], v[3];
+            sampleAt(x0, y0, a); sampleAt(x0 + 1, y0, b); sampleAt(x0, y0 + 1, c); sampleAt(x0 + 1, y0 + 1, d);
+            for (int k = 0; k < 3; ++k) v[k] = (a[k] + (b[k] - a[k]) * tx) * (1 - ty) + (c[k] + (d[k] - c[k]) * tx) * ty;
+            float length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (length < 1e-6f) { v[0] = v[1] = 0; v[2] = length = 1; }
+            uint8_t *out = rgba8 + y * row_bytes + static_cast<size_t>(x) * 4;
+            for (int k = 0; k < 3; ++k) out[k] = static_cast<uint8_t>(std::lround(std::clamp(v[k] / length * .5f + .5f, 0.0f, 1.0f) * 255));
+            out[3] = 255;
+        }
+        return 1;
+    } catch (...) { return 0; }
+}
+extern "C" void PBRLabGuideTilerFree(PBRLabGuideTiler *t) { delete t; }

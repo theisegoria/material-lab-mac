@@ -45,6 +45,8 @@ A numeric check confirmed the convention on the brick photo. The tops of bricks 
 
 ## Tiling (all clients must match; `wrap_padded_rot180_detilted_v2`)
 
+The core implements this contract as `PBRLabGuideTiler` (`PBRLabGuideTilerCreate`, `FillInput`, `AddPrediction`, `Finish`); the CLI and both apps only run the model, so their guide normals are identical for identical model output.
+
 1. Let `N` be the square source size. The working size is `W = clamp(N, 518, 2072)`. Resample the sRGB source to `W × W` with a separable Lanczos-3 filter (widened by the scale factor when downsampling) that **wraps** across opposite edges when the recipe tiles and clamps otherwise.
 2. Flatten low-frequency luminance on the working image: divide linear RGB by `exp(blur(log(L + 0.01)) − mean)` (three wrap-aware box passes of radius `W/16`, gain clamped to 0.5–2). Vignetting and uneven lighting are not geometry, but the estimator reads them as bowls; the core discards learned wavelengths that long anyway.
 3. When tiling, pad the working image by `P = 259` on every side by wrapping (`W + 2P` square); otherwise `P = 0`. Tile origins along each axis start at 0 and step by 259 (50 % overlap), plus a final origin at `W + 2P − 518` when needed.
