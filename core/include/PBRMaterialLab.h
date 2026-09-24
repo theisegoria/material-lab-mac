@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-// Version 1.2 ABI. All buffers in a PBRLabResult remain owned by the result.
+// Version 1.3 ABI. All buffers in a PBRLabResult remain owned by the result.
 // Derivation uses internal worker threads; the progress callback runs only on the calling thread.
 typedef enum PBRLabPreset {
     PBRLabPresetFlat = 0,
@@ -56,23 +56,23 @@ typedef struct PBRLabInput {
 
 typedef struct PBRLabRecipe {
     PBRLabPreset preset;
-    float height_strength;           // Height amplitude around neutral 0.5, in normalized units.
+    float height_strength;           // Relief amplitude: scales the preset's target rms slope (0.22 = the target).
     int32_t height_polarity;          // +1 raised bright detail; -1 inverted.
     float roughness_base;            // Perceptual roughness prior, [0,1].
-    float roughness_variation;       // Restrained height-derived variation, [0,1].
-    float ao_radius_pixels;          // Heightfield horizon radius in source pixels.
+    float roughness_variation;       // Roughness spread, [0,1]: standard deviation 0.25 x this within the preset range.
+    float ao_radius_pixels;          // Heightfield horizon radius in pixels of a 1024 reference (scales with the tile).
     uint32_t tile_wrap;              // Nonzero wraps all spatial filters and horizon samples.
     uint32_t assigned_metalness_enabled;
     float assigned_metalness;        // Artist assignment only, [0,1].
     uint32_t bent_normal_enabled;    // Nonzero emits PBRLabMapBentNormal.
     // Added in 1.1.0. PBRLabDefaultRecipe fills these with values that leave the source untouched.
-    float normal_strength;           // Tangent normal gradient multiplier, [0,16]; 1 is the 1.0.0 response.
+    float normal_strength;           // Scales the estimated surface depth (normals, AO, diagnostics, height span), [0,16].
     uint32_t normal_y_down;          // Nonzero encodes -Y / green-down (DirectX) normals; zero is +Y / green-up (glTF, OpenGL).
     float ao_strength;               // Relief exaggeration seen by the GTAO horizon search, [0,4]; 0 disables occlusion.
     float albedo_equalize;           // Low-frequency lighting removal from albedo and inferred relief, [0,1]; 0 is off.
     float seamless_blend;            // Offset cross-fade width per edge as a fraction of the size, [0,0.45]; 0 is off.
     // Added in 1.2.0.
-    float guide_normal_weight;       // Blend of guide-derived height over inferred height, [0,1]; needs guide normals.
+    float guide_normal_weight;       // Weight of learned form and detail orientation over pure albedo relief, [0,1]; needs guide normals.
     uint32_t seamless_mode;          // With seamless_blend > 0: 1 (default) = aligned minimum-error seam cut, best for
                                      // structured textures (brick, tiles, planks) and most photos; 0 = histogram-
                                      // preserving blend, for fine stochastic textures with soft lighting drift.
@@ -93,6 +93,15 @@ typedef struct PBRLabSeamMetrics {
     float albedo_value_delta;        // Mean absolute linear RGB opposite-edge difference.
 } PBRLabSeamMetrics;
 
+// Added in 1.3.0. How the exported geometry was built.
+typedef struct PBRLabDerivationInfo {
+    float height_span_tile_widths;   // Depth spanned by height 0..1, in tile widths (0 = no relief).
+    float rms_slope;                 // Root-mean-square surface slope (tangent) of the final geometry.
+    float learned_form_share;        // Share of slope energy taken from learned form (0 without a guide).
+    float learned_detail_correlation;// Correlation of learned and albedo relief in the 3..8 px band (0 without a guide).
+    int32_t detail_polarity;         // Sign applied to albedo-derived fine relief (+1 bright raised).
+} PBRLabDerivationInfo;
+
 typedef struct PBRLabResult PBRLabResult;
 typedef int (*PBRLabProgressCallback)(float progress, void *context); // Return zero to cancel.
 
@@ -103,6 +112,7 @@ PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabRecipe *recipe,
                      char *error, size_t error_capacity);
 int PBRLabGetMap(const PBRLabResult *result, PBRLabMapKind kind, PBRLabMap *out_map);
 PBRLabSeamMetrics PBRLabGetSeamMetrics(const PBRLabResult *result);
+PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *result);
 void PBRLabFreeResult(PBRLabResult *result);
 
 #ifdef __cplusplus

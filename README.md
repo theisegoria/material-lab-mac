@@ -13,13 +13,13 @@ An RGB photo does not uniquely determine height, normal, occlusion, or roughness
 
 From one square sRGB photo: albedo, 16-bit height, tangent-space normal, roughness, ambient occlusion, cavity, convexity, slope and edge maps, with optional bent normals and a packed ORM.
 
-- **Relief** from multi-scale luminance bands with material presets, or from the built-in **learned geometry** stage: Microsoft's MoGe-2 normal estimator (MIT), converted to Core ML and run on the Neural Engine. It reads recesses that a brightness heuristic gets backwards, such as the mortar between bricks.
+- **Relief** from multi-scale log-luminance bands with material presets, scaled to a per-preset surface-slope prior, or fused with the built-in **learned geometry** stage: Microsoft's MoGe-2 normal estimator (MIT), converted to Core ML and run on the Neural Engine. Learned geometry supplies the large-scale form and decides which way the fine albedo detail points, so it reads recesses that a brightness heuristic gets backwards, such as the mortar between bricks. Tileable inputs stay tileable through the whole chain.
 - **Ambient occlusion** with GTAO's cosine-weighted horizon integral on the heightfield, plus an analytic bent normal.
 - **Delighting** that removes uneven lighting from the photo before it becomes false relief.
 - **Make tileable** with an aligned minimum-error seam cut for structured textures (brick, tiles, planks), or a histogram-preserving blend for fine noise.
 - **Normal convention** selectable between +Y (glTF, OpenGL, Blender, Unity) and −Y (DirectX, Unreal).
 
-Derivation runs on all cores and is bit-for-bit repeatable. A 1K image takes about 0.1 s on an M5; the learned stage adds about 0.3 s.
+Derivation runs on all cores and is bit-for-bit repeatable. A 1K image takes about 0.1 s on an M5; the learned stage adds about 3 s (two orientations of each wrap-padded tile), and a 4K learned derivation takes about 20 s.
 
 The method is documented in [docs/DERIVATION.md](docs/DERIVATION.md), the learned stage in [docs/LEARNED_NORMALS.md](docs/LEARNED_NORMALS.md), and the file formats in [docs/BUNDLE_FORMAT.md](docs/BUNDLE_FORMAT.md).
 

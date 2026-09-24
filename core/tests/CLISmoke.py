@@ -117,6 +117,14 @@ def main() -> None:
         assert manifest["maps"]["height"]["pixel_format"] == "r16_unorm_png"
         assert manifest["maps"]["normal"]["pixel_format"] == "rgba8_linear_png"
         assert "orm" in manifest["maps"] and "bent_normal" in manifest["maps"]
+        # 1.3.0: estimated height is range-normalized and the manifest records the depth it spans.
+        assert manifest["algorithm_version"] == "1.3.0"
+        relief = manifest["relief"]
+        assert relief["height_span_tile_widths"] > 0 and relief["rms_slope"] > 0
+        assert relief["learned_form_share"] == 0 and relief["detail_polarity"] == 1
+        _, _, hbpp, hrows = read_png(bundle / "height.png")
+        hvalues = [struct.unpack_from(">H", row, x * 2)[0] for row in hrows for x in range(16)]
+        assert min(hvalues) == 0 and max(hvalues) == 65535, (min(hvalues), max(hvalues))
         normal = bundle / "normal.png"
         normal.write_bytes(normal.read_bytes() + b"tampered")
         run(cli, "--validate", str(bundle), expect_success=False)
@@ -340,6 +348,10 @@ def main() -> None:
         assert abs(guided_manifest["recipe"]["guide_normal_weight"] - 0.7) < 1e-6
         assert guided_manifest["guide_normals"]["contract"] == "tangent_normals_plus_y_v1"
         assert guided_manifest["maps"]["height"]["provenance"] == "estimated_from_albedo_and_learned_normals"
+        assert 0 <= guided_manifest["relief"]["learned_form_share"] <= 0.7 + 1e-6
+        assert -1 <= guided_manifest["relief"]["learned_detail_correlation"] <= 1
+        run(cli, "--input", str(image), "--output", str(root / "save-guide"), "--guide-normals", str(image),
+            "--save-guide-normals", str(root / "g.png"), expect_success=False)  # Saving needs the estimator.
         assert manifest["recipe"]["guide_normal_weight"] == 0 and "guide_normals" not in manifest
         run(cli, "--input", str(image), "--output", str(root / "no-guide"), "--guide-weight", "0.5", expect_success=False)
         run(cli, "--input", str(image), "--output", str(root / "both-guides"), "--guide-normals", str(image),
@@ -399,6 +411,10 @@ def main() -> None:
         forge(lambda m: m["maps"].update(roughness=dict(m["maps"]["ao"], pixel_format="rgba8_linear_png")))  # File swap.
         forge(lambda m: m["source"].update(sha256=None))
         forge(lambda m: m.update(maps=[]))
+        forge(lambda m: m.pop("relief"))
+        forge(lambda m: m["relief"].update(height_span_tile_widths=-1))
+        forge(lambda m: m["relief"].update(detail_polarity=0))
+        forge(lambda m: m["relief"].update(learned_form_share=2))
         (forged_bundle / "manifest.json").write_text("[1, 2]")
         run(cli, "--validate", str(forged_bundle), expect_success=False)
         upper = json.loads(json.dumps(good))

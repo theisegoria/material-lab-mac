@@ -19,8 +19,22 @@ constexpr unsigned kMapCount = 11;
 constexpr std::array<float, 3> kLinearLuminance{0.2126f, 0.7152f, 0.0722f};
 // Pixel-space height of a unit normalized height step as seen by the tangent normal (1.0.0 response).
 constexpr float kNormalDepthPixels = 8.0f;
-// Pixel-space height of a unit normalized height step as seen by the AO horizon search at ao_strength 1.
-constexpr float kAODepthPixels = 32.0f;
+// Spatial scales are defined at this reference size and scaled with the tile (1.3.0).
+constexpr float kReferenceSize = 1024.0f;
+constexpr float kLogLuminanceFloor = 0.01f;   // Linear luminance floor of the log relief cue (about sRGB 25/255).
+constexpr float kDefaultHeightStrength = 0.22f;
+// Learned-geometry frequency split, in reference pixels of box-equivalent radius (Gaussian sigma = radius/sqrt 3).
+constexpr float kCrossoverPixels = 5.2f;       // sigma 3 px: below it detail comes from the albedo bands.
+constexpr float kFormCutFraction = 0.0866f;    // sigma = tile/20: longer wavelengths are estimator bias (bowls, tilt)
+                                               // or composition, and would repeat visibly when tiled.
+constexpr float kCorrelationLow = 5.2f, kCorrelationHigh = 13.9f; // sigma 3..8 px band used to orient detail.
+constexpr double kPolarityConfidence = 0.1;    // |correlation| needed before the learned field sets the detail sign.
+constexpr double kFormGain = 3.0;              // Learned form share = gain x learned rms slope / target, capped.
+constexpr double kMaxFormShare = 0.7;
+constexpr float kAOExaggeration = 3.0f;        // GTAO depth relative to the normal-map surface at ao_strength 1.
+constexpr float kCavityGain = 1.5f;            // Curvature (reference pixels of depth) to cavity/convexity.
+constexpr float kRoughnessSpread = 0.25f;      // Roughness standard deviation at roughness_variation 1.
+constexpr float kRoughnessCavityWeight = 0.45f, kRoughnessContrastWeight = 0.35f, kRoughnessFacetWeight = 0.3f;
 constexpr int kAOSlices = 8;        // Two-sided slices: 16 horizon directions.
 constexpr int kAOStepsPerSide = 8;
 
@@ -161,7 +175,7 @@ void putNormal(std::vector<uint8_t> &target, size_t i, float x, float y, float z
 }
 float presetSignal(PBRLabPreset preset, float high, float mid, float coarse) {
     switch (preset) {
-    case PBRLabPresetStone: return high * 1.2f + mid * 1.1f + coarse * 0.35f;
+    case PBRLabPresetStone: return high * 1.0f + mid * 1.2f + coarse * 0.7f;
     case PBRLabPresetFabric: return high * 1.75f + mid * 0.45f;
     case PBRLabPresetOrganic: return high * 1.0f + mid * 1.2f + coarse * 0.8f;
     case PBRLabPresetCoatedMetal: return high * 0.65f + mid * 0.25f;
@@ -169,6 +183,46 @@ float presetSignal(PBRLabPreset preset, float high, float mid, float coarse) {
     case PBRLabPresetFlat: return 0;
     }
     return 0;
+}
+// Target rms surface slope (tangent) of inferred relief at the default height strength. Stone at 0.3 reads as
+// weathered rock at texel scale; coatings and bare metal stay near flat.
+float reliefTarget(PBRLabPreset preset) {
+    switch (preset) {
+    case PBRLabPresetStone: return .3f;
+    case PBRLabPresetFabric: return .2f;
+    case PBRLabPresetOrganic: return .26f;
+    case PBRLabPresetCoatedMetal: return .05f;
+    case PBRLabPresetBareMetal: return .09f;
+    case PBRLabPresetFlat: return 0;
+    }
+    return 0;
+}
+// Physical perceptual-roughness range a preset's variation may reach (the prior itself is always allowed).
+std::array<float, 2> roughnessRange(PBRLabPreset preset) {
+    switch (preset) {
+    case PBRLabPresetStone: return {.45f, .98f};
+    case PBRLabPresetFabric: return {.6f, 1.0f};
+    case PBRLabPresetOrganic: return {.35f, .95f};
+    case PBRLabPresetCoatedMetal: return {.15f, .75f};
+    case PBRLabPresetBareMetal: return {.08f, .6f};
+    case PBRLabPresetFlat: return {0.0f, 1.0f};
+    }
+    return {0.0f, 1.0f};
+}
+// Root-mean-square Scharr gradient magnitude, summed in a fixed order (deterministic).
+double rmsSlope(const std::vector<float> &h, int width, int height, bool tiled) {
+    double sum = 0;
+    for (int y = 0; y < height; ++y) {
+        double row = 0;
+        for (int x = 0; x < width; ++x) {
+            auto H = [&](int xx, int yy) { return h[at(border(xx, width, tiled), border(yy, height, tiled), width)]; };
+            float hx = (3.0f * (H(x + 1, y - 1) + H(x + 1, y + 1)) + 10.0f * H(x + 1, y) - 3.0f * (H(x - 1, y - 1) + H(x - 1, y + 1)) - 10.0f * H(x - 1, y)) / 32.0f;
+            float hy = (3.0f * (H(x - 1, y + 1) + H(x + 1, y + 1)) + 10.0f * H(x, y + 1) - 3.0f * (H(x - 1, y - 1) + H(x + 1, y - 1)) - 10.0f * H(x, y - 1)) / 32.0f;
+            row += static_cast<double>(hx) * hx + static_cast<double>(hy) * hy;
+        }
+        sum += row;
+    }
+    return std::sqrt(sum / (static_cast<double>(width) * height));
 }
 bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
     if (!in || !r || !in->rgba8) { why = "input, recipe, and RGBA buffer are required"; return false; }
@@ -346,8 +400,7 @@ private:
     }
 };
 
-// Guide normals -> pixel-space pseudo-height. Normals from scene-trained estimators carry global tilt and
-// low-frequency bias on flat texture photos, so only the high-pass part of their slopes is integrated.
+// Guide normals -> pixel-space height (depth in pixels). Periodic when tiled; the caller band-limits it.
 std::vector<float> guideHeight(const PBRLabInput *input, int width, int height, bool tiled) {
     const size_t count = static_cast<size_t>(width) * height;
     std::vector<float> gx(count), gy(count);
@@ -362,9 +415,6 @@ std::vector<float> guideHeight(const PBRLabInput *input, int width, int height, 
             gy[i] = std::clamp(ny / nz, -4.0f, 4.0f);
         }
     }
-    const int highPass = std::max(4, width / 16);
-    auto lowX = smoothBlur(gx, width, height, highPass, tiled), lowY = smoothBlur(gy, width, height, highPass, tiled);
-    for (size_t i = 0; i < count; ++i) { gx[i] -= lowX[i]; gy[i] -= lowY[i]; }
     std::vector<float> divergence(count);
     double mean = 0;
     for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
@@ -546,9 +596,10 @@ struct PBRLabResult {
     std::array<bool, kMapCount> present{};
     uint32_t width = 0;
     PBRLabSeamMetrics seam{};
+    PBRLabDerivationInfo info{};
 };
 
-extern "C" const char *PBRLabVersion(void) { return "1.2.0"; }
+extern "C" const char *PBRLabVersion(void) { return "1.3.0"; }
 
 extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     PBRLabRecipe r{};
@@ -561,7 +612,7 @@ extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     if (r.preset == PBRLabPresetOrganic) r.roughness_base = .72f;
     if (r.preset == PBRLabPresetCoatedMetal) r.roughness_base = .38f;
     if (r.preset == PBRLabPresetBareMetal) r.roughness_base = .3f;
-    r.roughness_variation = r.preset == PBRLabPresetFlat ? 0.0f : .15f;
+    r.roughness_variation = r.preset == PBRLabPresetFlat ? 0.0f : .3f;
     r.ao_radius_pixels = 10.0f;
     r.tile_wrap = 1;
     r.assigned_metalness_enabled = 0;
@@ -721,74 +772,194 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                            kLinearLuminance[2] * lut[albedo[i * 4 + 2]];
         checkpoint(progress, context, .08f);
 
+        // Every spatial scale is defined at a 1024-pixel reference and scaled with the tile, so a 512 preview
+        // and a 4K export describe the same surface.
+        const float scale = static_cast<float>(width) / kReferenceSize;
+        auto radius = [&](float referencePixels) { return std::max(1, static_cast<int>(std::lround(referencePixels * scale))); };
+        // Shading is multiplicative (image = albedo x irradiance), so relief cues are read from log luminance:
+        // the same relief gives the same signal on dark basalt and pale limestone.
+        std::vector<float> logLum(count);
+        for (size_t i = 0; i < count; ++i) logLum[i] = std::log(luminance[i] + kLogLuminanceFloor);
+
         const bool inferHeight = !input->height_override_r16 && recipe->preset != PBRLabPresetFlat;
-        std::vector<float> small, medium, large, heights(count);
-        if (inferHeight) {
-            small = smoothBlur(luminance, width, height, 2, tiled);
-            checkpoint(progress, context, .14f);
-            medium = smoothBlur(luminance, width, height, 8, tiled);
-            checkpoint(progress, context, .20f);
-            large = smoothBlur(luminance, width, height, 24, tiled);
-        }
         const bool useGuide = !input->height_override_r16 && input->guide_normal_rgba8 && recipe->guide_normal_weight > 0;
-        std::vector<float> guided;
-        if (useGuide) {
-            guided = guideHeight(input, width, height, tiled);
-            checkpoint(progress, context, .26f);
-        }
-        const float guideWeight = recipe->guide_normal_weight;
         const float polarity = static_cast<float>(recipe->height_polarity);
-        for (int y = 0; y < height; ++y) {
-            const uint8_t *mask = input->relief_mask_r8
-                ? input->relief_mask_r8 + static_cast<size_t>(y) * input->relief_mask_row_bytes : nullptr;
-            const uint8_t *overrideHeight = input->height_override_r16
-                ? input->height_override_r16 + static_cast<size_t>(y) * input->height_override_row_bytes : nullptr;
-            for (int x = 0; x < width; ++x) {
-                size_t i = at(x, y, width);
-                float signal = 0;
-                if (inferHeight) signal = presetSignal(recipe->preset,
-                    luminance[i] - small[i], small[i] - medium[i], medium[i] - large[i]);
-                const float maskScale = mask ? static_cast<float>(mask[x]) / 255.0f : 1.0f;
-                signal *= maskScale;
-                if (overrideHeight) {
-                    uint16_t authored = static_cast<uint16_t>(overrideHeight[x * 2] | (overrideHeight[x * 2 + 1] << 8));
-                    heights[i] = static_cast<float>(authored) / 65535.0f;
-                } else {
-                    float inferred = .5f + polarity * recipe->height_strength * signal;
-                    // Guide height is geometric (no polarity); pixel units map through the normal depth so that
-                    // at normal_strength 1 the exported normal reproduces the guide's high-pass slopes.
-                    if (useGuide)
-                        inferred += guideWeight * (.5f + maskScale * guided[i] / kNormalDepthPixels - inferred);
-                    heights[i] = clamp01(inferred);
+        const float guideWeight = useGuide ? recipe->guide_normal_weight : 0.0f;
+        // Geometry is carried in pixels of depth (so its gradient is the tangent of the surface slope) before
+        // normal_strength, which scales the whole surface: normals, AO, diagnostics and the height span.
+        std::vector<float> geometry(count, 0.0f);
+        PBRLabDerivationInfo info{};
+        info.detail_polarity = recipe->height_polarity;
+        if (input->height_override_r16) {
+            for (int y = 0; y < height; ++y) {
+                const uint8_t *row = input->height_override_r16 + static_cast<size_t>(y) * input->height_override_row_bytes;
+                for (int x = 0; x < width; ++x) {
+                    uint16_t authored = static_cast<uint16_t>(row[x * 2] | (row[x * 2 + 1] << 8));
+                    geometry[at(x, y, width)] = static_cast<float>(authored) / 65535.0f * kNormalDepthPixels * scale;
                 }
-                uint16_t q = static_cast<uint16_t>(std::lround(heights[i] * 65535.0f));
+            }
+        } else {
+            std::vector<float> signal;
+            double signalRms = 0;
+            if (inferHeight) {
+                auto small = smoothBlur(logLum, width, height, radius(2), tiled);
+                checkpoint(progress, context, .14f);
+                auto medium = smoothBlur(logLum, width, height, radius(8), tiled);
+                checkpoint(progress, context, .20f);
+                auto large = smoothBlur(logLum, width, height, radius(24), tiled);
+                signal.resize(count);
+                for (size_t i = 0; i < count; ++i)
+                    signal[i] = presetSignal(recipe->preset, logLum[i] - small[i], small[i] - medium[i], medium[i] - large[i]);
+                signalRms = rmsSlope(signal, width, height, tiled);
+            }
+            // Relief amplitude is an explicit prior: the preset's target rms surface slope, scaled by height_strength.
+            const float target = reliefTarget(recipe->preset) * recipe->height_strength / kDefaultHeightStrength;
+            const bool hasSignal = inferHeight && signalRms > 1e-9;
+            if (useGuide) {
+                auto learned = guideHeight(input, width, height, tiled);
+                checkpoint(progress, context, .24f);
+                // Learned form: the band between the crossover and a fifth of the tile. Scene-trained estimators
+                // add tile-scale bowls and tilt below that band and are blurred above it.
+                const int formRadius = std::max(4, static_cast<int>(std::lround(static_cast<float>(width) * kFormCutFraction)));
+                auto lowest = smoothBlur(learned, width, height, formRadius, tiled);
+                std::vector<float> band(count);
+                for (size_t i = 0; i < count; ++i) band[i] = learned[i] - lowest[i];
+                const int crossover = radius(kCrossoverPixels);
+                if (hasSignal) {
+                    auto form = smoothBlur(band, width, height, crossover, tiled);
+                    const double formRms = rmsSlope(form, width, height, tiled);
+                    // The learned field orients the fine detail: correlate both in a band the estimator resolves.
+                    auto learnedFine = smoothBlur(learned, width, height, radius(kCorrelationLow), tiled);
+                    auto learnedCoarse = smoothBlur(learned, width, height, radius(kCorrelationHigh), tiled);
+                    auto signalFine = smoothBlur(signal, width, height, radius(kCorrelationLow), tiled);
+                    auto signalCoarse = smoothBlur(signal, width, height, radius(kCorrelationHigh), tiled);
+                    double sab = 0, saa = 0, sbb = 0;
+                    for (size_t i = 0; i < count; ++i) {
+                        double la = learnedFine[i] - learnedCoarse[i], sb = signalFine[i] - signalCoarse[i];
+                        sab += la * sb; saa += la * la; sbb += sb * sb;
+                    }
+                    const double correlation = saa > 0 && sbb > 0 ? sab / std::sqrt(saa * sbb) : 0.0;
+                    const float detailSign = std::abs(correlation) >= kPolarityConfidence ? (correlation < 0 ? -1.0f : 1.0f) : polarity;
+                    auto signalLow = smoothBlur(signal, width, height, crossover, tiled);
+                    std::vector<float> detail(count);
+                    for (size_t i = 0; i < count; ++i) detail[i] = signal[i] - signalLow[i];
+                    const double detailRms = rmsSlope(detail, width, height, tiled);
+                    // Learned form earns its share of the slope energy by its own amplitude: an estimator that sees
+                    // an almost flat surface contributes little form rather than having its noise amplified.
+                    double share = target > 0 ? std::clamp(kFormGain * formRms / target, 0.0, kMaxFormShare) : 0.0;
+                    if (formRms <= 1e-9) share = 0;
+                    if (detailRms <= 1e-9) share = formRms > 1e-9 ? 1.0 : 0.0;
+                    const float formScale = share > 0 ? static_cast<float>(std::sqrt(share) / formRms) : 0.0f;
+                    const float detailScale = detailRms > 1e-9 ? static_cast<float>(std::sqrt(1.0 - share) / detailRms) * detailSign : 0.0f;
+                    const float heuristicScale = static_cast<float>(polarity / signalRms);
+                    std::vector<float> mixed(count);
+                    for (size_t i = 0; i < count; ++i)
+                        mixed[i] = (1.0f - guideWeight) * heuristicScale * signal[i] +
+                                   guideWeight * (formScale * form[i] + detailScale * detail[i]);
+                    const double mixedRms = rmsSlope(mixed, width, height, tiled);
+                    const float normalize = mixedRms > 1e-9 ? static_cast<float>(target / mixedRms) : 0.0f;
+                    for (size_t i = 0; i < count; ++i) geometry[i] = mixed[i] * normalize;
+                    info.learned_form_share = static_cast<float>(share) * guideWeight;
+                    info.learned_detail_correlation = static_cast<float>(correlation);
+                    info.detail_polarity = static_cast<int32_t>(guideWeight >= .5f ? detailSign : polarity);
+                } else {
+                    // No albedo relief (flat preset): the learned band alone, in the estimator's own units.
+                    for (size_t i = 0; i < count; ++i) geometry[i] = guideWeight * band[i];
+                    info.learned_form_share = guideWeight;
+                }
+            } else if (hasSignal) {
+                const float gain = static_cast<float>(polarity * target / signalRms);
+                for (size_t i = 0; i < count; ++i) geometry[i] = gain * signal[i];
+            }
+            if (input->relief_mask_r8)
+                for (int y = 0; y < height; ++y) {
+                    const uint8_t *mask = input->relief_mask_r8 + static_cast<size_t>(y) * input->relief_mask_row_bytes;
+                    for (int x = 0; x < width; ++x) geometry[at(x, y, width)] *= static_cast<float>(mask[x]) / 255.0f;
+                }
+        }
+        for (auto &g : geometry) g *= recipe->normal_strength;
+        checkpoint(progress, context, .28f);
+
+        // Export: authored height keeps its bytes. Estimated geometry uses the full 16-bit range (lowest point 0,
+        // highest 1); the manifest records the depth that range spans, in tile widths.
+        std::vector<float> heights(count);
+        float lowest = std::numeric_limits<float>::max(), highest = std::numeric_limits<float>::lowest();
+        for (float g : geometry) { lowest = std::min(lowest, g); highest = std::max(highest, g); }
+        if (input->height_override_r16) {
+            for (int y = 0; y < height; ++y) {
+                const uint8_t *row = input->height_override_r16 + static_cast<size_t>(y) * input->height_override_row_bytes;
+                for (int x = 0; x < width; ++x) {
+                    size_t i = at(x, y, width);
+                    heights[i] = static_cast<float>(static_cast<uint16_t>(row[x * 2] | (row[x * 2 + 1] << 8))) / 65535.0f;
+                    heightMap.data[i * 2] = row[x * 2];
+                    heightMap.data[i * 2 + 1] = row[x * 2 + 1];
+                }
+            }
+            info.height_span_tile_widths = kNormalDepthPixels * scale * recipe->normal_strength / static_cast<float>(width);
+        } else {
+            const float span = highest - lowest;
+            const bool relief = span > 1e-6f;
+            for (size_t i = 0; i < count; ++i) {
+                heights[i] = relief ? (geometry[i] - lowest) / span : .5f;
+                uint16_t q = static_cast<uint16_t>(std::lround(clamp01(heights[i]) * 65535.0f));
                 heightMap.data[i * 2] = static_cast<uint8_t>(q & 255);
                 heightMap.data[i * 2 + 1] = static_cast<uint8_t>(q >> 8);
             }
+            info.height_span_tile_widths = relief ? span / static_cast<float>(width) : 0.0f;
         }
-        checkpoint(progress, context, .28f);
-        const auto localAverage = smoothBlur(heights, width, height, 2, tiled);
-        // Roughness variation cue: local micro-contrast of the (delit) luminance relative to the image's
-        // mean micro-contrast. Fine-grained areas read rougher and smooth areas glossier, while the
-        // image mean stays at the artist's prior. Luminance is used even for authored height or the
-        // flat preset because it describes surface finish, not relief.
-        std::vector<float> microContrast;
+        info.rms_slope = static_cast<float>(rmsSlope(geometry, width, height, tiled));
+
+        // Curvature at two scales (fine grain and the size of a small pit), in reference pixels of depth.
+        const auto fineAverage = smoothBlur(geometry, width, height, radius(2), tiled);
+        const auto midAverage = smoothBlur(geometry, width, height, radius(8), tiled);
+        std::vector<float> curvature(count);
+        for (size_t i = 0; i < count; ++i)
+            curvature[i] = (.5f * (geometry[i] - fineAverage[i]) + .5f * (geometry[i] - midAverage[i])) / scale;
+
+        // Roughness: a varied map around the artist's prior within the preset's physical range. Cues, each
+        // standardized over the tile: concavity (crevices hold dust and weather matte; exposed convex faces are
+        // abraded smoother), luminance micro-contrast (granular, broken surfaces scatter more) and local
+        // brightness relative to the surroundings (bright mineral facets and cleavage planes are glossier).
+        std::vector<float> roughnessValue(count, recipe->roughness_base);
+        const auto range = roughnessRange(recipe->preset);
+        const float roughLo = std::min(range[0], recipe->roughness_base), roughHi = std::max(range[1], recipe->roughness_base);
         if (recipe->roughness_variation > 0) {
-            auto fine = smoothBlur(luminance, width, height, 2, tiled);
-            for (size_t i = 0; i < count; ++i) { float d = luminance[i] - fine[i]; fine[i] = d * d; }
-            microContrast = smoothBlur(fine, width, height, 4, tiled);
-            double mean = 0;
-            for (size_t i = 0; i < count; ++i) { microContrast[i] = std::sqrt(std::max(microContrast[i], 0.0f)); mean += microContrast[i]; }
-            const float inverseMean = 1.0f / std::max(static_cast<float>(mean / static_cast<double>(count)), 1e-5f);
-            for (auto &m : microContrast) m = std::clamp(m * inverseMean - 1.0f, -1.0f, 1.0f);
+            auto fine = smoothBlur(logLum, width, height, radius(2), tiled);
+            std::vector<float> contrast(count);
+            for (size_t i = 0; i < count; ++i) { float d = logLum[i] - fine[i]; contrast[i] = d * d; }
+            contrast = smoothBlur(contrast, width, height, radius(4), tiled);
+            for (auto &c : contrast) c = std::sqrt(std::max(c, 0.0f));
+            auto surround = smoothBlur(logLum, width, height, radius(8), tiled);
+            std::vector<float> facet(count);
+            for (size_t i = 0; i < count; ++i) facet[i] = fine[i] - surround[i];
+            auto smoothCurvature = smoothBlur(curvature, width, height, radius(2), tiled);
+            auto standardize = [&](std::vector<float> &v) {
+                double sum = 0, squares = 0;
+                for (float x : v) { sum += x; squares += static_cast<double>(x) * x; }
+                const double mean = sum / static_cast<double>(count);
+                const double deviation = std::sqrt(std::max(squares / static_cast<double>(count) - mean * mean, 0.0));
+                const float inverse = deviation > 1e-9 ? static_cast<float>(1.0 / deviation) : 0.0f;
+                for (auto &x : v) x = std::clamp((x - static_cast<float>(mean)) * inverse, -2.5f, 2.5f);
+            };
+            standardize(contrast); standardize(facet); standardize(smoothCurvature);
+            std::vector<float> cue(count);
+            for (size_t i = 0; i < count; ++i)
+                cue[i] = -kRoughnessCavityWeight * smoothCurvature[i] + kRoughnessContrastWeight * contrast[i] -
+                         kRoughnessFacetWeight * facet[i];
+            standardize(cue);
+            const float amplitude = recipe->roughness_variation * kRoughnessSpread;
+            for (size_t i = 0; i < count; ++i)
+                roughnessValue[i] = std::clamp(recipe->roughness_base + amplitude * cue[i], roughLo, roughHi);
         }
         checkpoint(progress, context, .32f);
 
-        const auto slices = makeSlices(recipe->ao_radius_pixels);
-        const int reach = static_cast<int>(std::ceil(recipe->ao_radius_pixels)) + 2;
-        const float normalDepth = kNormalDepthPixels * recipe->normal_strength;
-        const float aoDepth = kAODepthPixels * recipe->ao_strength;
-        const bool aoEnabled = aoDepth > 0 && recipe->ao_radius_pixels >= .5f;
+        const float aoRadius = recipe->ao_radius_pixels * scale;
+        const auto slices = makeSlices(aoRadius);
+        const int reach = static_cast<int>(std::ceil(aoRadius)) + 2;
+        // GTAO sees the same surface as the normals, deepened by ao_strength x kAOExaggeration: a heightfield
+        // misses sub-texel occlusion and undercuts, so it underestimates occlusion at equal depth.
+        const float aoDepth = kAOExaggeration * recipe->ao_strength;
+        const bool aoEnabled = aoDepth > 0 && aoRadius >= .5f;
         // Image rows grow downward. +Y / green-up tangent space points to decreasing V, so the tangent
         // Y component is the negated image-space Y component; DirectX-style export keeps image Y.
         const float tangentYSign = recipe->normal_y_down ? 1.0f : -1.0f;
@@ -800,7 +971,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 const bool interiorRow = y >= reach && y < height - reach;
                 for (int x = 0; x < width; ++x) {
                     const size_t i = at(x, y, width);
-                    auto H = [&](int xx, int yy) { return heights[at(border(xx, width, tiled), border(yy, height, tiled), width)]; };
+                    auto H = [&](int xx, int yy) { return geometry[at(border(xx, width, tiled), border(yy, height, tiled), width)]; };
                     // Scharr derivative (per pixel): better rotational symmetry than central differences.
                     float a = H(x - 1, y - 1), b = H(x, y - 1), c = H(x + 1, y - 1);
                     float d = H(x - 1, y),                      f = H(x + 1, y);
@@ -808,20 +979,16 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     float hx = (3.0f * (c + k) + 10.0f * f - 3.0f * (a + g) - 10.0f * d) / 32.0f;
                     float hy = (3.0f * (g + k) + 10.0f * hh - 3.0f * (a + c) - 10.0f * b) / 32.0f;
                     // Image-space surface normal of z = height * depth (x right, y down, z toward viewer).
-                    float nxImage = -hx * normalDepth, nyImage = -hy * normalDepth;
+                    float nxImage = -hx, nyImage = -hy;
                     putNormal(normal, i, nxImage, tangentYSign * nyImage, 1.0f);
 
-                    float localCurvature = heights[i] - localAverage[i];
-                    float gradient = std::sqrt(hx * hx + hy * hy);
-                    putGray(cavity, i, clamp01(-localCurvature * 12.0f));
-                    putGray(convexity, i, clamp01(localCurvature * 12.0f));
-                    putGray(slope, i, clamp01(gradient * 16.0f));
-                    putGray(edge, i, clamp01(std::abs(localCurvature) * 18.0f));
-                    float rough = recipe->roughness_base;
-                    if (!microContrast.empty())
-                        rough += recipe->roughness_variation * .25f * microContrast[i];
-                    rough = clamp01(rough);
-                    putGray(roughness, i, rough);
+                    const float localCurvature = curvature[i];
+                    const float gradient = std::sqrt(hx * hx + hy * hy);
+                    putGray(cavity, i, clamp01(-localCurvature * kCavityGain));
+                    putGray(convexity, i, clamp01(localCurvature * kCavityGain));
+                    putGray(slope, i, clamp01(gradient * 2.0f));
+                    putGray(edge, i, clamp01(std::abs(localCurvature) * kCavityGain * 1.5f));
+                    putGray(roughness, i, clamp01(roughnessValue[i]));
 
                     // GTAO (Jimenez et al. 2016) cosine-weighted slice integral on the heightfield, viewed
                     // from +Z. The AO geometry uses its own depth scale so AO and normal response are
@@ -829,7 +996,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     float visibility = 1.0f, bentX = 0, bentY = 0, bentZ = 1;
                     if (aoEnabled) {
                         const bool interior = interiorRow && x >= reach && x < width - reach;
-                        const float center = heights[i] * aoDepth;
+                        const float center = geometry[i] * aoDepth;
                         float aoHx = -hx * aoDepth, aoHy = -hy * aoDepth;
                         float nInv = 1.0f / std::sqrt(aoHx * aoHx + aoHy * aoHy + 1.0f);
                         const float Nx = aoHx * nInv, Ny = aoHy * nInv, Nz = nInv;
@@ -841,7 +1008,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                                     const auto &t = taps[s];
                                     float h00, h10, h01, h11;
                                     if (interior) {
-                                        const float *row = &heights[i + static_cast<ptrdiff_t>(t.y0) * width + t.x0];
+                                        const float *row = &geometry[i + static_cast<ptrdiff_t>(t.y0) * width + t.x0];
                                         h00 = row[0]; h10 = row[1]; h01 = row[width]; h11 = row[width + 1];
                                     } else {
                                         h00 = H(x + t.x0, y + t.y0); h10 = H(x + t.x0 + 1, y + t.y0);
@@ -933,6 +1100,7 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             albedoSeam += colorDiff(at(0, i, width), at(width - 1, i, width));
             albedoSeam += colorDiff(at(i, 0, width), at(i, height - 1, width));
         }
+        result->info = info;
         result->seam = {heightDelta / (2.0f * width), gradientDelta / (2.0f * width),
                         albedoSeam / (2.0f * width)};
         checkpoint(progress, context, 1.0f);
@@ -954,5 +1122,8 @@ extern "C" int PBRLabGetMap(const PBRLabResult *result, PBRLabMapKind kind, PBRL
 }
 extern "C" PBRLabSeamMetrics PBRLabGetSeamMetrics(const PBRLabResult *result) {
     return result ? result->seam : PBRLabSeamMetrics{};
+}
+extern "C" PBRLabDerivationInfo PBRLabGetDerivationInfo(const PBRLabResult *result) {
+    return result ? result->info : PBRLabDerivationInfo{};
 }
 extern "C" void PBRLabFreeResult(PBRLabResult *result) { delete result; }

@@ -43,15 +43,19 @@ Verification on a 518² brick photo against the **stock** PyTorch forward pass: 
 
 A numeric check confirmed the convention on the brick photo. The tops of bricks just below the mortar face up (green +0.034) and the bottoms face down (green −0.045). The model correctly reads the mortar as recessed; the luminance heuristic reads pale mortar as raised.
 
-## Tiling (all clients must match)
+## Tiling (all clients must match; `wrap_padded_rot180_detilted_v2`)
 
-1. Let `N` be the square source size. The working size is `W = clamp(N, 518, 1036)`. Resample the sRGB source to `W × W` with high-quality (Lanczos or Core Graphics high) interpolation.
-2. Tile origins along each axis start at 0 and step by 259 (50 % overlap). If the final origin is short of `W − 518`, add `W − 518` as a last origin. When `W = 518` there is one tile.
-3. Weight each tile's output by `w(x, y) = s(x) · s(y)`, where `s(t) = max(sin(π (t + 0.5) / 518), 1e-3)`. Accumulate the weighted vectors, then normalize per pixel.
-4. Resample the `W × W` normal field to `N × N` bilinearly, renormalize, and encode it as linear RGBA8: `round((n · 0.5 + 0.5) · 255)`, alpha 255.
-5. Pass the result as `PBRLabInput.guide_normal_rgba8`, with `recipe.guide_normal_weight` in [0, 1]. The core removes low-frequency tilt, integrates the slopes to height, and blends that height with the inferred height (0 = analytic only, 1 = learned only).
+1. Let `N` be the square source size. The working size is `W = clamp(N, 518, 2072)`. Resample the sRGB source to `W × W` with a separable Lanczos-3 filter (widened by the scale factor when downsampling) that **wraps** across opposite edges when the recipe tiles and clamps otherwise.
+2. Flatten low-frequency luminance on the working image: divide linear RGB by `exp(blur(log(L + 0.01)) − mean)` (three wrap-aware box passes of radius `W/16`, gain clamped to 0.5–2). Vignetting and uneven lighting are not geometry, but the estimator reads them as bowls; the core discards learned wavelengths that long anyway.
+3. When tiling, pad the working image by `P = 259` on every side by wrapping (`W + 2P` square); otherwise `P = 0`. Tile origins along each axis start at 0 and step by 259 (50 % overlap), plus a final origin at `W + 2P − 518` when needed.
+4. Run every tile twice: as is, and turned 180°. Turn the second prediction back and negate its x and y. Convert both to slopes `(nx/nz, ny/nz)` (nz ≥ 0.15, slopes clamped to ±4) and average them; bias fixed in the estimator's view (for example "the top recedes") cancels.
+5. Fit and subtract, per tile, the window-weighted affine trend of each slope component (`a + b·u + c·v`, u and v the tile coordinates in [−½, ½]). A stationary texture has neither net tilt nor a uniform bowl across one tile; without this the per-view camera guesses stamp the tile grid into the height.
+6. Weight each tile by `w(x, y) = s(x) · s(y)`, where `s(t) = max(sin²(π u), 10⁻⁶)` and `u = clamp((t + 0.5 − 48) / (518 − 96), 0, 1)`: a Hann window over the tile minus a 48-pixel margin, where a ViT's predictions bend. Accumulate the weighted unit normals `normalize(slope_x, slope_y, 1)`.
+7. When tiling, fold the padded field onto the tile: for every working pixel, sum the unit-normalized accumulations at `P + x + kW` (k = −1, 0, 1) weighted by `f(u) = smoothstep((u + 0.5 − (P − 64)) / 128) · (1 − smoothstep((u + 0.5 − (P + W − 64)) / 128))`. `f(u) + f(u ± W) = 1` inside both cross-fades, so the field is exactly periodic.
+8. Resample the `W × W` normal field to `N × N` bilinearly (wrapping when tiling), renormalize, and encode it as linear RGBA8: `round((n · 0.5 + 0.5) · 255)`, alpha 255.
+9. Pass the result as `PBRLabInput.guide_normal_rgba8`, with `recipe.guide_normal_weight` in [0, 1]. The core integrates it to height (periodically when tiling), keeps the band between wavelengths of about 16 reference pixels and a fifth of the tile as form, uses it to orient the albedo-derived fine detail, and fuses both ([derivation](DERIVATION.md)).
 
-Fine detail above `W` comes from the analytic path whenever the weight is below 1.
+A 1K source runs 50 predictions (about 3 s on an M5 Neural Engine), a 4K source 162 (about 19 s). The 1.2.0 contract (`W = clamp(N, 518, 1036)`, clamped sine-window tiles, no padding) left a frame of edge predictions at the border and a blurred pillow in the height.
 
 ## Provenance
 
@@ -64,7 +68,9 @@ The `.pbrmaterial` manifest records the following. Clients also record `guide_no
   - `weights_sha256` and `moge_commit`, taken from the model metadata
   - `model_file` (basename)
   - `compute_units`
-  - `work_resolution` and `tiles`
+  - `work_resolution`, `tiles` (tile positions; each runs in two orientations) and `tiling` (the contract name above)
   - `normals_sha256`: the SHA-256 of the guide RGBA8 bytes that were fed to the core
+
+The CLI's `--save-guide-normals PNG` writes the guide exactly as fed to the core; `--guide-normals` reuses it without rerunning the model.
 
 The Neural Engine runs in fp16, so results can differ slightly between chips and OS versions. Pass `--learned-cpu-only` (CLI) for a more reproducible run. The height provenance becomes `estimated_from_albedo_and_learned_normals`, or `learned_normals` when the preset is Flat.

@@ -11,7 +11,7 @@ A Mac import validates a .pbrcapture file, saves it in the separate camera inbox
 
 ## Algorithm versions and recipe fields
 
-Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0` and `1.2.0`. A field introduced by a version is required from that version on:
+Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0`, `1.2.0` and `1.3.0`. A field introduced by a version is required from that version on:
 
 | Since | `.pbrmaterial` recipe (snake_case) | `.pbrcapture` recipe (camelCase) | Range |
 | --- | --- | --- | --- |
@@ -22,6 +22,18 @@ Both formats carry the core algorithm version (`algorithm_version` / `algorithmV
 | 1.1.0 | `seamless_blend` | `seamlessBlend` | 0–0.45 |
 | 1.2.0 | `guide_normal_weight` | `guideNormalWeight` | 0–1 |
 | 1.2.0 (optional) | `seamless_mode` | `seamlessMode` | `"cut"` or `"blend"`; absent means `"blend"` |
+
+Algorithm 1.3.0 keeps the recipe fields but changes three meanings: `ao_radius_pixels` is in pixels of a 1024² reference (it scales with the tile), `height_strength` scales a per-preset target rms surface slope instead of a luminance difference, and `normal_strength` scales the whole estimated surface (normals, AO, diagnostics and the height span). Estimated height is **range-normalized** (lowest point 0, highest 65535) instead of centred on 0.5, so a 1.3.0 `.pbrmaterial` manifest must carry a top-level `relief` object:
+
+| Field | Range | Meaning |
+| --- | --- | --- |
+| `height_span_tile_widths` | ≥ 0 | Depth between height 0 and 1, in tile widths (multiply by the tile's world size for displacement). 0 means no relief (height is a constant 0.5). For an authored height it is the depth the core assumed for its full range. |
+| `rms_slope` | ≥ 0 | Root-mean-square surface slope (tangent) of the derived geometry. |
+| `learned_form_share` | 0–1 | Share of slope energy taken from learned form (0 without guide normals). |
+| `learned_detail_correlation` | −1–1 | Correlation of learned and albedo relief in the σ 3–8 px band. |
+| `detail_polarity` | ±1 | Sign applied to albedo-derived fine relief (+1 = bright raised). |
+
+Validators reject a 1.3.0 material without a valid `relief` and validate one on any version when present. `.pbrcapture` envelopes do not carry it.
 
 From 1.1.0 on, a material manifest also records `normal_convention` (`+Y` or `-Y`, matching `normal_y_down`). **Algorithm 1.0.0 normal and bent-normal maps are green-down even though they are labelled +Y.** Validators print a warning for these bundles; re-derive them or flip green. When `guide_normal_weight > 0`, the manifest has a top-level `guide_normals` provenance object ([learned normals](LEARNED_NORMALS.md)). Validators reject a guide weight without provenance, and provenance without a guide weight.
 

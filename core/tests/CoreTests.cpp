@@ -44,7 +44,7 @@ int main() {
     constexpr unsigned n = 32;
     auto source = solid(n, 128);
     auto recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    assert(std::strcmp(PBRLabVersion(), "1.2.0") == 0);
+    assert(std::strcmp(PBRLabVersion(), "1.3.0") == 0);
     auto* flat = derive(source, n, recipe);
     auto a = map(flat, PBRLabMapAlbedo), hm = map(flat, PBRLabMapHeight);
     auto no = map(flat, PBRLabMapNormal), ro = map(flat, PBRLabMapRoughness);
@@ -77,6 +77,10 @@ int main() {
     relief[(16 * n + 16) * 2] = 255;
     relief[(16 * n + 16) * 2 + 1] = 255;
     recipe.height_strength = .4f;
+    // Spatial scales are defined at 1024 px and scale with the tile: at 32 px, a full-range authored step is
+    // 8 * 32/1024 = 0.25 px deep. Deepen it and widen the horizon so the tiny fixtures stay meaningful.
+    recipe.normal_strength = 16;
+    recipe.ao_radius_pixels = 64;
     recipe.assigned_metalness_enabled = 1;
     recipe.assigned_metalness = .7f;
     recipe.bent_normal_enabled = 1;
@@ -361,6 +365,189 @@ int main() {
         PBRLabInput bad{stripes.data(), m * 4, nullptr, 0, nullptr, 0, m, m, nullptr, 0};
         char err[128]{};
         assert(!PBRLabDerive(&bad, &cutRecipe, nullptr, nullptr, err, sizeof(err)));
+    }
+
+    // 1.3.0 geometry: periodic learned integration, range-normalized height, frequency-split fusion,
+    // learned detail polarity, normal strength in every mode, varied roughness, resolution invariance.
+    {
+        constexpr unsigned m = 256;
+        auto meanNxy = [&](const PBRLabMap& nm) {
+            double sum = 0;
+            for (size_t i = 0; i < size_t(nm.width) * nm.width; ++i) {
+                double x = nm.pixels[i * 4] / 127.5 - 1, y = nm.pixels[i * 4 + 1] / 127.5 - 1;
+                sum += std::sqrt(x * x + y * y);
+            }
+            return sum / (double(nm.width) * nm.width);
+        };
+        auto heightAt = [&](const PBRLabMap& hmap, unsigned x, unsigned y) { return h(hmap, x, y) / 65535.0; };
+        // Periodic bumps, including ones straddling both wrap lines: wrap distance on the torus.
+        struct Bump { float x, y, sign; };
+        const Bump bumps[] = {{3, 128, 1}, {128, 2, -1}, {250, 250, 1}, {70, 60, 1}, {180, 110, -1}, {100, 200, 1}, {220, 40, -1}};
+        std::vector<uint8_t> authored(m * m * 2);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            double v = .5;
+            for (auto& b : bumps) {
+                double dx = std::fabs(double(x) - b.x), dy = std::fabs(double(y) - b.y);
+                dx = std::min(dx, m - dx); dy = std::min(dy, m - dy);
+                v += .3 * b.sign * std::exp(-(dx * dx + dy * dy) / (2 * 9.0 * 9.0));
+            }
+            uint16_t q = static_cast<uint16_t>(std::lround(std::clamp(v, 0.0, 1.0) * 65535));
+            authored[(y * m + x) * 2] = q & 255; authored[(y * m + x) * 2 + 1] = q >> 8;
+        }
+        std::vector<uint8_t> gray(m * m * 4, 255);
+        for (size_t i = 0; i < m * m; ++i) gray[i * 4] = gray[i * 4 + 1] = gray[i * 4 + 2] = 128;
+        auto makeGuide = [&](float strength) {
+            auto r = PBRLabDefaultRecipe(PBRLabPresetFlat);
+            r.normal_strength = strength;
+            auto* source = derive(gray, m, r, &authored);
+            auto nm = map(source, PBRLabMapNormal);
+            std::vector<uint8_t> guide(nm.pixels, nm.pixels + nm.byte_count);
+            PBRLabFreeResult(source);
+            return guide;
+        };
+        auto guided = [&](const std::vector<uint8_t>& albedo, const std::vector<uint8_t>& guide, PBRLabRecipe r) {
+            PBRLabInput in{albedo.data(), m * 4, nullptr, 0, nullptr, 0, m, m, guide.data(), m * 4};
+            char err[256]{};
+            auto* result = PBRLabDerive(&in, &r, nullptr, nullptr, err, sizeof(err));
+            if (!result) std::cerr << err << '\n';
+            assert(result);
+            return result;
+        };
+        // 1. Tiled learned integration is periodic: no frame falling off to the border and no wrap seam.
+        auto guide = makeGuide(16);
+        auto flatGuided = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        flatGuided.guide_normal_weight = 1;
+        auto* lg = guided(gray, guide, flatGuided);
+        auto lh = map(lg, PBRLabMapHeight);
+        double border = 0, interior = 0, seam = 0, neighbour = 0; unsigned nb = 0, ni = 0;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            bool edge = x < 13 || y < 13 || x >= m - 13 || y >= m - 13;
+            (edge ? border : interior) += heightAt(lh, x, y); ++(edge ? nb : ni);
+        }
+        // Compare the wrap step with the steps beside it (a bump straddles the seam, so the global mean is too low).
+        for (unsigned y = 0; y < m; ++y)
+            neighbour += .5 * (std::fabs(heightAt(lh, 1, y) - heightAt(lh, 0, y)) + std::fabs(heightAt(lh, m - 1, y) - heightAt(lh, m - 2, y)));
+        for (unsigned y = 0; y < m; ++y) seam += std::fabs(heightAt(lh, 0, y) - heightAt(lh, m - 1, y));
+        double borderOffset = border / nb - interior / ni, seamRatio = seam / neighbour;
+        std::cout << "learned periodic: border offset " << borderOffset << ", wrap seam ratio " << seamRatio << "\n";
+        assert(std::fabs(borderOffset) < .03 && seamRatio < 1.5);
+        // 2. Estimated height is rescaled to the full 16-bit range, never clamped into plateaus.
+        size_t atLimits = 0;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) atLimits += h(lh, x, y) == 0 || h(lh, x, y) == 65535;
+        assert(atLimits <= 4);
+        auto info = PBRLabGetDerivationInfo(lg);
+        assert(info.height_span_tile_widths > 0 && info.learned_form_share == 1);
+        PBRLabFreeResult(lg);
+
+        // Albedo: fine noise plus dark spots exactly where the guide has bumps (either sign).
+        std::vector<uint8_t> spotted(m * m * 4, 255);
+        uint32_t seed = 4242;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            double v = 150 + ((seed >> 24) & 7) - 4;
+            for (auto& b : bumps) {
+                double dx = std::fabs(double(x) - b.x), dy = std::fabs(double(y) - b.y);
+                dx = std::min(dx, m - dx); dy = std::min(dy, m - dy);
+                v -= 90 * b.sign * std::exp(-(dx * dx + dy * dy) / (2 * 9.0 * 9.0));
+            }
+            size_t i = (y * m + x) * 4;
+            spotted[i] = spotted[i + 1] = spotted[i + 2] = static_cast<uint8_t>(std::clamp(v, 0.0, 255.0));
+        }
+        auto stoneGuided = PBRLabDefaultRecipe(PBRLabPresetStone);
+        stoneGuided.guide_normal_weight = 1;
+        // 3. The learned field orients albedo detail: dark-where-raised flips the default polarity.
+        auto* fused = guided(spotted, guide, stoneGuided);
+        info = PBRLabGetDerivationInfo(fused);
+        std::cout << "learned polarity: correlation " << info.learned_detail_correlation << ", polarity " << info.detail_polarity
+                  << ", form share " << info.learned_form_share << "\n";
+        assert(info.learned_detail_correlation < -.1f && info.detail_polarity == -1);
+        auto fh = map(fused, PBRLabMapHeight);
+        assert(h(fh, 70, 60) > h(fh, 85, 60) && h(fh, 180, 110) < h(fh, 195, 110)); // Bumps up, pits down.
+        // 4. Detail preservation: fused normals keep the albedo's fine grain, which the smooth guide lacks.
+        auto fineEnergy = [&](const PBRLabMap& nm) {
+            double sum = 0;
+            for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x + 1 < m; ++x)
+                sum += std::abs(int(nm.pixels[(y * m + x + 1) * 4]) - int(nm.pixels[(y * m + x) * 4]));
+            return sum / (m * (m - 1.0));
+        };
+        auto* learnedOnly = guided(gray, guide, flatGuided);
+        double fusedFine = fineEnergy(map(fused, PBRLabMapNormal)), learnedFine = fineEnergy(map(learnedOnly, PBRLabMapNormal));
+        std::cout << "fused fine-normal energy " << fusedFine << " vs learned-only " << learnedFine << "\n";
+        assert(fusedFine > 2 * learnedFine);
+        PBRLabFreeResult(learnedOnly);
+        // 5. normal_strength scales the final normals in learned mode too (and AO follows the geometry).
+        const double nxy1 = meanNxy(map(fused, PBRLabMapNormal));
+        stoneGuided.normal_strength = 4;
+        auto* strong = guided(spotted, guide, stoneGuided);
+        const double nxy4 = meanNxy(map(strong, PBRLabMapNormal));
+        std::cout << "learned normal strength 1 -> 4: mean |xy| " << nxy1 << " -> " << nxy4 << "\n";
+        assert(nxy4 > 2.2 * nxy1);
+        auto meanAO = [&](const PBRLabResult* r) {
+            auto a = map(r, PBRLabMapAO); double s = 0;
+            for (size_t i = 0; i < m * m; ++i) s += a.pixels[i * 4];
+            return s / (m * m * 255.0);
+        };
+        assert(meanAO(strong) < meanAO(fused));
+        PBRLabFreeResult(strong);
+        PBRLabFreeResult(fused);
+        // 6. Threaded guided derivation is deterministic.
+        stoneGuided.normal_strength = 1;
+        auto* g1 = guided(spotted, guide, stoneGuided);
+        auto* g2 = guided(spotted, guide, stoneGuided);
+        for (auto kind : {PBRLabMapNormal, PBRLabMapAO, PBRLabMapHeight, PBRLabMapRoughness}) {
+            auto a1 = map(g1, kind), a2 = map(g2, kind);
+            assert(std::memcmp(a1.pixels, a2.pixels, a1.byte_count) == 0);
+        }
+        PBRLabFreeResult(g1); PBRLabFreeResult(g2);
+
+        // 7. Relief amplitude is the preset prior (rms slope), whatever the albedo's brightness or contrast,
+        //    and the same at 256 and 512 for the same surface.
+        auto sines = [&](unsigned size, double gain, double offset) {
+            std::vector<uint8_t> px(size * size * 4, 255);
+            for (unsigned y = 0; y < size; ++y) for (unsigned x = 0; x < size; ++x) {
+                double u = double(x) / size, v = double(y) / size;
+                double val = offset * (1 + gain * (std::sin(6.2831853 * 7 * u) * std::sin(6.2831853 * 5 * v) +
+                                                   .5 * std::sin(6.2831853 * (19 * u + 11 * v))));
+                size_t i = (y * size + x) * 4;
+                px[i] = px[i + 1] = px[i + 2] = static_cast<uint8_t>(std::clamp(std::lround(val), 0L, 255L));
+            }
+            return px;
+        };
+        auto stone = PBRLabDefaultRecipe(PBRLabPresetStone);
+        auto* dark = derive(sines(256, .3, 40), 256, stone);
+        auto* pale = derive(sines(256, .1, 200), 256, stone);
+        auto* big = derive(sines(512, .3, 40), 512, stone);
+        auto di = PBRLabGetDerivationInfo(dark), pi = PBRLabGetDerivationInfo(pale), bi = PBRLabGetDerivationInfo(big);
+        std::cout << "rms slope dark " << di.rms_slope << ", pale " << pi.rms_slope << ", 512 " << bi.rms_slope
+                  << "\n";
+        assert(std::fabs(di.rms_slope - .3f) < .01f && std::fabs(pi.rms_slope - .3f) < .01f && std::fabs(bi.rms_slope - .3f) < .01f);
+        assert(std::fabs(di.height_span_tile_widths - bi.height_span_tile_widths) < .15f * di.height_span_tile_widths);
+        auto meanAOAt = [&](const PBRLabResult* r, unsigned size) {
+            auto a = map(r, PBRLabMapAO); double sum = 0;
+            for (size_t i = 0; i < size_t(size) * size; ++i) sum += a.pixels[i * 4];
+            return sum / (double(size) * size * 255.0);
+        };
+        std::cout << "AO mean 256 " << meanAOAt(dark, 256) << " vs 512 " << meanAOAt(big, 512) << "\n";
+        assert(std::fabs(meanAOAt(dark, 256) - meanAOAt(big, 512)) < .03); // AO radius scales with the tile.
+        PBRLabFreeResult(pale); PBRLabFreeResult(big);
+        // 8. Roughness varies within the preset's physical range and follows roughness_variation.
+        auto roughStats = [&](const PBRLabResult* r, unsigned size, double& mean, double& deviation, int& lo, int& hi) {
+            auto rm = map(r, PBRLabMapRoughness); double s = 0, q = 0; lo = 255; hi = 0;
+            for (size_t i = 0; i < size_t(size) * size; ++i) {
+                int v = rm.pixels[i * 4]; s += v; q += double(v) * v; lo = std::min(lo, v); hi = std::max(hi, v);
+            }
+            mean = s / (double(size) * size * 255); deviation = std::sqrt(q / (double(size) * size) - std::pow(s / (double(size) * size), 2)) / 255;
+        };
+        double mean1, dev1, mean2, dev2; int lo1, hi1, lo2, hi2;
+        roughStats(dark, 256, mean1, dev1, lo1, hi1);
+        PBRLabFreeResult(dark);
+        stone.roughness_variation = 1;
+        auto* varied = derive(sines(256, .3, 40), 256, stone);
+        roughStats(varied, 256, mean2, dev2, lo2, hi2);
+        PBRLabFreeResult(varied);
+        std::cout << "roughness variation .3: " << mean1 << " +/- " << dev1 << "; 1.0: " << mean2 << " +/- " << dev2 << "\n";
+        assert(dev1 > .04 && dev2 > 2 * dev1 && std::fabs(mean1 - .78) < .02);
+        assert(lo2 >= std::lround(.45 * 255) && hi2 <= std::lround(.98 * 255));
     }
 
     // Threaded derivation is deterministic, and a 1K derivation finishes promptly.
