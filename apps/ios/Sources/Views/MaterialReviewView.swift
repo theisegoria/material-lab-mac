@@ -93,6 +93,7 @@ struct MaterialReviewView: View {
         // Tiling edits are judged on repeats, so show the Tiled preview while they change.
         .onChange(of: store.recipe.seamlessBlend) { showTiledPreview() }
         .onChange(of: store.recipe.seamlessMode) { showTiledPreview() }
+        .onChange(of: store.recipe.albedoRepair) { showTiledPreview() }
         .fullScreenCover(isPresented: $showCrop) {
             if let source = store.source {
                 CropEditorView(store: store, image: source.displayImage)
@@ -426,7 +427,9 @@ private struct RecipeSummary: View {
             pill("Rough", String(format: "%.2f", recipe.roughnessBase))
             if recipe.guideNormalWeight > 0 { pill("Learned", String(format: "%.0f%%", recipe.guideNormalWeight * 100)) }
             pill("Normal", recipe.normalYDown ? "DirectX" : "OpenGL")
-            if recipe.seamlessBlend > 0 {
+            if recipe.albedoRepair != .off {
+                pill("Repair", recipe.albedoRepair.title)
+            } else if recipe.seamlessBlend > 0 {
                 pill(recipe.seamlessMode == .cut ? "Tile · cut" : "Tile · blend",
                      String(format: "%.0f%%", recipe.seamlessBlend * 100))
             }

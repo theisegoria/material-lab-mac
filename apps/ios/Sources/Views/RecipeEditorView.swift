@@ -76,8 +76,25 @@ struct RecipeEditorView: View {
                     RecipeSlider(title: "AO radius", symbol: "circle.dashed",
                                  value: $store.recipe.aoRadiusPixels,
                                  range: MaterialRecipe.aoRadiusRange, step: 1, format: "%.0f px")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker(selection: $store.recipe.albedoRepair) {
+                            ForEach(AlbedoRepair.allCases) { Text($0.title).tag($0) }
+                        } label: {
+                            Label("Repair albedo", systemImage: "wand.and.rays")
+                        }
+                        .accessibilityIdentifier("albedo-repair")
+                        .onChange(of: store.recipe.albedoRepair) { _, mode in
+                            if mode != .off { store.recipe.tileWrap = true }
+                        }
+                        if store.recipe.albedoRepair != .off {
+                            Text(store.recipe.albedoRepair.explanation)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     VStack(alignment: .leading, spacing: 10) {
-                        RecipeSlider(title: "Make tileable", symbol: "square.grid.3x3",
+                        RecipeSlider(title: store.recipe.albedoRepair == .off ? "Make tileable" : "Repair band",
+                                     symbol: "square.grid.3x3",
                                      value: $store.recipe.seamlessBlend,
                                      range: MaterialRecipe.seamlessBlendRange, step: 0.01, format: "%.0f%%", percent: true)
                             .accessibilityIdentifier("make-tileable")
@@ -85,7 +102,7 @@ struct RecipeEditorView: View {
                             ForEach(SeamlessMode.allCases) { Text($0.title).tag($0) }
                         }
                         .pickerStyle(.segmented)
-                        .disabled(store.recipe.seamlessBlend <= 0)
+                        .disabled(store.recipe.seamlessBlend <= 0 || store.recipe.albedoRepair != .off)
                         .accessibilityIdentifier("seamless-mode")
                         Text(store.recipe.seamlessMode == .cut
                              ? "Cuts along the least visible path. Best for brick, tiles, planks and most photos."
@@ -97,10 +114,11 @@ struct RecipeEditorView: View {
                     Toggle(isOn: $store.recipe.tileWrap) {
                         Label("Wrap filters at edges", systemImage: "arrow.left.and.right.square")
                     }
+                    .disabled(store.recipe.albedoRepair != .off)
                 } header: {
                     Text("Lighting & Tiling")
                 } footer: {
-                    Text("Remove lighting evens out low-frequency shading in the photo. Make tileable joins opposite edges so the material repeats; the preview switches to Tiled while you adjust it.")
+                    Text("Remove lighting evens out low-frequency shading in the photo. Repair albedo rebuilds the photo itself so it tiles on both axes; Make tileable only treats the edges. The preview switches to Tiled while you adjust either.")
                 }
 
                 Section {

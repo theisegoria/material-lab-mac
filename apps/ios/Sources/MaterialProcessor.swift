@@ -71,6 +71,11 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     var guideNormalWeight: Float = 0
     /// Core 1.2.0 seam method for Make tileable; the core default is the seam cut.
     var seamlessMode: SeamlessMode = .cut
+    /// Core 1.4.0: rebuild the albedo itself so it tiles; the repaired albedo feeds every derived map.
+    var albedoRepair: AlbedoRepair = .off
+
+    /// Whether the core changes the albedo pixels (delighting, edge treatment or repair).
+    var conditionsAlbedo: Bool { albedoEqualize > 0 || seamlessBlend > 0 || albedoRepair != .off }
 
     static let heightStrengthRange: ClosedRange<Float> = 0...0.5
     static let roughnessVariationRange: ClosedRange<Float> = 0...1
@@ -109,13 +114,14 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         next.albedoEqualize = albedoEqualize
         next.guideNormalWeight = guideNormalWeight
         next.seamlessMode = seamlessMode
+        next.albedoRepair = albedoRepair
         return next
     }
 
     private enum CodingKeys: String, CodingKey {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels
         case tileWrap, assignedMetalness, bentNormal, normalStrength, normalYDown, aoStrength
-        case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode
+        case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
     }
 
     init(from decoder: Decoder) throws {
@@ -138,6 +144,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         guideNormalWeight = try c.decodeIfPresent(Float.self, forKey: .guideNormalWeight) ?? 0
         // Recipes saved before the seam cut existed used the histogram blend.
         seamlessMode = try c.decodeIfPresent(SeamlessMode.self, forKey: .seamlessMode) ?? .blend
+        albedoRepair = try c.decodeIfPresent(AlbedoRepair.self, forKey: .albedoRepair) ?? .off
     }
 
     func encode(to encoder: Encoder) throws {
@@ -158,6 +165,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         try c.encode(seamlessBlend, forKey: .seamlessBlend)
         try c.encode(guideNormalWeight, forKey: .guideNormalWeight)
         try c.encode(seamlessMode, forKey: .seamlessMode)
+        try c.encode(albedoRepair, forKey: .albedoRepair)
     }
 
     var cValue: PBRLabRecipe {
@@ -177,10 +185,58 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         value.albedo_equalize = albedoEqualize.clamped(to: Self.albedoEqualizeRange)
         value.seamless_blend = seamlessBlend.clamped(to: Self.seamlessBlendRange)
         value.seamless_mode = seamlessMode.cValue
+        value.albedo_repair = albedoRepair.cValue
+        if albedoRepair != .off { value.tile_wrap = 1 }
         // MaterialProcessor zeroes this when no guide normals accompany the derivation.
         value.guide_normal_weight = guideNormalWeight.clamped(to: 0...1)
         return value
     }
+}
+
+/// PBRLabRecipe.albedo_repair (core 1.4.0). Off keeps the legacy Make-tileable behaviour.
+enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
+    case off, auto, quilt, blend
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .off: "Off"
+        case .auto: "Auto"
+        case .quilt: "Quilt"
+        case .blend: "Blend"
+        }
+    }
+    var explanation: String {
+        switch self {
+        case .off: "The albedo stays as photographed, plus any Make tileable edge treatment."
+        case .auto: "Rebuilds the albedo so it tiles: cuts along the cheapest seam, or blends when no clean cut exists."
+        case .quilt: "Cuts a copy in along the lowest-difference seam. Keeps features crisp."
+        case .blend: "Histogram-preserving cross-fade. Best for fine noise and grain."
+        }
+    }
+    var cValue: UInt32 {
+        switch self {
+        case .off: 0
+        case .blend: 1
+        case .quilt: 2
+        case .auto: 3
+        }
+    }
+}
+
+/// What albedo repair did (PBRLabAlbedoRepairInfo), recorded in the capture.
+struct AlbedoRepairResult: Codable, Sendable, Equatable {
+    struct Seam: Codable, Sendable, Equatable {
+        var pixelX: Float, pixelY: Float, toneX: Float, toneY: Float, detail: Float
+        var worst: Float { max(pixelX, pixelY, toneX, toneY) }
+    }
+    var mode: AlbedoRepair
+    var method: AlbedoRepair
+    var bandFraction: Float
+    var cutCostRatio: Float
+    var offsetPx: [Int]
+    var seamBefore: Seam
+    var seamAfter: Seam
+    var seamMeasure = "linear_light_luminance_v1"
 }
 
 extension Comparable {
@@ -242,6 +298,11 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         guard self == .height, guided else { return provenance }
         return recipe.preset == .flat ? "learned_normals" : "estimated_from_albedo_and_learned_normals"
     }
+    func provenance(recipe: MaterialRecipe, guided: Bool, repaired: Bool) -> String {
+        if self == .albedo, repaired { return "repaired_tileable_albedo_derived_from_source" }
+        guard self == .height, guided else { return provenance }
+        return recipe.preset == .flat ? "learned_normals" : "estimated_from_albedo_and_learned_normals"
+    }
     var provenance: String {
         switch self {
         case .albedo: "captured or imported source, perspective-corrected"
@@ -297,6 +358,8 @@ struct DerivedMaterial: @unchecked Sendable {
     var guideNormals: GuideNormalsProvenance? = nil
     /// The learned field behind `guideNormals`, reusable for previews at other sizes.
     var learnedField: LearnedNormalField? = nil
+    /// Present when the albedo was repaired before derivation (core 1.4.0).
+    var repair: AlbedoRepairResult? = nil
 }
 
 /// Where a derivation gets learned guide normals when `recipe.guideNormalWeight > 0`.
@@ -355,11 +418,19 @@ enum MaterialProcessor {
     static func derive(image: CGImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
                        control: DerivationControl? = nil, preview: Bool = false,
                        guide: GuideSource? = nil) throws -> DerivedMaterial {
-        let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
-        let corrected = try makeImage(Data(rgba), width: resolution, height: resolution,
+        let correctedRGBA = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
+        let corrected = try makeImage(Data(correctedRGBA), width: resolution, height: resolution,
                                       format: PBRLabPixelFormatRGBA8SRGB, rowBytes: resolution * 4)
         if control?.isCancelled == true { throw CaptureError.cancelled }
-        let quality = assessQuality(rgba, width: resolution)
+        let quality = assessQuality(correctedRGBA, width: resolution)
+        // Explicit albedo repair runs first, as in the CLI and Mac app: the repaired albedo is the exported albedo
+        // and the image both learned inference and every derived map see; derivation then runs unconditioned.
+        var rgba = correctedRGBA
+        var repair: AlbedoRepairResult?
+        if recipe.albedoRepair != .off {
+            (rgba, repair) = try conditionAlbedo(correctedRGBA, size: resolution, recipe: recipe)
+        }
+        if control?.isCancelled == true { throw CaptureError.cancelled }
         var learnedField: LearnedNormalField?
         var guideNormals: GuideNormals?
         if recipe.guideNormalWeight > 0, let guide {
@@ -367,7 +438,7 @@ enum MaterialProcessor {
             case .field(let field): learnedField = field
             case .estimate(let estimator):
                 // Inference owns the first 35% of the progress bar; the estimator cache makes repeats free.
-                learnedField = try estimator.field(rgba: rgba, size: resolution, wrap: recipe.tileWrap,
+                learnedField = try estimator.field(rgba: rgba, size: resolution, wrap: recipe.tileWrap || repair != nil,
                                                    shouldContinue: { control?.isCancelled != true },
                                                    progress: { control?.report($0 * 0.35, absolute: true) })
                 control?.setPhaseOffset(0.35)
@@ -377,6 +448,12 @@ enum MaterialProcessor {
         if control?.isCancelled == true { throw CaptureError.cancelled }
         var cRecipe = recipe.cValue
         if guideNormals == nil { cRecipe.guide_normal_weight = 0 }
+        if repair != nil {
+            cRecipe.albedo_equalize = 0
+            cRecipe.seamless_blend = 0
+            cRecipe.albedo_repair = 0
+            cRecipe.tile_wrap = 1
+        }
         var maps: [MaterialMapKind: DerivedMap] = [:]
         var seam = SeamDiagnostics(heightValueDelta: 0, heightGradientDelta: 0, albedoValueDelta: 0)
         var error = [CChar](repeating: 0, count: 1024)
@@ -445,11 +522,43 @@ enum MaterialProcessor {
         guard let albedo = maps[.albedo] else {
             throw CaptureError.derivationFailed("The canonical sRGB albedo map is missing")
         }
+        // The capture's canonical source is the unconditioned corrected crop: a receiver re-derives with the same
+        // recipe, so shipping a delit, blended or repaired albedo as the source would condition it twice.
+        let sourcePNG = preview || !recipe.conditionsAlbedo ? albedo.png : try pngData(corrected)
         control?.report(1)
-        return DerivedMaterial(maps: maps, sourcePNG: albedo.png, correctedSource: corrected, seam: seam,
+        return DerivedMaterial(maps: maps, sourcePNG: sourcePNG, correctedSource: corrected, seam: seam,
                                quality: quality, algorithmVersion: String(cString: PBRLabVersion()),
                                resolution: resolution, recipe: recipe, isPreview: preview,
-                               guideNormals: guideNormals?.provenance, learnedField: learnedField)
+                               guideNormals: guideNormals?.provenance, learnedField: learnedField, repair: repair)
+    }
+
+    /// PBRLabConditionAlbedo: delighting plus the requested albedo repair.
+    private static func conditionAlbedo(_ rgba: [UInt8], size: Int, recipe: MaterialRecipe) throws
+        -> ([UInt8], AlbedoRepairResult) {
+        var cRecipe = recipe.cValue
+        cRecipe.tile_wrap = 1
+        var output = [UInt8](repeating: 0, count: rgba.count)
+        var info = PBRLabAlbedoRepairInfo()
+        var error = [CChar](repeating: 0, count: 512)
+        let ok = rgba.withUnsafeBufferPointer { buffer in
+            output.withUnsafeMutableBufferPointer { out in
+                var input = PBRLabInput()
+                input.rgba8 = buffer.baseAddress
+                input.rgba_row_bytes = size * 4
+                input.width = UInt32(size)
+                input.height = UInt32(size)
+                return PBRLabConditionAlbedo(&input, &cRecipe, out.baseAddress, size * 4, &info, &error, error.count)
+            }
+        }
+        guard ok != 0 else { throw CaptureError.derivationFailed("Albedo repair failed: " + String(cString: error)) }
+        func seam(_ s: PBRLabWrapSeam) -> AlbedoRepairResult.Seam {
+            .init(pixelX: s.pixel_x, pixelY: s.pixel_y, toneX: s.tone_x, toneY: s.tone_y, detail: s.detail)
+        }
+        let result = AlbedoRepairResult(mode: recipe.albedoRepair, method: info.method == 2 ? .quilt : .blend,
+                                        bandFraction: info.band_fraction, cutCostRatio: info.cut_cost_ratio,
+                                        offsetPx: [Int(info.offset_x), Int(info.offset_y)],
+                                        seamBefore: seam(info.before), seamAfter: seam(info.after))
+        return (output, result)
     }
 
     private static func assessQuality(_ rgba: [UInt8], width: Int) -> ImageQualityDiagnostics {

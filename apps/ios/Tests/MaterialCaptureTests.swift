@@ -84,6 +84,45 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertEqual(decoded.seamlessBlend, 0)
     }
 
+    func testAlbedoRepairExportsUnconditionedSourceAndRepairProvenance() throws {
+        // A non-tiling source: a horizontal ramp whose left and right edges differ strongly.
+        let size = 256
+        let ramp = UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { context in
+            for x in 0..<size {
+                UIColor(white: 0.15 + 0.7 * CGFloat(x) / CGFloat(size), alpha: 1).setFill()
+                context.fill(CGRect(x: x, y: 0, width: 1, height: size))
+            }
+            UIColor(red: 0.6, green: 0.2, blue: 0.1, alpha: 1).setFill()
+            for row in stride(from: 0, to: size, by: 32) { context.fill(CGRect(x: 0, y: row, width: size, height: 4)) }
+        }
+        let source = try SourceImage(origin: .files, data: try XCTUnwrap(ramp.pngData()))
+        let quad = PerspectiveQuad.centeredSquare(for: source.size)
+        var recipe = MaterialRecipe(preset: .stone)
+        recipe.albedoRepair = .auto
+        XCTAssertTrue(recipe.conditionsAlbedo)
+        let derived = try MaterialProcessor.derive(image: source.image, quad: quad, resolution: size, recipe: recipe)
+        let repair = try XCTUnwrap(derived.repair)
+        XCTAssertLessThan(repair.seamAfter.worst, repair.seamBefore.worst, "Repair must reduce the wrap step")
+        // The canonical source stays the corrected crop, so a receiver that re-derives does not repair twice.
+        XCTAssertNotEqual(derived.sourcePNG, try XCTUnwrap(derived.maps[.albedo]).png)
+        let encoded = try MaterialBundle.make(source: source, quad: quad, label: "ramp", category: "test",
+                                              recipe: recipe, material: derived)
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        XCTAssertEqual((document["recipe"] as? [String: Any])?["albedoRepair"] as? String, "auto")
+        let capture = try XCTUnwrap(document["capture"] as? [String: Any])
+        let block = try XCTUnwrap(capture["albedoRepair"] as? [String: Any])
+        XCTAssertNotNil(block["seamBefore"]); XCTAssertNotNil(block["seamAfter"])
+        let albedo = try XCTUnwrap((document["derived"] as? [String: Any])?["albedo"] as? [String: Any])
+        XCTAssertEqual(albedo["provenance"] as? String, "repaired_tileable_albedo_derived_from_source")
+        // Recipes saved before 1.4.0 decode with repair off.
+        let legacy = Data(#"{"preset":"stone","heightStrength":0.2,"heightPolarity":1,"roughnessBase":0.7,"roughnessVariation":0.1,"aoRadiusPixels":10,"tileWrap":true,"bentNormal":false}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(MaterialRecipe.self, from: legacy).albedoRepair, .off)
+        // Left for host-side CLI validation (material-lab --validate).
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("repair-test.pbrcapture")
+        try encoded.write(to: out)
+        print("REPAIR_CAPTURE=\(out.path)")
+    }
+
     func testEachBundleGetsAFreshCaptureID() throws {
         let image = checkerboard(size: 256)
         let source = try SourceImage(origin: .files, data: try XCTUnwrap(image.pngData()))

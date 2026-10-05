@@ -49,6 +49,8 @@ struct MaterialBundle: Codable {
         let fallbackOmissionReason: String?
         /// Learned guide-normal provenance; present only when `recipe.guideNormalWeight > 0`.
         var guideNormals: GuideNormalsProvenance? = nil
+        /// Albedo repair provenance; present only when `recipe.albedoRepair` is not off.
+        var albedoRepair: AlbedoRepairResult? = nil
     }
     struct DerivedMapRecord: Codable {
         let mime: String
@@ -105,7 +107,8 @@ struct MaterialBundle: Codable {
                                                  sha256: sha256(map.png), width: map.width, height: map.height,
                                                  pixelFormat: map.pixelFormat,
                                                  provenance: kind.provenance(recipe: material.recipe,
-                                                                             guided: material.guideNormals != nil)))
+                                                                             guided: material.guideNormals != nil,
+                                                                             repaired: material.repair != nil)))
         })
         let sourceBase64 = material.sourcePNG.base64EncodedString()
         let sourceHash = sha256(material.sourcePNG)
@@ -145,7 +148,8 @@ struct MaterialBundle: Codable {
                                   fallbackOriginalWidth: includeFallback ? fallback?.width : nil,
                                   fallbackOriginalHeight: includeFallback ? fallback?.height : nil,
                                   fallbackOmissionReason: fallbackReason,
-                                  guideNormals: material.guideNormals)
+                                  guideNormals: material.guideNormals,
+                                  albedoRepair: material.repair)
             let bundle = Self(schemaVersion: 1, bundleKind: "pbr-capture", captureId: captureId,
                               semanticLabel: label, category: category, sourceMime: "image/png",
                               sourceBase64: sourceBase64, sourceSHA256: sourceHash,
