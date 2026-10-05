@@ -7,11 +7,13 @@ struct MaterialCaptureApp: App {
     @State private var link = MacLinkStore()
 
     init() {
-        let directory = CapturePersistence.defaultDirectory
+        let root = CaptureLibrary.defaultRoot
         if ProcessInfo.processInfo.environment["MATERIAL_CAPTURE_RESET"] == "1" {
-            CapturePersistence(directory: directory).clear()
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: CaptureLibrary.legacyDirectory)
         }
-        _store = State(initialValue: CaptureStore(persistenceDirectory: directory))
+        CaptureLibrary(root: root).migrateLegacy()
+        _store = State(initialValue: CaptureStore(libraryDirectory: root))
     }
 
     var body: some Scene {

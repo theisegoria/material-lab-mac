@@ -44,6 +44,7 @@ struct MaterialReviewView: View {
     @State private var previewMode: PreviewMode = .map
     @State private var showRecipe = false
     @State private var showCrop = false
+    @State private var showLibrary = false
     @State private var bundleDocument: MaterialBundleDocument?
     @State private var mapDocument: PNGDocument?
     @State private var exportBundle = false
@@ -67,12 +68,20 @@ struct MaterialReviewView: View {
                 } actions: {
                     Button("Open Camera", systemImage: "camera") { selectTab(.capture) }
                         .buttonStyle(.glassProminent)
+                    if !store.libraryEntries.isEmpty {
+                        Button("Open Library", systemImage: "square.grid.2x2") { showLibrary = true }
+                            .buttonStyle(.glass)
+                    }
                 }
             }
         }
         .navigationTitle(store.trimmedLabel.isEmpty ? "Material" : store.trimmedLabel)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Library", systemImage: "square.grid.2x2") { showLibrary = true }
+                    .accessibilityIdentifier("open-library")
+            }
             if store.source != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Recipe", systemImage: "slider.horizontal.3") { showRecipe = true }
@@ -83,6 +92,9 @@ struct MaterialReviewView: View {
                 Spacer()
                 Button("Done") { focusedField = nil }
             }
+        }
+        .sheet(isPresented: $showLibrary) {
+            LibraryView(store: store)
         }
         .sheet(isPresented: $showRecipe) {
             RecipeEditorView(store: store)

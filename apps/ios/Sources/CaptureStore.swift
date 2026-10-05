@@ -59,11 +59,17 @@ final class CaptureStore {
     private var previewTask: Task<Void, Never>?
     private var previewControl: DerivationControl?
     private var saveTask: Task<Void, Never>?
-    private let persistence: CapturePersistence?
+    /// Every saved capture; the current one persists in its own directory.
+    let library: CaptureLibrary?
+    /// Saved captures, most recently edited first (refreshed on save, open and delete).
+    private(set) var libraryEntries: [CaptureLibrary.Entry] = []
+    private var persistence: CapturePersistence? { source.flatMap { source in library?.persistence(for: source.id) } }
 
-    init(persistenceDirectory: URL? = nil) {
-        persistence = persistenceDirectory.map(CapturePersistence.init(directory:))
+    /// `libraryDirectory` is the capture library root; nil keeps captures in memory only.
+    init(libraryDirectory: URL? = nil) {
+        library = libraryDirectory.map(CaptureLibrary.init(root:))
         Task { await refreshLearnedModel() }
+        Task { await refreshLibrary() }
     }
 
     /// What the review screen shows: full-resolution maps when current, otherwise the live preview.
@@ -124,9 +130,10 @@ final class CaptureStore {
             cropWasAutoDetected = detected != nil
             errorMessage = nil
             importCount += 1
-            persistence.map { persistence in
+            if let library {
                 let snapshot = image
-                Task.detached(priority: .utility) { persistence.saveSource(snapshot) }
+                library.setCurrent(image.id)
+                await Task.detached(priority: .utility) { library.persistence(for: snapshot.id).saveSource(snapshot) }.value
             }
             scheduleStateSave(immediately: true)
             return true
@@ -166,6 +173,7 @@ final class CaptureStore {
         recipe = recipe.applyingPreset(preset)
     }
 
+    /// Closes the current capture; it stays in the library.
     func clear() {
         derivationControl?.cancel()
         previewControl?.cancel()
@@ -182,7 +190,42 @@ final class CaptureStore {
         semanticLabel = ""
         category = "uncategorized"
         inputRevision += 1
-        persistence?.clear()
+        library?.setCurrent(nil)
+    }
+
+    // MARK: Library
+
+    func refreshLibrary() async {
+        guard let library else { return }
+        libraryEntries = await Task.detached(priority: .utility) { library.entries() }.value
+    }
+
+    /// Opens a saved capture (closing the current one, which stays saved).
+    func open(_ id: UUID) async {
+        guard let library, source?.id != id else { return }
+        guard let restored = await Task.detached(priority: .userInitiated, operation: {
+            library.persistence(for: id).load()
+        }).value else {
+            errorMessage = "That capture could not be opened."
+            await refreshLibrary()
+            return
+        }
+        clear()
+        apply(restored)
+        library.setCurrent(id)
+    }
+
+    /// Deletes a saved capture permanently from this iPhone.
+    func delete(_ id: UUID) async {
+        guard let library else { return }
+        if source?.id == id { clear() }
+        await Task.detached(priority: .utility) { library.delete(id) }.value
+        await refreshLibrary()
+    }
+
+    private func saveThumbnail(from material: DerivedMaterial) {
+        guard let library, let id = source?.id, let albedo = material.maps[.albedo]?.previewImage else { return }
+        Task.detached(priority: .utility) { library.saveThumbnail(albedo, for: id) }
     }
 
     // MARK: Derivation
@@ -212,7 +255,10 @@ final class CaptureStore {
                                               recipe: recipe, control: control, preview: true, guide: guide)
             }.value
             guard !Task.isCancelled else { return }
-            if let result, revision == self.inputRevision { self.livePreview = result }
+            if let result, revision == self.inputRevision {
+                self.livePreview = result
+                self.saveThumbnail(from: result)
+            }
             self.isUpdatingPreview = false
         }
     }
@@ -266,6 +312,7 @@ final class CaptureStore {
                 derived = result
                 derivedRevision = revision
                 deriveCount += 1
+                saveThumbnail(from: result)
             }
         } catch CaptureError.cancelled {
             // User cancelled or inputs changed mid-derivation.
@@ -394,10 +441,15 @@ final class CaptureStore {
 
     /// Restores the capture that was open when the app was last terminated.
     func restore() async {
-        guard let persistence, source == nil else { return }
-        guard let restored = await Task.detached(priority: .userInitiated, operation: { persistence.load() }).value else {
-            return
-        }
+        guard let library, source == nil else { return }
+        guard let restored = await Task.detached(priority: .userInitiated, operation: { () -> (source: SourceImage, state: CapturePersistence.State)? in
+            guard let id = library.currentID else { return nil }
+            return library.persistence(for: id).load()
+        }).value else { return }
+        apply(restored)
+    }
+
+    private func apply(_ restored: (source: SourceImage, state: CapturePersistence.State)) {
         source = restored.source
         semanticLabel = restored.state.semanticLabel
         category = restored.state.category
@@ -409,6 +461,7 @@ final class CaptureStore {
 
     private func scheduleStateSave(immediately: Bool = false) {
         guard let persistence, let source else { return }
+        let library = library
         saveTask?.cancel()
         let state = CapturePersistence.State(source: source, crop: crop, semanticLabel: semanticLabel,
                                              category: category, resolution: resolution, recipe: recipe)
@@ -416,6 +469,10 @@ final class CaptureStore {
             if !immediately { try? await Task.sleep(for: .milliseconds(600)) }
             guard !Task.isCancelled else { return }
             await Task.detached(priority: .utility) { persistence.saveState(state) }.value
+            if let library {
+                let entries = await Task.detached(priority: .utility) { library.entries() }.value
+                self.libraryEntries = entries
+            }
         }
     }
 }
@@ -456,10 +513,6 @@ final class CapturePersistence: Sendable {
 
     let directory: URL
     init(directory: URL) { self.directory = directory }
-
-    static var defaultDirectory: URL {
-        URL.applicationSupportDirectory.appending(path: "CurrentCapture", directoryHint: .isDirectory)
-    }
 
     private var primaryURL: URL { directory.appending(path: "primary.image") }
     private var fallbackURL: URL { directory.appending(path: "fallback.image") }

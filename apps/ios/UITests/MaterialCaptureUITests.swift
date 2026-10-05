@@ -218,4 +218,28 @@ final class MaterialCaptureUITests: XCTestCase {
         app.tabBars.buttons["Mac"].tap()
         shot("08-mac", top: false)
     }
+
+    /// Library sheet screenshot (MARKETING_DIR). Imports the newest photo twice so the grid has two entries.
+    func testLibraryShot() throws {
+        guard let directory = ProcessInfo.processInfo.environment["MARKETING_DIR"], !directory.isEmpty else {
+            throw XCTSkip("Set MARKETING_DIR to record the library screenshot")
+        }
+        let suffix = ProcessInfo.processInfo.environment["MARKETING_SUFFIX"] ?? ""
+        let app = launchFresh()
+        for label in ["Red fireclay brick", "Weathered brick wall"] {
+            app.tabBars.buttons["Capture"].tap()
+            importFirstPhoto(app)
+            let field = app.textFields["semantic-label"]
+            XCTAssertTrue(field.waitForExistence(timeout: 20))
+            field.tap()
+            field.typeText(label)
+            app.toolbars.buttons["Done"].firstMatch.tap()
+            sleep(4)
+        }
+        app.buttons["open-library"].tap()
+        XCTAssertTrue(app.buttons["library-done"].waitForExistence(timeout: 10))
+        sleep(2)
+        try? XCUIScreen.main.screenshot().pngRepresentation
+            .write(to: URL(fileURLWithPath: directory).appendingPathComponent("09-library\(suffix).png"))
+    }
 }

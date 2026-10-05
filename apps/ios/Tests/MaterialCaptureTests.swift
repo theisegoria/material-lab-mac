@@ -84,6 +84,43 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertEqual(decoded.seamlessBlend, 0)
     }
 
+    @MainActor
+    func testLibraryKeepsEveryCaptureAndOpensDeletesAndMigrates() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "library-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        // A capture saved by a pre-library build is migrated in and becomes current.
+        let legacy = FileManager.default.temporaryDirectory.appending(path: "legacy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: legacy) }
+        let oldPersistence = CapturePersistence(directory: legacy)
+        let oldSource = try SourceImage(origin: .files, data: try XCTUnwrap(checkerboard(size: 128).pngData()))
+        oldPersistence.saveSource(oldSource)
+        oldPersistence.saveState(.init(source: oldSource, crop: .centeredSquare(for: oldSource.size),
+                                       semanticLabel: "legacy plaster", category: "wall", resolution: 1024,
+                                       recipe: MaterialRecipe(preset: .stone)))
+        CaptureLibrary(root: root).migrateLegacy(from: legacy)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(CaptureLibrary(root: root).currentID, oldSource.id)
+
+        let store = CaptureStore(libraryDirectory: root)
+        await store.restore()
+        XCTAssertEqual(store.semanticLabel, "legacy plaster")
+        // A new photo is added alongside, not over, the previous capture.
+        await store.receive(origin: .files, data: try XCTUnwrap(syntheticBricks(size: 128).pngData()))
+        store.semanticLabel = "new brick"
+        let newID = try XCTUnwrap(store.source?.id)
+        for _ in 0..<40 where store.libraryEntries.count < 2 || store.libraryEntries.first?.label != "new brick" {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(store.libraryEntries.map(\.label), ["new brick", "legacy plaster"])
+        // Open the older one, then delete it: the library keeps the other.
+        await store.open(oldSource.id)
+        XCTAssertEqual(store.source?.id, oldSource.id)
+        XCTAssertEqual(store.semanticLabel, "legacy plaster")
+        await store.delete(oldSource.id)
+        XCTAssertNil(store.source)
+        XCTAssertEqual(store.libraryEntries.map(\.id), [newID])
+    }
+
     func testAlbedoRepairExportsUnconditionedSourceAndRepairProvenance() throws {
         // A non-tiling source: a horizontal ramp whose left and right edges differ strongly.
         let size = 256
@@ -260,18 +297,18 @@ final class MaterialCaptureTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appending(path: "persist-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let bytes = try XCTUnwrap(checkerboard(size: 256).pngData())
-        let first = CaptureStore(persistenceDirectory: directory)
+        let first = CaptureStore(libraryDirectory: directory)
         await first.receive(origin: .files, data: bytes)
         first.semanticLabel = "persisted slate"
         first.recipe.normalYDown = true
         first.resolution = 1024
         let sourceID = try XCTUnwrap(first.source?.id)
-        let stateFile = directory.appending(path: "state.json")
+        let stateFile = directory.appending(path: sourceID.uuidString).appending(path: "state.json")
         for _ in 0..<40 {
             if let data = try? Data(contentsOf: stateFile), String(decoding: data, as: UTF8.self).contains("persisted slate") { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        let second = CaptureStore(persistenceDirectory: directory)
+        let second = CaptureStore(libraryDirectory: directory)
         await second.restore()
         XCTAssertEqual(second.source?.id, sourceID)
         XCTAssertEqual(second.semanticLabel, "persisted slate")
