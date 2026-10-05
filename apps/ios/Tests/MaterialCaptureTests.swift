@@ -121,6 +121,28 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertEqual(store.libraryEntries.map(\.id), [newID])
     }
 
+    @MainActor
+    func testSavedRecipesPersistApplyAndDelete() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "recipes-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = CaptureStore(libraryDirectory: root)
+        first.recipe = MaterialRecipe(preset: .stone)
+        first.recipe.heightStrength = 0.31
+        first.saveCurrentRecipe(named: "Wet slate")
+        first.saveCurrentRecipe(named: "wet SLATE")  // Same name, different case: replaces.
+        XCTAssertEqual(first.savedRecipes.count, 1)
+        let second = CaptureStore(libraryDirectory: root)
+        await second.refreshLibrary()
+        let saved = try XCTUnwrap(second.savedRecipes.first)
+        XCTAssertEqual(saved.recipe.heightStrength, 0.31)
+        second.applySavedRecipe(saved)
+        XCTAssertEqual(second.recipe, saved.recipe)
+        second.deleteSavedRecipe(saved)
+        let third = CaptureStore(libraryDirectory: root)
+        await third.refreshLibrary()
+        XCTAssertTrue(third.savedRecipes.isEmpty)
+    }
+
     func testAlbedoRepairExportsUnconditionedSourceAndRepairProvenance() throws {
         // A non-tiling source: a horizontal ramp whose left and right edges differ strongly.
         let size = 256

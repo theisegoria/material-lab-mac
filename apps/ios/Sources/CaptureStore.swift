@@ -63,6 +63,8 @@ final class CaptureStore {
     let library: CaptureLibrary?
     /// Saved captures, most recently edited first (refreshed on save, open and delete).
     private(set) var libraryEntries: [CaptureLibrary.Entry] = []
+    /// Named recipes the user saved, newest first.
+    private(set) var savedRecipes: [SavedRecipe] = []
     private var persistence: CapturePersistence? { source.flatMap { source in library?.persistence(for: source.id) } }
 
     /// `libraryDirectory` is the capture library root; nil keeps captures in memory only.
@@ -197,7 +199,29 @@ final class CaptureStore {
 
     func refreshLibrary() async {
         guard let library else { return }
-        libraryEntries = await Task.detached(priority: .utility) { library.entries() }.value
+        let (entries, recipes) = await Task.detached(priority: .utility) {
+            (library.entries(), library.loadSavedRecipes())
+        }.value
+        libraryEntries = entries
+        savedRecipes = recipes
+    }
+
+    // MARK: Saved recipes
+
+    /// Saves the current recipe under `name`; a recipe with the same name is replaced.
+    func saveCurrentRecipe(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        savedRecipes.removeAll { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+        savedRecipes.insert(SavedRecipe(name: trimmed, recipe: recipe), at: 0)
+        library?.saveSavedRecipes(savedRecipes)
+    }
+
+    func applySavedRecipe(_ saved: SavedRecipe) { recipe = saved.recipe }
+
+    func deleteSavedRecipe(_ saved: SavedRecipe) {
+        savedRecipes.removeAll { $0.id == saved.id }
+        library?.saveSavedRecipes(savedRecipes)
     }
 
     /// Opens a saved capture (closing the current one, which stays saved).

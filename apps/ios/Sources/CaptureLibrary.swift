@@ -3,6 +3,14 @@ import ImageIO
 import UIKit
 import UniformTypeIdentifiers
 
+/// A named recipe to reuse on other captures.
+struct SavedRecipe: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var name: String
+    var recipe: MaterialRecipe
+    var saved = Date()
+}
+
 /// Every capture the user has made, one directory each (`<root>/<capture id>/`), laid out exactly as
 /// `CapturePersistence` writes it, plus a small thumbnail. A `current` file names the capture that was open
 /// when the app last ran. Photos never leave the app sandbox and are protected while the device is locked.
@@ -29,6 +37,18 @@ final class CaptureLibrary: Sendable {
     }
 
     private var currentURL: URL { root.appending(path: "current") }
+    private var savedRecipesURL: URL { root.appending(path: "saved-recipes.json") }
+
+    func loadSavedRecipes() -> [SavedRecipe] {
+        guard let data = try? Data(contentsOf: savedRecipesURL),
+              let recipes = try? JSONDecoder().decode([SavedRecipe].self, from: data) else { return [] }
+        return recipes
+    }
+
+    func saveSavedRecipes(_ recipes: [SavedRecipe]) {
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(recipes).write(to: savedRecipesURL, options: .atomic)
+    }
 
     func directory(for id: UUID) -> URL { root.appending(path: id.uuidString, directoryHint: .isDirectory) }
     func persistence(for id: UUID) -> CapturePersistence { CapturePersistence(directory: directory(for: id)) }

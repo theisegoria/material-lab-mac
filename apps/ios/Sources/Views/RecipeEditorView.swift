@@ -6,6 +6,8 @@ struct RecipeEditorView: View {
     @Bindable var store: CaptureStore
     @Environment(\.dismiss) private var dismiss
     @State private var showModelImporter = false
+    @State private var namingRecipe = false
+    @State private var recipeName = ""
 
     var body: some View {
         NavigationStack {
@@ -18,8 +20,35 @@ struct RecipeEditorView: View {
                         }
                     }
                     .pickerStyle(.navigationLink)
+                    Menu {
+                        if !store.savedRecipes.isEmpty {
+                            Section("Apply") {
+                                ForEach(store.savedRecipes) { saved in
+                                    Button(saved.name, systemImage: saved.recipe.preset.symbol) {
+                                        store.applySavedRecipe(saved)
+                                    }
+                                }
+                            }
+                            Menu("Delete", systemImage: "trash") {
+                                ForEach(store.savedRecipes) { saved in
+                                    Button(saved.name, role: .destructive) { store.deleteSavedRecipe(saved) }
+                                }
+                            }
+                        }
+                        Button("Save Current Recipe…", systemImage: "square.and.arrow.down") {
+                            recipeName = ""
+                            namingRecipe = true
+                        }
+                    } label: {
+                        LabeledContent {
+                            Text(store.savedRecipes.isEmpty ? "None" : "\(store.savedRecipes.count)")
+                        } label: {
+                            Label("Saved recipes", systemImage: "bookmark")
+                        }
+                    }
+                    .accessibilityIdentifier("saved-recipes")
                 } footer: {
-                    Text("Switching the prior resets relief and surface values to that material's defaults.")
+                    Text("Switching the prior resets relief and surface values to that material's defaults. Save a recipe to reuse it on other captures.")
                 }
 
                 Section {
@@ -143,6 +172,14 @@ struct RecipeEditorView: View {
                 case .success(let url): Task { await store.importLearnedModel(from: url) }
                 case .failure(let error): store.errorMessage = error.localizedDescription
                 }
+            }
+            .alert("Save Recipe", isPresented: $namingRecipe) {
+                TextField("Name, e.g. Wet slate", text: $recipeName)
+                Button("Save") { store.saveCurrentRecipe(named: recipeName) }
+                    .disabled(recipeName.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("A recipe with the same name is replaced.")
             }
             .navigationTitle("Recipe")
             .navigationBarTitleDisplayMode(.inline)
