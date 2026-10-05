@@ -225,6 +225,9 @@ private struct DiagnosticsCard: View {
                     NotesPopover(material: material)
                 }
             }
+            if let repair = material.repair {
+                RepairRow(repair: repair)
+            }
             SeamRow(label: "Color across edges", value: material.seams.albedoValue, threshold: 0.03)
             // Height is range-normalized from 1.3.0, so its seam is judged against its own adjacent steps.
             SeamRow(label: "Height across edges", value: max(0, material.relief.heightWrapSeamRatio - 1), threshold: 1)
@@ -237,6 +240,40 @@ private struct DiagnosticsCard: View {
         }
         .opacity(isCurrent ? 1 : 0.55)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Albedo repair: measured wrap step before and after (opposite-edge step / ordinary neighbour step).
+private struct RepairRow: View {
+    let repair: AlbedoRepairResult
+
+    private func format(_ value: Float) -> String { value.formatted(.number.precision(.fractionLength(1))) }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Albedo repair")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 118, alignment: .leading)
+            Text("\(format(repair.before.worst))×")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            Image(systemName: "arrow.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Text("\(format(repair.after.worst))×")
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(repair.after.worst <= 1.3 ? .green : .orange)
+            Spacer(minLength: 4)
+            Text(repair.method.title)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(.fill.tertiary, in: Capsule())
+        }
+        .help("Worst wrap step as a multiple of an ordinary neighbouring step (1× or below shows no seam). Method: \(repair.method.title), band \(Int((repair.bandFraction * 100).rounded())) %.")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Albedo repair, \(repair.method.title): seam \(format(repair.before.worst)) before, \(format(repair.after.worst)) after")
     }
 }
 

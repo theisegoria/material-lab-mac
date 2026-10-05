@@ -127,6 +127,7 @@ enum MaterialEngine {
             seamlessBlend: native.seamless_blend,
             guideNormalWeight: native.guide_normal_weight,
             seamlessMode: SeamlessMode(cValue: native.seamless_mode),
+            albedoRepair: .off,
             reliefMaskURL: nil,
             heightOverrideURL: nil
         )
@@ -155,13 +156,27 @@ enum MaterialEngine {
         }
         guard control.shouldContinue else { throw MaterialEngineError.cancelled }
 
-        // Learned guide normals are cached per (source, model, compute units): recipe edits reuse them.
+        // Explicit albedo repair (1.4.0) runs first, exactly as the CLI does: the repaired albedo is the
+        // exported albedo and the image both the learned estimator and every derived map see. Derivation then
+        // runs with conditioning switched off.
+        var pixels = working.payload
+        var pixelsKey = working.sha256
+        var repair: AlbedoRepairResult?
+        if recipe.albedoRepair != .off {
+            let repaired = try conditionAlbedo(working.payload, recipe: recipe)
+            repair = repaired.result
+            pixels = repaired.pixels
+            pixelsKey = repaired.result.repairedRGBA8SHA256
+        }
+        guard control.shouldContinue else { throw MaterialEngineError.cancelled }
+
+        // Learned guide normals are cached per (pixels, model, compute units): recipe edits reuse them.
         var guide: GuideNormals?
         if recipe.guideNormalWeight > 0 {
             do {
                 defer { control.reportLearned(nil) }
                 guide = try LearnedNormalEstimator.shared.guideNormals(
-                    rgba: working.payload, size: targetSize, sourceSHA256: working.sha256, wrap: recipe.tileWrap,
+                    rgba: pixels, size: targetSize, sourceSHA256: pixelsKey, wrap: recipe.tileWrap || repair != nil,
                     shouldContinue: { control.shouldContinue },
                     progress: { control.reportLearned($0) }
                 )
@@ -188,12 +203,19 @@ enum MaterialEngine {
         nativeRecipe.seamless_blend = recipe.seamlessBlend
         nativeRecipe.seamless_mode = recipe.seamlessMode.cValue
         nativeRecipe.guide_normal_weight = guide == nil ? 0 : recipe.guideNormalWeight
+        if repair != nil {
+            // The pixels are already conditioned; a repaired albedo always tiles.
+            nativeRecipe.albedo_equalize = 0
+            nativeRecipe.seamless_blend = 0
+            nativeRecipe.albedo_repair = 0
+            nativeRecipe.tile_wrap = 1
+        }
         var error = [CChar](repeating: 0, count: 1024)
 
         let maskBytes = relief ?? Data()
         let heightBytes = heightOverride ?? Data()
         let guideBytes = guide?.rgba8 ?? Data()
-        let nativeResult = working.payload.withUnsafeBytes { sourceRaw in
+        let nativeResult = pixels.withUnsafeBytes { sourceRaw in
             maskBytes.withUnsafeBytes { maskRaw in
                 heightBytes.withUnsafeBytes { heightRaw in
                   guideBytes.withUnsafeBytes { guideRaw in
@@ -271,8 +293,13 @@ enum MaterialEngine {
         if source.reviewStatus.lowercased().contains("candidate") {
             warnings.append("This source is still a review candidate.")
         }
-        if geometryInfo.height_wrap_seam_ratio > 1.5 || seams.albedo_value_delta > 0.03 {
-            warnings.append("Opposite image edges differ; inspect the tiled view before repeating.")
+        if let repair {
+            warnings.append("The albedo was rebuilt to tile (\(repair.method.title.lowercased())); it is derived data, not the photograph.")
+            if repair.after.worst > 1.5 {
+                warnings.append("A seam is still measurable after repair; inspect the tiled view before repeating.")
+            }
+        } else if geometryInfo.height_wrap_seam_ratio > 1.5 || seams.albedo_value_delta > 0.03 {
+            warnings.append("Opposite image edges differ; inspect the tiled view or turn on Repair albedo.")
         }
         if let guide {
             warnings.append("Learned geometry (\(Int((recipe.guideNormalWeight * 100).rounded())) %) comes from \(LearnedNormalEstimator.estimatorName) on \(guide.computeUnits == .all ? "the Neural Engine; fp16 results can vary slightly between chips" : "the CPU").")
@@ -306,8 +333,53 @@ enum MaterialEngine {
             warnings: warnings,
             previews: previews,
             workingPreview: workingPreview,
-            duration: Date().timeIntervalSince(started)
+            duration: Date().timeIntervalSince(started),
+            repair: repair
         )
+    }
+
+    /// PBRLabConditionAlbedo: delighting plus the requested albedo repair, at the working size.
+    private static func conditionAlbedo(_ payload: Data, recipe: MaterialRecipe) throws
+        -> (pixels: Data, result: AlbedoRepairResult) {
+        var native = PBRLabDefaultRecipe(recipe.preset.cValue)
+        native.tile_wrap = 1
+        native.albedo_equalize = recipe.albedoEqualize
+        native.seamless_blend = recipe.seamlessBlend
+        native.seamless_mode = recipe.seamlessMode.cValue
+        native.albedo_repair = recipe.albedoRepair.cValue
+        var output = Data(count: payload.count)
+        var info = PBRLabAlbedoRepairInfo()
+        var error = [CChar](repeating: 0, count: 512)
+        let ok = payload.withUnsafeBytes { sourceRaw in
+            output.withUnsafeMutableBytes { outRaw in
+                error.withUnsafeMutableBufferPointer { errorBuffer in
+                    var input = PBRLabInput()
+                    input.rgba8 = sourceRaw.bindMemory(to: UInt8.self).baseAddress
+                    input.rgba_row_bytes = targetSize * 4
+                    input.width = UInt32(targetSize)
+                    input.height = UInt32(targetSize)
+                    return PBRLabConditionAlbedo(
+                        &input, &native, outRaw.bindMemory(to: UInt8.self).baseAddress, targetSize * 4,
+                        &info, errorBuffer.baseAddress, errorBuffer.count
+                    )
+                }
+            }
+        }
+        guard ok != 0 else { throw MaterialEngineError.derivation("Albedo repair failed: " + String(cString: error)) }
+        func seam(_ s: PBRLabWrapSeam) -> AlbedoRepairResult.Seam {
+            .init(pixelX: s.pixel_x, pixelY: s.pixel_y, toneX: s.tone_x, toneY: s.tone_y, detail: s.detail)
+        }
+        let result = AlbedoRepairResult(
+            mode: recipe.albedoRepair,
+            method: info.method == 2 ? .quilt : .blend,
+            bandFraction: info.band_fraction,
+            cutCostRatio: info.cut_cost_ratio,
+            offsetX: Int(info.offset_x), offsetY: Int(info.offset_y),
+            before: seam(info.before), after: seam(info.after),
+            sourceRGBA8SHA256: SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined(),
+            repairedRGBA8SHA256: SHA256.hash(data: output).map { String(format: "%02x", $0) }.joined()
+        )
+        return (output, result)
     }
 
     // MARK: - Display images

@@ -83,7 +83,10 @@ struct RecipeInspector: View {
                              help: "Relief exaggeration seen by the occlusion search; 0 disables AO.")
                 Toggle("Bent normal map", isOn: $store.recipe.bentNormalEnabled)
                 Toggle("Wrap filters at edges", isOn: $store.recipe.tileWrap)
-                    .help("Treat the image as tiling when filtering and sampling occlusion.")
+                    .help(store.recipe.albedoRepair == .off
+                          ? "Treat the image as tiling when filtering and sampling occlusion."
+                          : "Always on while Repair albedo is on: a repaired albedo tiles.")
+                    .disabled(store.recipe.albedoRepair != .off)
                 TileableRows(store: store)
             }
 
@@ -307,14 +310,34 @@ private struct LearnedGeometryRow: View {
 private struct TileableRows: View {
     @Bindable var store: MaterialLabStore
 
-    private var enabled: Bool { store.recipe.seamlessBlend > 0 }
+    private var repairing: Bool { store.recipe.albedoRepair != .off }
+    private var enabled: Bool { store.recipe.seamlessBlend > 0 && !repairing }
     private var showingTiles: Bool { store.canvasMode == .tile }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ParameterRow(title: "Make tileable", value: $store.recipe.seamlessBlend,
+            Picker("Repair albedo", selection: $store.recipe.albedoRepair) {
+                ForEach(AlbedoRepair.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .help("Rebuild the albedo itself so it tiles on both axes. The repaired albedo feeds every derived map and learned geometry.")
+            .onChange(of: store.recipe.albedoRepair) { _, mode in
+                guard mode != .off else { return }
+                store.recipe.tileWrap = true
+                withAnimation(.snappy) { store.canvasMode = .tile }
+            }
+            if repairing {
+                Text(store.recipe.albedoRepair.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ParameterRow(title: repairing ? "Repair band" : "Make tileable", value: $store.recipe.seamlessBlend,
                          range: MaterialRecipe.Range.seamlessBlend, digits: 2,
-                         help: "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched.")
+                         help: repairing
+                            ? "Band per edge used by the repair, as a fraction of the image. 0 uses the default 0.12."
+                            : "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched.")
             Picker("Method", selection: $store.recipe.seamlessMode) {
                 ForEach(SeamlessMode.allCases) { mode in
                     Text(mode.title).tag(mode).help(mode.explanation)
@@ -326,7 +349,8 @@ private struct TileableRows: View {
             .disabled(!enabled)
             .accessibilityLabel("Tiling method")
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(enabled ? store.recipe.seamlessMode.explanation : "Raise Make tileable to choose a method.")
+                Text(repairing ? "Repair chooses its own method; the result is shown in Tiling Quality."
+                     : enabled ? store.recipe.seamlessMode.explanation : "Raise Make tileable to choose a method.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -345,5 +369,6 @@ private struct TileableRows: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: enabled)
+        .animation(.easeOut(duration: 0.15), value: repairing)
     }
 }

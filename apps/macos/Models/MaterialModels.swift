@@ -85,6 +85,8 @@ struct MaterialRecipe: Equatable, Sendable {
     var guideNormalWeight: Float = 0
     /// Method used by Make tileable when seamlessBlend > 0.
     var seamlessMode: SeamlessMode = .cut
+    /// Algorithm 1.4.0: rebuild the albedo itself so it tiles; the repaired albedo feeds every derived map.
+    var albedoRepair: AlbedoRepair = .off
     var reliefMaskURL: URL?
     var heightOverrideURL: URL?
 
@@ -116,6 +118,53 @@ enum SeamlessMode: String, CaseIterable, Identifiable, Sendable {
     }
     var cValue: UInt32 { self == .cut ? 1 : 0 }
     init(cValue: UInt32) { self = cValue == 0 ? .blend : .cut }
+}
+
+/// PBRLabRecipe.albedo_repair (1.4.0). Off keeps the legacy Make-tileable behaviour.
+enum AlbedoRepair: String, CaseIterable, Identifiable, Sendable {
+    case off, auto, quilt, blend
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .off: "Off"
+        case .auto: "Auto"
+        case .quilt: "Quilt"
+        case .blend: "Blend"
+        }
+    }
+    var explanation: String {
+        switch self {
+        case .off: "The albedo is exported as photographed (plus any Make tileable edge treatment)."
+        case .auto: "Rebuilds the albedo so it tiles on both axes: quilts along the cheapest seam, or blends when no clean cut exists."
+        case .quilt: "Rebuilds the albedo by cutting a copy in along the lowest-difference seam. Keeps features crisp."
+        case .blend: "Rebuilds the albedo with a histogram-preserving cross-fade. Best for fine noise and grain."
+        }
+    }
+    var cValue: UInt32 {
+        switch self {
+        case .off: 0
+        case .blend: 1
+        case .quilt: 2
+        case .auto: 3
+        }
+    }
+}
+
+/// What albedo repair actually did, from PBRLabAlbedoRepairInfo.
+struct AlbedoRepairResult: Sendable, Equatable {
+    struct Seam: Sendable, Equatable {
+        var pixelX: Float, pixelY: Float, toneX: Float, toneY: Float, detail: Float
+        /// The worse of the two axes at pixel and tone scale (about 1 or below means no visible step).
+        var worst: Float { max(pixelX, pixelY, toneX, toneY) }
+    }
+    var mode: AlbedoRepair
+    var method: AlbedoRepair            // .quilt or .blend: the method actually applied
+    var bandFraction: Float
+    var cutCostRatio: Float
+    var offsetX: Int, offsetY: Int
+    var before: Seam, after: Seam
+    var sourceRGBA8SHA256: String
+    var repairedRGBA8SHA256: String
 }
 
 enum NormalConvention: String, CaseIterable, Identifiable {
@@ -249,4 +298,6 @@ struct DerivedMaterial: @unchecked Sendable {
     /// The square working image the maps were derived from (for before/after comparison).
     let workingPreview: CGImage?
     let duration: TimeInterval
+    /// Present when the albedo was repaired before derivation (algorithm 1.4.0).
+    var repair: AlbedoRepairResult? = nil
 }

@@ -31,6 +31,9 @@ enum SnapshotHarness {
             store.recipe.albedoEqualize = 0.6
             store.recipe.seamlessBlend = 0.12
             store.recipe.normalStrength = 3
+            if let mode = environment["MATERIAL_LAB_SNAPSHOT_REPAIR"].flatMap(AlbedoRepair.init(rawValue:)) {
+                store.recipe.albedoRepair = mode
+            }
         }
         await waitForDerivation(store)
         for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }

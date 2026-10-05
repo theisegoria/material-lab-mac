@@ -198,6 +198,11 @@ enum MaterialBundle {
                 throw MaterialBundleError.invalidCapture("recipe seamlessMode must be \"cut\" or \"blend\"")
             }
         }
+        if let raw = recipe["albedoRepair"] {
+            guard let mode = raw as? String, AlbedoRepair(rawValue: mode) != nil else {
+                throw MaterialBundleError.invalidCapture("recipe albedoRepair must be off, auto, quilt or blend")
+            }
+        }
         if let raw = recipe["guideNormalWeight"] {
             guard let value = raw as? Double, value.isFinite, (0...1).contains(value) else {
                 throw MaterialBundleError.invalidCapture("recipe guideNormalWeight is out of range")
@@ -235,6 +240,7 @@ enum MaterialBundle {
         // A capture without seamlessMode predates the seam cut and used the blend.
         recipe.seamlessMode = (raw["seamlessMode"] as? String).flatMap(SeamlessMode.init(rawValue:)) ?? .blend
         recipe.guideNormalWeight = number("guideNormalWeight", MaterialRecipe.Range.guideNormalWeight) ?? recipe.guideNormalWeight
+        recipe.albedoRepair = (raw["albedoRepair"] as? String).flatMap(AlbedoRepair.init(rawValue:)) ?? .off
         if let polarity = raw["heightPolarity"] as? Int, polarity == 1 || polarity == -1 {
             recipe.heightPolarity = Int32(polarity)
         }
@@ -359,7 +365,8 @@ enum MaterialBundle {
                 "width": map.width,
                 "height": map.height,
                 "pixel_format": map.format == .rgba8SRGB ? "rgba8_srgb_png" : (map.format == .r16Linear ? "r16_unorm_png" : "rgba8_linear_png"),
-                "provenance": provenance(for: kind, recipe: material.recipe, learned: material.guide != nil)
+                "provenance": provenance(for: kind, recipe: material.recipe, learned: material.guide != nil,
+                                         repaired: material.repair != nil)
             ]
         }
         let recipe = material.recipe
@@ -402,6 +409,7 @@ enum MaterialBundle {
                 "albedo_equalize": tidy(recipe.albedoEqualize),
                 "seamless_blend": tidy(recipe.seamlessBlend),
                 "seamless_mode": recipe.seamlessMode.rawValue,
+                "albedo_repair": (material.repair?.mode ?? .off).rawValue,
                 "guide_normal_weight": tidy(material.guide == nil ? 0 : recipe.guideNormalWeight)
             ],
             "normal_convention": recipe.normalConvention,
@@ -445,6 +453,26 @@ enum MaterialBundle {
                 "tiles": guide.tiles,
                 "tiling": guide.tiling,
                 "normals_sha256": guide.sha256
+            ] as [String: Any]
+        }
+        if let repair = material.repair {
+            func seam(_ s: AlbedoRepairResult.Seam) -> [String: Any] {
+                ["pixel_x": tidy(s.pixelX), "pixel_y": tidy(s.pixelY), "tone_x": tidy(s.toneX),
+                 "tone_y": tidy(s.toneY), "detail": tidy(s.detail)]
+            }
+            cleanManifest["albedo_repair"] = [
+                "mode": repair.mode.rawValue,
+                "method": repair.method.rawValue,
+                "band_fraction": tidy(repair.bandFraction),
+                "cut_cost_ratio": tidy(repair.cutCostRatio),
+                "offset_px": [repair.offsetX, repair.offsetY],
+                "albedo_equalize": tidy(recipe.albedoEqualize),
+                "source_sha256": material.sourceSHA256,
+                "source_rgba8_sha256": repair.sourceRGBA8SHA256,
+                "repaired_rgba8_sha256": repair.repairedRGBA8SHA256,
+                "seam_before": seam(repair.before),
+                "seam_after": seam(repair.after),
+                "seam_measure": "linear_light_luminance_v1"
             ] as [String: Any]
         }
         guard JSONSerialization.isValidJSONObject(cleanManifest) else {
@@ -494,9 +522,10 @@ enum MaterialBundle {
         }
     }
 
-    private static func provenance(for kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool) -> String {
+    private static func provenance(for kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool,
+                                   repaired: Bool) -> String {
         switch kind {
-        case .albedo: "source_color_resampled_srgb"
+        case .albedo: repaired ? "repaired_tileable_albedo_derived_from_source" : "source_color_resampled_srgb"
         case .roughness: "artist_prior_with_estimated_variation"
         case .orm: recipe.assignedMetalnessEnabled
             ? "estimated_ao_roughness_plus_artist_assigned_metalness"
