@@ -1,6 +1,399 @@
 #import <Foundation/Foundation.h>
 #include "Tools.hpp"
+#include <zlib.h>
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstring>
+#include <iostream>
 #include <stdexcept>
+
+// Exports a validated bundle to formats other tools import directly. The canonical .pbrmaterial bundle is
+// never modified; every export is derived from its maps and recorded alongside (material-lab-export.json).
 namespace mltools {
-int exportBundle(const fs::path&, const std::string& format, const fs::path&) { throw std::runtime_error("unknown export format: " + format); }
+namespace {
+
+struct Material {
+    std::string label, slug, titleCase, convention;
+    bool metalAssigned = false;
+    float metal = 0;
+    Raster albedo, normal, roughness, ao, height;
+    uint32_t size() const { return albedo.width; }
+};
+
+NSDictionary* loadManifestObject(const fs::path& bundle) {
+    const auto bytes = readFile(bundle / "manifest.json");
+    id root = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:bytes.data() length:bytes.size()] options:0 error:nil];
+    if (![root isKindOfClass:[NSDictionary class]]) throw std::runtime_error("manifest is not a JSON object");
+    return root;
 }
+
+std::string words(const std::string& label, bool titleCase) {
+    std::string out;
+    bool upper = true;
+    for (unsigned char c : label) {
+        if (std::isalnum(c)) {
+            if (titleCase) out += upper ? static_cast<char>(std::toupper(c)) : static_cast<char>(c);
+            else out += static_cast<char>(std::tolower(c));
+            upper = false;
+        } else {
+            if (!titleCase && !out.empty() && out.back() != '_') out += '_';
+            upper = true;
+        }
+    }
+    while (!out.empty() && out.back() == '_') out.pop_back();
+    return out.empty() ? (titleCase ? "Material" : "material") : out;
+}
+
+Material load(const fs::path& bundle) {
+    NSDictionary* m = loadManifestObject(bundle);
+    NSDictionary* recipe = [m[@"recipe"] isKindOfClass:[NSDictionary class]] ? m[@"recipe"] : @{};
+    Material material;
+    material.label = [m[@"semantic_label"] isKindOfClass:[NSString class]] ? [m[@"semantic_label"] UTF8String] : "material";
+    material.slug = words(material.label, false);
+    material.titleCase = words(material.label, true);
+    material.convention = [m[@"normal_convention"] isEqual:@"-Y"] ? "-Y" : "+Y";
+    material.metalAssigned = [recipe[@"assigned_metalness_enabled"] boolValue];
+    material.metal = material.metalAssigned ? [recipe[@"assigned_metalness"] floatValue] : 0;
+    material.albedo = loadMap(bundle, "albedo");
+    material.normal = loadMap(bundle, "normal");
+    material.roughness = loadMap(bundle, "roughness");
+    material.ao = loadMap(bundle, "ao");
+    material.height = loadMap(bundle, "height");
+    return material;
+}
+
+uint8_t byteAt(const Raster& r, size_t pixel, int channel) { return r.bytes[pixel * 4 + channel]; }
+
+// Tangent normals in the requested convention (the bundle records which one it holds).
+std::vector<uint8_t> normalRGBA(const Material& m, const std::string& convention) {
+    std::vector<uint8_t> out = m.normal.bytes;
+    if (convention != m.convention)
+        for (size_t i = 1; i < out.size(); i += 4) out[i] = static_cast<uint8_t>(255 - out[i]);
+    return out;
+}
+
+// glTF / Unreal / Godot packing: R = occlusion, G = roughness, B = metalness.
+std::vector<uint8_t> ormRGBA(const Material& m) {
+    const size_t pixels = static_cast<size_t>(m.size()) * m.size();
+    std::vector<uint8_t> out(pixels * 4, 255);
+    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
+    for (size_t i = 0; i < pixels; ++i) {
+        out[i * 4] = byteAt(m.ao, i, 0);
+        out[i * 4 + 1] = byteAt(m.roughness, i, 0);
+        out[i * 4 + 2] = metal;
+    }
+    return out;
+}
+
+// Unity HDRP mask map: R = metallic, G = occlusion, B = detail mask (unused, 0), A = smoothness.
+std::vector<uint8_t> hdrpMaskRGBA(const Material& m) {
+    const size_t pixels = static_cast<size_t>(m.size()) * m.size();
+    std::vector<uint8_t> out(pixels * 4);
+    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
+    for (size_t i = 0; i < pixels; ++i) {
+        out[i * 4] = metal;
+        out[i * 4 + 1] = byteAt(m.ao, i, 0);
+        out[i * 4 + 2] = 0;
+        out[i * 4 + 3] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
+    }
+    return out;
+}
+
+std::vector<uint8_t> grayRGBA(const Raster& r) {
+    std::vector<uint8_t> out = r.bytes;
+    for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
+    return out;
+}
+
+std::vector<uint8_t> constantGray(uint32_t size, uint8_t value) {
+    std::vector<uint8_t> out(static_cast<size_t>(size) * size * 4, value);
+    for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
+    return out;
+}
+
+bool hasTransparency(const Material& m) {
+    for (size_t i = 3; i < m.albedo.bytes.size(); i += 4) if (m.albedo.bytes[i] < 255) return true;
+    return false;
+}
+
+std::vector<uint8_t> albedoPNG(const Material& m) { return encodeRGBA8(m.size(), m.size(), m.albedo.bytes, true); }
+std::vector<uint8_t> heightPNG(const Material& m) { return encodeGray16(m.size(), m.size(), m.height.bytes); }
+
+void writeNote(const fs::path& folder, const fs::path& bundle, const std::string& format, NSDictionary* files) {
+    NSDictionary* note = @{@"exporter": @"material-lab", @"format": @(format.c_str()),
+                           @"source_bundle": @(bundle.filename().string().c_str()), @"files": files,
+                           @"note": @"Derived from the bundle's maps; the bundle's manifest.json holds the provenance."};
+    NSData* data = [NSJSONSerialization dataWithJSONObject:note options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+    writeFile(folder / "material-lab-export.json", std::vector<uint8_t>(static_cast<const uint8_t*>(data.bytes),
+                                                                    static_cast<const uint8_t*>(data.bytes) + data.length));
+}
+
+// ---- Engine folders -------------------------------------------------------------------------------------
+
+void exportFolder(const fs::path& bundle, const Material& m, const std::string& format, const fs::path& folder) {
+    fs::create_directories(folder);
+    const uint32_t n = m.size();
+    NSMutableDictionary* files = [NSMutableDictionary dictionary];
+    auto put = [&](const std::string& name, const std::vector<uint8_t>& png, NSString* role) {
+        writeFile(folder / name, png);
+        files[@(name.c_str())] = role;
+    };
+    if (format == "unreal") {
+        const std::string base = "T_" + m.titleCase + "_";
+        put(base + "BaseColor.png", albedoPNG(m), @"Base Color (sRGB on)");
+        put(base + "Normal.png", encodeRGBA8(n, n, normalRGBA(m, "-Y"), false), @"Normal (DirectX, compression: Normalmap)");
+        put(base + "ORM.png", encodeRGBA8(n, n, ormRGBA(m), false), @"R occlusion, G roughness, B metallic (sRGB off, Masks)");
+        put(base + "Height.png", heightPNG(m), @"Height, 16-bit (sRGB off)");
+    } else if (format == "unity-hdrp") {
+        put(m.titleCase + "_BaseColor.png", albedoPNG(m), @"Base Map (sRGB)");
+        put(m.titleCase + "_Normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map (Texture Type: Normal map)");
+        put(m.titleCase + "_MaskMap.png", encodeRGBA8(n, n, hdrpMaskRGBA(m), false),
+            @"Mask Map: R metallic, G occlusion, B detail mask (0), A smoothness (sRGB off)");
+        put(m.titleCase + "_Height.png", heightPNG(m), @"Height Map, 16-bit (sRGB off)");
+    } else if (format == "godot") {
+        put(m.slug + "_albedo.png", albedoPNG(m), @"Albedo");
+        put(m.slug + "_normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map (OpenGL)");
+        put(m.slug + "_orm.png", encodeRGBA8(n, n, ormRGBA(m), false), @"ORMMaterial3D: R occlusion, G roughness, B metallic");
+        put(m.slug + "_height.png", heightPNG(m), @"Height (heightmap / parallax), 16-bit");
+    } else {  // blender
+        put(m.slug + "_base_color.png", albedoPNG(m), @"Base Color (sRGB)");
+        put(m.slug + "_normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map node (Non-Color, OpenGL)");
+        put(m.slug + "_roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"Roughness (Non-Color)");
+        put(m.slug + "_ao.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient occlusion (Non-Color)");
+        if (m.metalAssigned)
+            put(m.slug + "_metallic.png", encodeRGBA8(n, n, constantGray(n, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+                @"Metallic (Non-Color)");
+        put(m.slug + "_height.png", heightPNG(m), @"Displacement height, 16-bit (Non-Color)");
+    }
+    writeNote(folder, bundle, format, files);
+}
+
+// ---- glTF 2.0 binary ------------------------------------------------------------------------------------
+
+void append(std::vector<uint8_t>& out, const void* data, size_t size) {
+    const auto* p = static_cast<const uint8_t*>(data);
+    out.insert(out.end(), p, p + size);
+}
+void align4(std::vector<uint8_t>& out, uint8_t fill) { while (out.size() % 4) out.push_back(fill); }
+void put32(std::vector<uint8_t>& out, uint32_t v) { append(out, &v, 4); }  // GLB is little-endian, as is arm64.
+
+void exportGLB(const Material& m, const fs::path& output) {
+    // A 1 m plane facing +Z (glTF is Y-up), UV origin top-left as glTF specifies.
+    const float positions[] = {-0.5f, 0.5f, 0, 0.5f, 0.5f, 0, 0.5f, -0.5f, 0, -0.5f, -0.5f, 0};
+    const float normals[] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    const float tangents[] = {1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1};
+    const float uvs[] = {0, 0, 1, 0, 1, 1, 0, 1};
+    const uint16_t indices[] = {0, 3, 2, 0, 2, 1};
+    const uint32_t n = m.size();
+    const std::vector<std::vector<uint8_t>> images = {
+        albedoPNG(m), encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), encodeRGBA8(n, n, ormRGBA(m), false)};
+    std::vector<uint8_t> bin;
+    NSMutableArray* views = [NSMutableArray array];
+    auto view = [&](const void* data, size_t size, NSNumber* target) {
+        align4(bin, 0);
+        NSMutableDictionary* v = [@{@"buffer": @0, @"byteOffset": @(bin.size()), @"byteLength": @(size)} mutableCopy];
+        if (target) v[@"target"] = target;
+        append(bin, data, size);
+        [views addObject:v];
+        return static_cast<NSUInteger>(views.count - 1);
+    };
+    const NSUInteger pv = view(positions, sizeof positions, @34962), nv = view(normals, sizeof normals, @34962),
+                     tv = view(tangents, sizeof tangents, @34962), uv = view(uvs, sizeof uvs, @34962),
+                     iv = view(indices, sizeof indices, @34963);
+    NSMutableArray* imageObjects = [NSMutableArray array];
+    for (const auto& png : images) [imageObjects addObject:@{@"bufferView": @(view(png.data(), png.size(), nil)), @"mimeType": @"image/png"}];
+    align4(bin, 0);
+    NSMutableDictionary* pbr = [@{@"baseColorTexture": @{@"index": @0}, @"metallicRoughnessTexture": @{@"index": @2},
+                                  @"metallicFactor": @(m.metalAssigned ? 1.0 : 0.0), @"roughnessFactor": @1.0} mutableCopy];
+    NSMutableDictionary* material = [@{@"name": @(m.label.c_str()), @"pbrMetallicRoughness": pbr,
+                                       @"normalTexture": @{@"index": @1}, @"occlusionTexture": @{@"index": @2}} mutableCopy];
+    if (hasTransparency(m)) { material[@"alphaMode"] = @"MASK"; material[@"alphaCutoff"] = @0.5; }
+    NSDictionary* gltf = @{
+        @"asset": @{@"version": @"2.0", @"generator": @"Material Lab"},
+        @"scene": @0, @"scenes": @[@{@"nodes": @[@0]}],
+        @"nodes": @[@{@"mesh": @0, @"name": @(m.titleCase.c_str())}],
+        @"meshes": @[@{@"name": @"Plane", @"primitives": @[@{
+            @"attributes": @{@"POSITION": @0, @"NORMAL": @1, @"TANGENT": @2, @"TEXCOORD_0": @3},
+            @"indices": @4, @"material": @0}]}],
+        @"accessors": @[
+            @{@"bufferView": @(pv), @"componentType": @5126, @"count": @4, @"type": @"VEC3", @"min": @[@-0.5, @-0.5, @0], @"max": @[@0.5, @0.5, @0]},
+            @{@"bufferView": @(nv), @"componentType": @5126, @"count": @4, @"type": @"VEC3"},
+            @{@"bufferView": @(tv), @"componentType": @5126, @"count": @4, @"type": @"VEC4"},
+            @{@"bufferView": @(uv), @"componentType": @5126, @"count": @4, @"type": @"VEC2"},
+            @{@"bufferView": @(iv), @"componentType": @5123, @"count": @6, @"type": @"SCALAR"}],
+        @"bufferViews": views,
+        @"buffers": @[@{@"byteLength": @(bin.size())}],
+        @"materials": @[material],
+        @"textures": @[@{@"source": @0, @"sampler": @0}, @{@"source": @1, @"sampler": @0}, @{@"source": @2, @"sampler": @0}],
+        @"images": imageObjects,
+        @"samplers": @[@{@"magFilter": @9729, @"minFilter": @9987, @"wrapS": @10497, @"wrapT": @10497}]};
+    NSData* jsonData = [NSJSONSerialization dataWithJSONObject:gltf options:NSJSONWritingSortedKeys error:nil];
+    std::vector<uint8_t> json(static_cast<const uint8_t*>(jsonData.bytes), static_cast<const uint8_t*>(jsonData.bytes) + jsonData.length);
+    align4(json, ' ');
+    std::vector<uint8_t> glb;
+    put32(glb, 0x46546C67);  // "glTF"
+    put32(glb, 2);
+    put32(glb, static_cast<uint32_t>(12 + 8 + json.size() + 8 + bin.size()));
+    put32(glb, static_cast<uint32_t>(json.size())); put32(glb, 0x4E4F534A);  // "JSON"
+    append(glb, json.data(), json.size());
+    put32(glb, static_cast<uint32_t>(bin.size())); put32(glb, 0x004E4942);   // "BIN\0"
+    append(glb, bin.data(), bin.size());
+    writeFile(output, glb);
+}
+
+// ---- USDZ -----------------------------------------------------------------------------------------------
+
+// A stored (uncompressed) ZIP whose file data starts on 64-byte boundaries, as USDZ requires.
+std::vector<uint8_t> usdzArchive(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& files) {
+    std::vector<uint8_t> zip, central;
+    auto put16 = [](std::vector<uint8_t>& v, uint16_t x) { v.push_back(x & 255); v.push_back(x >> 8); };
+    auto put32le = [](std::vector<uint8_t>& v, uint32_t x) { for (int i = 0; i < 4; ++i) v.push_back((x >> (8 * i)) & 255); };
+    for (const auto& [name, data] : files) {
+        const uint32_t offset = static_cast<uint32_t>(zip.size());
+        const uint32_t crc = static_cast<uint32_t>(crc32(0, data.data(), static_cast<uInt>(data.size())));
+        const size_t padding = (64 - (offset + 30 + name.size() + 4) % 64) % 64;
+        const uint16_t extraLength = static_cast<uint16_t>(4 + padding);
+        put32le(zip, 0x04034b50); put16(zip, 20); put16(zip, 0); put16(zip, 0); put16(zip, 0); put16(zip, 0);
+        put32le(zip, crc); put32le(zip, static_cast<uint32_t>(data.size())); put32le(zip, static_cast<uint32_t>(data.size()));
+        put16(zip, static_cast<uint16_t>(name.size())); put16(zip, extraLength);
+        append(zip, name.data(), name.size());
+        put16(zip, 0x1986); put16(zip, static_cast<uint16_t>(padding));  // Padding extra field.
+        zip.insert(zip.end(), padding, 0);
+        if (zip.size() % 64) throw std::runtime_error("USDZ alignment failed");
+        append(zip, data.data(), data.size());
+        put32le(central, 0x02014b50); put16(central, 20); put16(central, 20); put16(central, 0); put16(central, 0);
+        put16(central, 0); put16(central, 0); put32le(central, crc);
+        put32le(central, static_cast<uint32_t>(data.size())); put32le(central, static_cast<uint32_t>(data.size()));
+        put16(central, static_cast<uint16_t>(name.size())); put16(central, 0); put16(central, 0); put16(central, 0);
+        put16(central, 0); put32le(central, 0); put32le(central, offset);
+        append(central, name.data(), name.size());
+    }
+    const uint32_t centralOffset = static_cast<uint32_t>(zip.size());
+    append(zip, central.data(), central.size());
+    put32le(zip, 0x06054b50); put16(zip, 0); put16(zip, 0);
+    put16(zip, static_cast<uint16_t>(files.size())); put16(zip, static_cast<uint16_t>(files.size()));
+    put32le(zip, static_cast<uint32_t>(central.size())); put32le(zip, centralOffset); put16(zip, 0);
+    return zip;
+}
+
+void exportUSDZ(const Material& m, const fs::path& output) {
+    const uint32_t n = m.size();
+    // UsdPreviewSurface on a 1 m plane facing +Z; st origin is the image's bottom-left, as USD specifies.
+    const std::string usda = R"(#usda 1.0
+(
+    defaultPrim = "Material_Lab"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "Material_Lab" (
+    kind = "component"
+)
+{
+    def Mesh "Plane" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        float3[] extent = [(-0.5, -0.5, 0), (0.5, 0.5, 0)]
+        int[] faceVertexCounts = [4]
+        int[] faceVertexIndices = [0, 1, 2, 3]
+        rel material:binding = </Material_Lab/Materials/Surface>
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        point3f[] points = [(-0.5, -0.5, 0), (0.5, -0.5, 0), (0.5, 0.5, 0), (-0.5, 0.5, 0)]
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "vertex"
+        )
+        uniform token subdivisionScheme = "none"
+    }
+
+    def Scope "Materials"
+    {
+        def Material "Surface"
+        {
+            token outputs:surface.connect = </Material_Lab/Materials/Surface/PreviewSurface.outputs:surface>
+
+            def Shader "PreviewSurface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Material_Lab/Materials/Surface/Albedo.outputs:rgb>
+                float inputs:roughness.connect = </Material_Lab/Materials/Surface/ORM.outputs:g>
+                float inputs:metallic.connect = </Material_Lab/Materials/Surface/ORM.outputs:b>
+                float inputs:occlusion.connect = </Material_Lab/Materials/Surface/ORM.outputs:r>
+                normal3f inputs:normal.connect = </Material_Lab/Materials/Surface/Normal.outputs:rgb>
+                token outputs:surface
+            }
+
+            def Shader "PrimvarReader"
+            {
+                uniform token info:id = "UsdPrimvarReader_float2"
+                string inputs:varname = "st"
+                float2 outputs:result
+            }
+
+            def Shader "Albedo"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/albedo.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float2 inputs:st.connect = </Material_Lab/Materials/Surface/PrimvarReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "Normal"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/normal.png@
+                token inputs:sourceColorSpace = "raw"
+                float4 inputs:scale = (2, 2, 2, 1)
+                float4 inputs:bias = (-1, -1, -1, 0)
+                float2 inputs:st.connect = </Material_Lab/Materials/Surface/PrimvarReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float3 outputs:rgb
+            }
+
+            def Shader "ORM"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/orm.png@
+                token inputs:sourceColorSpace = "raw"
+                float2 inputs:st.connect = </Material_Lab/Materials/Surface/PrimvarReader.outputs:result>
+                token inputs:wrapS = "repeat"
+                token inputs:wrapT = "repeat"
+                float outputs:r
+                float outputs:g
+                float outputs:b
+            }
+        }
+    }
+}
+)";
+    const std::vector<std::pair<std::string, std::vector<uint8_t>>> files = {
+        {"Material_Lab.usda", std::vector<uint8_t>(usda.begin(), usda.end())},
+        {"textures/albedo.png", albedoPNG(m)},
+        {"textures/normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false)},
+        {"textures/orm.png", encodeRGBA8(n, n, ormRGBA(m), false)}};
+    writeFile(output, usdzArchive(files));
+}
+
+} // namespace
+
+int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output) {
+    static const char* const formats[] = {"glb", "usdz", "unreal", "unity-hdrp", "godot", "blender"};
+    if (std::find_if(std::begin(formats), std::end(formats), [&](const char* f) { return format == f; }) == std::end(formats))
+        throw std::runtime_error("unknown export format: " + format + " (use glb, usdz, unreal, unity-hdrp, godot or blender)");
+    if (fs::exists(fs::symlink_status(output))) throw std::runtime_error("export output already exists: " + output.string());
+    const Material material = load(bundle);
+    if (format == "glb") exportGLB(material, output);
+    else if (format == "usdz") exportUSDZ(material, output);
+    else exportFolder(bundle, material, format, output);
+    std::cout << output.string() << '\n';
+    return 0;
+}
+
+} // namespace mltools

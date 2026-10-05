@@ -5,6 +5,7 @@ import hashlib
 import os
 import uuid
 import json
+import shutil
 import pathlib
 import struct
 import subprocess
@@ -404,7 +405,7 @@ def main() -> None:
         # Bundle tools: --info (text and JSON), --contact-sheet, --diff; each validates its bundles first.
         # Fresh bundles: earlier cases tamper with theirs.
         tool_a, tool_b = root / "tool-a.pbrmaterial", root / "tool-b.pbrmaterial"
-        run(cli, "--input", str(image), "--output", str(tool_a), "--preset", "stone")
+        run(cli, "--input", str(image), "--output", str(tool_a), "--preset", "stone", "--label", "tool a")
         run(cli, "--input", str(image), "--output", str(tool_b), "--preset", "stone", "--normal-dx")
         tool_manifest = json.loads((tool_a / "manifest.json").read_text())
         info = run(cli, "--info", str(tool_a)).stdout
@@ -421,6 +422,46 @@ def main() -> None:
         assert changed["identical"] is False and any(c["key"] == "normal_y_down" for c in changed["recipe_changes"])
         run(cli, "--info", str(root / "missing.pbrmaterial"), expect_success=False)
         run(cli, "--info", str(tool_a), "--input", str(image), expect_success=False)  # Tools exclude derive options.
+
+        # Exports: glTF binary, USDZ (64-byte aligned stored ZIP) and engine folders.
+        exports = root / "exports"
+        exports.mkdir()
+        glb = exports / "m.glb"
+        run(cli, "--export", str(tool_a), "--format", "glb", "--output", str(glb))
+        blob = glb.read_bytes()
+        assert blob[:4] == b"glTF" and struct.unpack_from("<I", blob, 8)[0] == len(blob)
+        json_length = struct.unpack_from("<I", blob, 12)[0]
+        gltf = json.loads(blob[20:20 + json_length])
+        material = gltf["materials"][0]
+        assert material["normalTexture"]["index"] == 1 and material["pbrMetallicRoughness"]["metallicFactor"] == 0
+        usdz = exports / "m.usdz"
+        run(cli, "--export", str(tool_a), "--format", "usdz", "--output", str(usdz))
+        import zipfile
+        with zipfile.ZipFile(usdz) as archive:
+            names = archive.namelist()
+            assert names[0].endswith(".usda") and "textures/normal.png" in names
+            raw = usdz.read_bytes()
+            for entry in archive.infolist():
+                assert entry.compress_type == zipfile.ZIP_STORED
+                # The alignment padding lives in the local header's extra field (the central copy is empty).
+                name_length, extra_length = struct.unpack_from("<HH", raw, entry.header_offset + 26)
+                data_offset = entry.header_offset + 30 + name_length + extra_length
+                assert data_offset % 64 == 0, (entry.filename, data_offset)
+        if shutil.which("usdchecker"):
+            check = subprocess.run(["usdchecker", "--arkit", str(usdz)], capture_output=True, text=True)
+            assert check.returncode == 0, check.stdout + check.stderr
+        for fmt, expected in (("unreal", "T_ToolA_Normal.png"), ("unity-hdrp", "ToolA_MaskMap.png"),
+                              ("godot", "tool_a_orm.png"), ("blender", "tool_a_roughness.png")):
+            folder = exports / fmt
+            run(cli, "--export", str(tool_a), "--format", fmt, "--output", str(folder))
+            assert (folder / expected).exists(), sorted(p.name for p in folder.iterdir())
+            assert json.loads((folder / "material-lab-export.json").read_text())["format"] == fmt
+        # Unreal gets DirectX normals: green is inverted relative to the +Y bundle.
+        _, _, nbpp, bundle_rows = read_png(tool_a / "normal.png")
+        _, _, _, unreal_rows = read_png(exports / "unreal" / "T_ToolA_Normal.png")
+        assert unreal_rows[3][1] == 255 - bundle_rows[3][1]
+        run(cli, "--export", str(tool_a), "--format", "fbx", "--output", str(exports / "x"), expect_success=False)
+        run(cli, "--export", str(tool_a), "--format", "glb", "--output", str(glb), expect_success=False)  # Exists.
 
         # Non-ASCII labels survive; a bare relative --output lands in the working directory.
         label = "ardoise \u00e9clat \u77f3"
