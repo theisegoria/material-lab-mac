@@ -401,6 +401,27 @@ def main() -> None:
         (repaired / "manifest.json").write_text(json.dumps(repaired_good))
         run(cli, "--validate", str(repaired))
 
+        # Bundle tools: --info (text and JSON), --contact-sheet, --diff; each validates its bundles first.
+        # Fresh bundles: earlier cases tamper with theirs.
+        tool_a, tool_b = root / "tool-a.pbrmaterial", root / "tool-b.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(tool_a), "--preset", "stone")
+        run(cli, "--input", str(image), "--output", str(tool_b), "--preset", "stone", "--normal-dx")
+        tool_manifest = json.loads((tool_a / "manifest.json").read_text())
+        info = run(cli, "--info", str(tool_a)).stdout
+        assert "Material Lab bundle" in info and "Recipe" in info and "Admitted" in info, info
+        info_json = json.loads(run(cli, "--info", str(tool_a), "--json").stdout)
+        assert info_json["algorithm_version"] == tool_manifest["algorithm_version"] and "albedo" in info_json["maps"]
+        sheet = root / "sheet.png"
+        run(cli, "--contact-sheet", str(tool_a), "--output", str(sheet))
+        width, height, bpp, rows = read_png(sheet)
+        assert width > 400 and height > 300 and bpp == 4
+        same = json.loads(run(cli, "--diff", str(tool_a), str(tool_a), "--json").stdout)
+        assert same["identical"] is True
+        changed = json.loads(run(cli, "--diff", str(tool_a), str(tool_b), "--json").stdout)
+        assert changed["identical"] is False and any(c["key"] == "normal_y_down" for c in changed["recipe_changes"])
+        run(cli, "--info", str(root / "missing.pbrmaterial"), expect_success=False)
+        run(cli, "--info", str(tool_a), "--input", str(image), expect_success=False)  # Tools exclude derive options.
+
         # Non-ASCII labels survive; a bare relative --output lands in the working directory.
         label = "ardoise \u00e9clat \u77f3"
         run(cli, "--input", str(image), "--output", "bare", "--label", label, cwd=root)

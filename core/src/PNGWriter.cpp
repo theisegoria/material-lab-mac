@@ -144,7 +144,7 @@ bool writeFileAtomically(const std::string& path, const std::vector<uint8_t>& by
     return true;
 }
 
-bool inspectPNG(const uint8_t* p, size_t size, PNGInfo& info, std::string& error) {
+bool inspectPNG(const uint8_t* p, size_t size, PNGInfo& info, std::string& error, std::vector<uint8_t>* pixels) {
     static constexpr uint8_t signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
     info = PNGInfo{};
     if (!p || size < 8 + 25 + 12 || std::memcmp(p, signature, 8)) { error = "not a PNG"; return false; }
@@ -212,6 +212,7 @@ bool inspectPNG(const uint8_t* p, size_t size, PNGInfo& info, std::string& error
     }
     // Reconstruct every row so a corrupt filter type is caught (and the data is actually decoded).
     std::vector<uint8_t> prior(stride, 0), row(stride);
+    if (pixels) { pixels->clear(); pixels->reserve(stride * info.height); }
     for (uint32_t y = 0; y < info.height; ++y) {
         const uint8_t* line = raw.data() + static_cast<size_t>(y) * (stride + 1);
         int type = line[0];
@@ -220,6 +221,7 @@ bool inspectPNG(const uint8_t* p, size_t size, PNGInfo& info, std::string& error
             int a = i >= bpp ? row[i - bpp] : 0, c = i >= bpp ? prior[i - bpp] : 0;
             row[i] = unfilterValue(type, line[1 + i], a, prior[i], c);
         }
+        if (pixels) pixels->insert(pixels->end(), row.begin(), row.end());
         prior.swap(row);
     }
     return true;

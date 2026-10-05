@@ -20,5 +20,8 @@ struct PNGInfo {
 // Structural decode: signature, chunk CRCs, IHDR-first/IEND-last ordering, and a full zlib inflate whose
 // size and per-row filter types must match IHDR exactly. Trailing bytes after IEND are rejected.
 // Supports the non-palette, non-interlaced 8/16-bit layouts Material Lab writes; others are rejected.
-bool inspectPNG(const uint8_t* bytes, size_t size, PNGInfo& info, std::string& error);
+// When `pixels` is given it receives the reconstructed samples, row-major and tightly packed, 16-bit samples
+// big-endian as stored. No colour management is applied: map PNGs are data.
+bool inspectPNG(const uint8_t* bytes, size_t size, PNGInfo& info, std::string& error,
+                std::vector<uint8_t>* pixels = nullptr);
 }

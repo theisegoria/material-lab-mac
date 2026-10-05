@@ -8,6 +8,7 @@
 #include <dispatch/dispatch.h>
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
+#include "tools/Tools.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -223,6 +224,12 @@ struct Options {
     bool learnedCpuOnly = false, guideWeightSet = false;
     bool includeUnreviewed = false, keepGoing = false;
     double preUpscaleTimeout = 600;
+    // Bundle tools (src/tools): each takes validated bundles.
+    fs::path infoBundle, contactSheetBundle, exportBundle;
+    std::vector<fs::path> diffBundles;
+    std::string exportFormat;
+    bool json = false;
+    bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty(); }
 };
 PBRLabPreset parsePreset(const std::string& s) {
     if (s == "flat") return PBRLabPresetFlat;
@@ -333,6 +340,12 @@ Options parse(int argc, const char** argv) {
             o.preUpscaleTimeout = number(value());
             if (o.preUpscaleTimeout <= 0 || o.preUpscaleTimeout > 86400) throw std::runtime_error("--pre-upscale-timeout must be 0..86400 seconds");
         }
+        else if (flag == "--info") o.infoBundle = value();
+        else if (flag == "--contact-sheet") o.contactSheetBundle = value();
+        else if (flag == "--diff") { o.diffBundles.push_back(value()); o.diffBundles.push_back(value()); }
+        else if (flag == "--export") o.exportBundle = value();
+        else if (flag == "--format") o.exportFormat = value();
+        else if (flag == "--json") o.json = true;
         else if (flag == "--help") { std::cout << kUsage; std::exit(0); }
         else throw std::runtime_error("unknown option: " + flag);
     }
@@ -348,7 +361,14 @@ Options parse(int argc, const char** argv) {
         throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
         throw std::runtime_error("--save-guide-normals needs --learned-normals and a single --input");
-    if (!o.validate.empty()) {
+    if (o.usesTool()) {
+        const int tools = !o.infoBundle.empty() + !o.contactSheetBundle.empty() + !o.exportBundle.empty() + !o.diffBundles.empty();
+        if (tools != 1 || !o.input.empty() || !o.catalog.empty() || !o.validate.empty())
+            throw std::runtime_error("use one of --info, --contact-sheet, --diff or --export at a time, without derive options");
+        if (!o.contactSheetBundle.empty() && o.output.empty()) throw std::runtime_error("--contact-sheet needs --output SHEET.png");
+        if (!o.exportBundle.empty() && (o.output.empty() || o.exportFormat.empty()))
+            throw std::runtime_error("--export needs --format and --output");
+    } else if (!o.validate.empty()) {
         if (!o.input.empty() || !o.catalog.empty() || !o.output.empty() ||
             !o.preUpscaleExec.empty() || !o.preUpscaleArgs.empty())
             throw std::runtime_error("--validate cannot be combined with derive options");
@@ -939,7 +959,7 @@ void validateMapPNG(NSData* file, const MapRole& role, const std::string& label,
     if (!matches) throw std::runtime_error("PNG decode disagrees with header: " + label);
     width = info.width; height = info.height;
 }
-void validate(const fs::path& bundle) {
+void validate(const fs::path& bundle, bool quiet = false) {
     const fs::path manifestPath = bundle / "manifest.json";
     NSData* data = boundedDataAt(manifestPath, 4 * 1024 * 1024);
     if (!fs::is_directory(bundle) || !data) throw std::runtime_error("bundle manifest missing, linked, or oversized");
@@ -1112,7 +1132,7 @@ void validate(const fs::path& bundle) {
     } else if (source[@"processed_sha256"]) {
         throw std::runtime_error("processed source hash has no pre-upscale provenance");
     }
-    std::cout << "valid: " << bundle.string() << " (" << maps.count << " maps)\n";
+    if (!quiet) std::cout << "valid: " << bundle.string() << " (" << maps.count << " maps)\n";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1349,6 +1369,20 @@ int batch(const Options& options) {
 
 int run(int argc, const char** argv) {
     Options options = parse(argc, argv);
+    if (options.usesTool()) {
+        // Tools trust the bundle layout, so every bundle passes the full validator first.
+        auto checked = [](const fs::path& bundle) {
+            if (!fs::is_directory(bundle)) throw std::runtime_error("not a .pbrmaterial bundle: " + bundle.string());
+            validate(bundle, true);
+            return bundle;
+        };
+        if (!options.infoBundle.empty()) return mltools::info(checked(options.infoBundle), options.json);
+        if (!options.contactSheetBundle.empty())
+            return mltools::contactSheet(checked(options.contactSheetBundle), options.output);
+        if (!options.diffBundles.empty())
+            return mltools::diff(checked(options.diffBundles[0]), checked(options.diffBundles[1]), options.json);
+        return mltools::exportBundle(checked(options.exportBundle), options.exportFormat, options.output);
+    }
     if (!options.validate.empty()) {
         if (fs::is_directory(options.validate)) validate(options.validate);
         else validateCapture(options.validate);
