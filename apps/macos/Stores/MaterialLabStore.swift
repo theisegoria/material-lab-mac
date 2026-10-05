@@ -84,6 +84,8 @@ final class MaterialLabStore {
     var alert: MaterialAlert?
     var lastExportURL: URL?
     var includeUnreviewedBatch = false
+    /// Named recipes the user saved, newest first.
+    private(set) var savedRecipes: [SavedRecipe] = []
     var metadataEditorSource: MaterialSource?
     let link = LocalLinkService()
     let learned = LearnedModelStore()
@@ -177,6 +179,7 @@ final class MaterialLabStore {
                 self.status = "Capture imported from iPhone and checksum verified."
             }
             recipesBySource = MaterialLibrary.loadRecipes()
+            savedRecipes = MaterialLibrary.loadSavedRecipes()
             sources = MaterialLibrary.loadSavedSources() + MaterialLibrary.loadInbox()
             if let savedCatalog = UserDefaults.standard.string(forKey: "materialLab.catalogPath") {
                 let url = URL(fileURLWithPath: savedCatalog)
@@ -283,6 +286,41 @@ final class MaterialLabStore {
             MainActor.assumeIsolated { store.restoreRecipe(oldValue, for: id) }
         }
         undoManager.setActionName("Recipe Change")
+    }
+
+    // MARK: - Saved recipes
+
+    /// Saves the current recipe under `name` (replacing one with the same name). Side inputs stay per source.
+    func saveCurrentRecipe(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var stored = recipe
+        stored.reliefMaskURL = nil
+        stored.heightOverrideURL = nil
+        savedRecipes.removeAll { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
+        savedRecipes.insert(SavedRecipe(name: trimmed, recipe: stored), at: 0)
+        persistSavedRecipes()
+        status = "Saved recipe “\(trimmed)”."
+    }
+
+    /// Applies a saved recipe to the selected source, keeping that source's relief mask and height override.
+    func applySavedRecipe(_ saved: SavedRecipe) {
+        var next = saved.recipe
+        next.reliefMaskURL = recipe.reliefMaskURL
+        next.heightOverrideURL = recipe.heightOverrideURL
+        resetUndoCoalescing()
+        recipe = next
+        undoManager?.setActionName("Apply “\(saved.name)”")
+    }
+
+    func deleteSavedRecipe(_ saved: SavedRecipe) {
+        savedRecipes.removeAll { $0.id == saved.id }
+        persistSavedRecipes()
+    }
+
+    private func persistSavedRecipes() {
+        do { try MaterialLibrary.saveSavedRecipes(savedRecipes) }
+        catch { alert = MaterialAlert(message: "Could not save recipes: \(error.localizedDescription)") }
     }
 
     /// Starts the next edit as a new undo step.

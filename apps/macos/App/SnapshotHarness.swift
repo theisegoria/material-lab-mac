@@ -37,6 +37,7 @@ enum SnapshotHarness {
         }
         await waitForDerivation(store)
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
+        if environment["MATERIAL_LAB_SNAPSHOT_PRESET_CHECK"] != nil { await presetCheck(store: store) }
         for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
         print("learned model at launch:", store.learned.statusTitle, store.learned.info?.origin.rawValue ?? "-",
               store.learned.info?.modelFile ?? "-")
@@ -105,6 +106,26 @@ enum SnapshotHarness {
             await capture(directory.appendingPathComponent("\(prefix)-link-\(appearanceName).png"))
         }
         NSApp.terminate(nil)
+    }
+
+    /// Self-check for saved recipes: save, edit, apply restores, file round-trips; renders the row; cleans up.
+    private static func presetCheck(store: MaterialLabStore) async {
+        let name = "Harness check \(UUID().uuidString.prefix(6))"
+        store.recipe.heightStrength = 0.31
+        store.saveCurrentRecipe(named: name)
+        store.recipe.heightStrength = 0.07
+        guard let saved = store.savedRecipes.first(where: { $0.name == name }) else { print("preset-check: FAIL not saved"); return }
+        store.applySavedRecipe(saved)
+        let onDisk = MaterialLibrary.loadSavedRecipes().first { $0.name == name }
+        let ok = store.recipe.heightStrength == 0.31 && onDisk?.recipe.heightStrength == 0.31
+        print("preset-check:", ok ? "PASS" : "FAIL", "applied", store.recipe.heightStrength, "on disk", onDisk?.recipe.heightStrength ?? -1)
+        if let directory = environment["MATERIAL_LAB_SNAPSHOT_DIR"], let source = store.selectedSource {
+            await renderStandalone(RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 420),
+                                   appearance: .aqua,
+                                   to: URL(fileURLWithPath: directory).appendingPathComponent("preset-row.png"))
+        }
+        store.deleteSavedRecipe(saved)
+        print("preset-check: cleaned up", !MaterialLibrary.loadSavedRecipes().contains { $0.name == name })
     }
 
     /// Self-check for recipe undo: a burst of edits is one step, a later edit another; undo and redo walk them.

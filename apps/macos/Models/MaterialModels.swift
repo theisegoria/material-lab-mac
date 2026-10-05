@@ -106,6 +106,15 @@ struct MaterialRecipe: Equatable, Sendable {
     var normalConvention: String { normalYDown ? "-Y" : "+Y" }
 }
 
+/// A named recipe the user saved to reuse on other sources (relief mask and height override are per source and
+/// never saved here).
+struct SavedRecipe: Codable, Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var name: String
+    var recipe: MaterialRecipe
+    var saved = Date()
+}
+
 /// Persisted per source (MaterialLibrary.recipes). Every field decodes optionally on top of the preset's
 /// defaults, so recipes saved by older builds keep loading as fields are added.
 extension MaterialRecipe: Codable {

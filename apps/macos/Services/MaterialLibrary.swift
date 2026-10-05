@@ -39,6 +39,18 @@ enum MaterialLibrary {
     private static var savedSourcesURL: URL { appSupport.appendingPathComponent("sources.json") }
     private static var metadataURL: URL { appSupport.appendingPathComponent("source-metadata.json") }
     private static var recipesURL: URL { appSupport.appendingPathComponent("recipes.json") }
+    private static var savedRecipesURL: URL { appSupport.appendingPathComponent("saved-recipes.json") }
+
+    static func loadSavedRecipes() -> [SavedRecipe] {
+        guard let data = try? Data(contentsOf: savedRecipesURL),
+              let recipes = try? JSONDecoder().decode([SavedRecipe].self, from: data) else { return [] }
+        return recipes
+    }
+
+    static func saveSavedRecipes(_ recipes: [SavedRecipe]) throws {
+        try prepareDirectories()
+        try JSONEncoder().encode(recipes).write(to: savedRecipesURL, options: .atomic)
+    }
 
     /// Per-source recipes, keyed by source ID, so tuning survives relaunch.
     static func loadRecipes() -> [String: MaterialRecipe] {

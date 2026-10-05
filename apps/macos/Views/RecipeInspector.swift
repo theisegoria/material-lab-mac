@@ -16,6 +16,7 @@ struct RecipeInspector: View {
                         Label(preset.title, systemImage: preset.symbol).tag(preset)
                     }
                 }
+                SavedRecipesRow(store: store)
                 Toggle("Live update", isOn: $store.autoDerive)
                     .help("Re-derive automatically ~150 ms after each change (⌥⌘R)")
             } footer: {
@@ -303,6 +304,59 @@ private struct LearnedGeometryRow: View {
             return "MoGe-2 · \(units) · \(Int((seconds * 1000).rounded())) ms, reused while editing"
         }
         return "MoGe-2 · \(units)"
+    }
+}
+
+/// Apply, save and delete named recipes.
+private struct SavedRecipesRow: View {
+    @Bindable var store: MaterialLabStore
+    @State private var naming = false
+    @State private var name = ""
+
+    var body: some View {
+        LabeledContent("Saved recipes") {
+            Menu {
+                if store.savedRecipes.isEmpty {
+                    Text("No saved recipes yet")
+                } else {
+                    Section("Apply") {
+                        ForEach(store.savedRecipes) { saved in
+                            Button {
+                                store.applySavedRecipe(saved)
+                            } label: {
+                                Label(saved.name, systemImage: saved.recipe.preset.symbol)
+                            }
+                        }
+                    }
+                    Menu("Delete", systemImage: "trash") {
+                        ForEach(store.savedRecipes) { saved in
+                            Button(saved.name, role: .destructive) { store.deleteSavedRecipe(saved) }
+                        }
+                    }
+                }
+                Divider()
+                Button("Save Current Recipe…", systemImage: "square.and.arrow.down") {
+                    name = ""
+                    naming = true
+                }
+            } label: {
+                Label(store.savedRecipes.isEmpty ? "None" : "\(store.savedRecipes.count)",
+                      systemImage: "bookmark")
+            }
+            .menuStyle(.button)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .fixedSize()
+            .help("Apply a recipe you saved, or save this one to reuse on other sources")
+        }
+        .alert("Save Recipe", isPresented: $naming) {
+            TextField("Name, e.g. Wet slate", text: $name)
+            Button("Save") { store.saveCurrentRecipe(named: name) }
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves every setting except this source's relief mask and height override. A recipe with the same name is replaced.")
+        }
     }
 }
 
