@@ -53,8 +53,11 @@ open(sys.argv[1], "wb").write(png)
 PY
 learned_flag=()
 [[ -d "$stage/share/material-lab/MoGe2Normals.mlmodelc" ]] && learned_flag=(--learned)
-"$stage/bin/material-lab" --input "$scratch/in.png" --output "$scratch/out" --preset stone "${learned_flag[@]}" \
-  --also-export glb >/dev/null
+# Run it as Homebrew does: a bin/ symlink found on $PATH by bare name, from an unrelated directory.
+mkdir -p "$scratch/brew/bin" "$scratch/elsewhere"
+ln -s "$stage/bin/material-lab" "$scratch/brew/bin/material-lab"
+(cd "$scratch/elsewhere" && HOME=/nonexistent PATH="$scratch/brew/bin:/usr/bin:/bin" material-lab \
+  --input "$scratch/in.png" --output "$scratch/out" --preset stone "${learned_flag[@]}" --also-export glb >/dev/null)
 "$stage/bin/material-lab" --validate "$scratch/out.pbrmaterial" >/dev/null
 "$stage/bin/material-lab" --info "$scratch/out.pbrmaterial" | grep -q "Material Lab bundle"
 

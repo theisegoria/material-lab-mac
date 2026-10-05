@@ -20,5 +20,9 @@ class MaterialLab < Formula
 
   test do
     assert_match "material-lab #{version}", shell_output("#{bin}/material-lab --version")
+    # --learned must find the bundled model when run by bare name from PATH (the 1.0.0 bug).
+    with_env(PATH: "#{bin}:#{ENV["PATH"]}", HOME: testpath.to_s) do
+      assert_match "material-lab #{version}", shell_output("material-lab --learned --version")
+    end
   end
 end

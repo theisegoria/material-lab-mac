@@ -6,6 +6,7 @@
 #import <CoreML/CoreML.h>
 #import <CoreVideo/CoreVideo.h>
 #include <dispatch/dispatch.h>
+#include <mach-o/dyld.h>
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
 #include "tools/Tools.hpp"
@@ -266,7 +267,7 @@ float number(const std::string& s) {
     if (parsed != s.size() || !std::isfinite(n)) throw std::runtime_error("invalid number: " + s);
     return n;
 }
-constexpr const char* kCLIVersion = "1.0.0";
+constexpr const char* kCLIVersion = "1.0.1";
 
 // --learned: the model shipped beside the binary (<prefix>/share/material-lab), the one the Mac app installs,
 // or MATERIAL_LAB_MODEL. Returns an empty path when none is found.
@@ -274,7 +275,13 @@ fs::path findLearnedModel(const char* argv0) {
     std::vector<fs::path> candidates;
     if (const char* env = getenv("MATERIAL_LAB_MODEL")) candidates.emplace_back(env);
     std::error_code ec;
-    fs::path executable = fs::canonical(fs::absolute(argv0), ec);
+    // argv[0] is a bare name when the tool runs from $PATH (e.g. Homebrew's bin symlink); ask dyld for the real path.
+    fs::path executable;
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) executable = fs::canonical(buffer.c_str(), ec);
+    if (executable.empty()) executable = fs::canonical(fs::absolute(argv0), ec);
     if (!ec) {
         const fs::path prefix = executable.parent_path().parent_path();
         candidates.push_back(prefix / "share/material-lab/MoGe2Normals.mlmodelc");
