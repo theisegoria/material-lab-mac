@@ -1,3 +1,4 @@
+import Accelerate
 import CoreGraphics
 import CoreML
 import CoreVideo
@@ -76,6 +77,17 @@ struct GuideNormals: @unchecked Sendable {
     let model: LearnedModelInfo
     let inferenceDuration: TimeInterval
     let wasCached: Bool
+    /// A quick single-tile estimate shown while the full-quality field is computed; never exported.
+    var isCoarse = false
+}
+
+/// Learned-inference progress for the UI: passes done, total, and an estimate of the time left.
+struct LearnedProgress: Sendable, Equatable {
+    var pass: Int
+    var passes: Int
+    var remaining: TimeInterval?
+    var coarse: Bool
+    var fraction: Float { passes == 0 ? 0 : Float(pass) / Float(passes) }
 }
 
 /// Runs the Material Lab learned-normal contract (docs/LEARNED_NORMALS.md) through Core ML; the core's
@@ -309,36 +321,41 @@ final class LearnedNormalEstimator: @unchecked Sendable {
 
     // MARK: - Inference
 
-    func cachedGuide(sourceSHA256: String, wrap: Bool) -> GuideNormals? {
+    func cachedGuide(sourceSHA256: String, wrap: Bool, coarse: Bool = false) -> GuideNormals? {
         lock.lock(); defer { lock.unlock() }
         guard let info = installed else { return nil }
-        let key = Self.cacheKey(source: sourceSHA256, model: info, units: units, wrap: wrap)
+        let key = Self.cacheKey(source: sourceSHA256, model: info, units: units, wrap: wrap, coarse: coarse)
         return cache.first { $0.key == key }?.value
     }
 
     /// Guide normals for a square sRGB RGBA8 working image. Cached per (source hash, model, compute units),
-    /// so recipe edits never re-run inference. `willInfer` is called with tile progress in [0, 1] on a miss.
+    /// so recipe edits never re-run inference. `progress` reports passes and time left on a miss.
+    /// `coarse` tiles a 518² downscale (one tile, two passes) for an immediate preview; the full field follows.
     func guideNormals(
-        rgba: Data, size: Int, sourceSHA256: String, wrap: Bool,
+        rgba: Data, size: Int, sourceSHA256: String, wrap: Bool, coarse: Bool = false,
         shouldContinue: () -> Bool,
-        progress: (Float) -> Void
+        progress: (LearnedProgress) -> Void
     ) throws -> GuideNormals {
         if let hit = cachedGuide(sourceSHA256: sourceSHA256, wrap: wrap) { return hit }
+        if coarse, let hit = cachedGuide(sourceSHA256: sourceSHA256, wrap: wrap, coarse: true) { return hit }
         inferenceLock.lock()
         defer { inferenceLock.unlock() }
         if let hit = cachedGuide(sourceSHA256: sourceSHA256, wrap: wrap) { return hit }
+        if coarse, let hit = cachedGuide(sourceSHA256: sourceSHA256, wrap: wrap, coarse: true) { return hit }
         guard shouldContinue() else { throw LearnedNormalError.cancelled }
         lock.lock()
         let info = installed, unitSetting = units
         lock.unlock()
         guard let info else { throw LearnedNormalError.notInstalled }
-        progress(0)
+        progress(LearnedProgress(pass: 0, passes: 0, remaining: nil, coarse: coarse))
         let model = try prepare()
         guard shouldContinue() else { throw LearnedNormalError.cancelled }
         // Timed after loading: the figure reported is tiling + inference + encoding.
         let started = Date()
-        guard let tiler = rgba.withUnsafeBytes({ raw in
-            PBRLabGuideTilerCreate(raw.bindMemory(to: UInt8.self).baseAddress, size * 4, UInt32(size), wrap ? 1 : 0)
+        let tilerSize = coarse ? min(size, Self.tile) : size
+        let tilerInput = coarse && tilerSize < size ? try Self.downscale(rgba, from: size, to: tilerSize) : rgba
+        guard let tiler = tilerInput.withUnsafeBytes({ raw in
+            PBRLabGuideTilerCreate(raw.bindMemory(to: UInt8.self).baseAddress, tilerSize * 4, UInt32(tilerSize), wrap ? 1 : 0)
         }) else { throw LearnedNormalError.unexpectedOutput("could not prepare the estimator input") }
         defer { PBRLabGuideTilerFree(tiler) }
         let passes = PBRLabGuideTilerPassCount(tiler)
@@ -364,7 +381,11 @@ final class LearnedNormalEstimator: @unchecked Sendable {
                 }
                 guard added != 0 else { throw LearnedNormalError.unexpectedOutput("could not add a prediction") }
             }
-            progress(Float(pass + 1) / Float(passes))
+            let done = Int(pass) + 1
+            let perPass = Date().timeIntervalSince(started) / Double(done)
+            progress(LearnedProgress(pass: done, passes: Int(passes),
+                                     remaining: done < Int(passes) ? perPass * Double(Int(passes) - done) : 0,
+                                     coarse: coarse))
         }
         var encoded = Data(count: size * size * 4)
         let finished = encoded.withUnsafeMutableBytes { raw in
@@ -376,15 +397,15 @@ final class LearnedNormalEstimator: @unchecked Sendable {
             tiles: Int(PBRLabGuideTilerTileCount(tiler)), tiling: String(cString: PBRLabGuideTilerContract(tiler)),
             sha256: SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined(),
             computeUnits: unitSetting, model: info,
-            inferenceDuration: Date().timeIntervalSince(started), wasCached: false
+            inferenceDuration: Date().timeIntervalSince(started), wasCached: false, isCoarse: coarse
         )
         lock.lock()
         if installed == info {
-            let key = Self.cacheKey(source: sourceSHA256, model: info, units: unitSetting, wrap: wrap)
+            let key = Self.cacheKey(source: sourceSHA256, model: info, units: unitSetting, wrap: wrap, coarse: coarse)
             let cachedCopy = GuideNormals(
                 rgba8: guide.rgba8, size: guide.size, workResolution: guide.workResolution, tiles: guide.tiles,
                 tiling: guide.tiling, sha256: guide.sha256, computeUnits: guide.computeUnits, model: guide.model,
-                inferenceDuration: guide.inferenceDuration, wasCached: true
+                inferenceDuration: guide.inferenceDuration, wasCached: true, isCoarse: coarse
             )
             cache.removeAll { $0.key == key }
             cache.insert((key, cachedCopy), at: 0)
@@ -399,8 +420,25 @@ final class LearnedNormalEstimator: @unchecked Sendable {
         lock.lock(); cache.removeAll(); lock.unlock()
     }
 
-    private static func cacheKey(source: String, model: LearnedModelInfo, units: LearnedComputeUnits, wrap: Bool) -> String {
-        "\(source)|\(model.identity)|\(units.rawValue)|\(wrap)"
+    private static func cacheKey(source: String, model: LearnedModelInfo, units: LearnedComputeUnits, wrap: Bool,
+                                 coarse: Bool = false) -> String {
+        "\(source)|\(model.identity)|\(units.rawValue)|\(wrap)\(coarse ? "|coarse" : "")"
+    }
+
+    /// High-quality RGBA8 downscale for the coarse pass.
+    private static func downscale(_ rgba: Data, from size: Int, to target: Int) throws -> Data {
+        var output = Data(count: target * target * 4)
+        let status = rgba.withUnsafeBytes { inRaw in
+            output.withUnsafeMutableBytes { outRaw in
+                var source = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: inRaw.baseAddress!),
+                                           height: vImagePixelCount(size), width: vImagePixelCount(size), rowBytes: size * 4)
+                var destination = vImage_Buffer(data: outRaw.baseAddress!, height: vImagePixelCount(target),
+                                                 width: vImagePixelCount(target), rowBytes: target * 4)
+                return vImageScale_ARGB8888(&source, &destination, nil, vImage_Flags(kvImageHighQualityResampling))
+            }
+        }
+        guard status == kvImageNoError else { throw LearnedNormalError.unexpectedOutput("could not downscale for the coarse pass") }
+        return output
     }
 
     private static func makePixelBuffer() throws -> CVPixelBuffer {

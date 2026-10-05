@@ -28,16 +28,16 @@ final class DerivationControl: @unchecked Sendable {
     private var cancelled = false
     private var lastReported: Float = -1
     private let onProgress: @Sendable (Float) -> Void
-    private let onLearned: @Sendable (Float?) -> Void
+    private let onLearned: @Sendable (LearnedProgress?) -> Void
 
-    /// `onLearned` receives learned-inference tile progress in [0, 1], then nil when inference ends.
+    /// `onLearned` receives learned-inference pass progress, then nil when inference ends.
     init(onProgress: @escaping @Sendable (Float) -> Void,
-         onLearned: @escaping @Sendable (Float?) -> Void = { _ in }) {
+         onLearned: @escaping @Sendable (LearnedProgress?) -> Void = { _ in }) {
         self.onProgress = onProgress
         self.onLearned = onLearned
     }
 
-    func reportLearned(_ value: Float?) { onLearned(value) }
+    func reportLearned(_ value: LearnedProgress?) { onLearned(value) }
 
     func cancel() {
         lock.lock()
@@ -133,10 +133,13 @@ enum MaterialEngine {
         )
     }
 
+    /// `learnedCoarse` derives with a quick single-tile learned field unless the full one is already cached
+    /// (the store then refines in the background); exports always use the full field.
     static func derive(
         source: MaterialSource,
         recipe: MaterialRecipe,
-        control: DerivationControl
+        control: DerivationControl,
+        learnedCoarse: Bool = false
     ) throws -> DerivedMaterial {
         let started = Date()
         let working = try workingImage(for: source.url)
@@ -177,6 +180,7 @@ enum MaterialEngine {
                 defer { control.reportLearned(nil) }
                 guide = try LearnedNormalEstimator.shared.guideNormals(
                     rgba: pixels, size: targetSize, sourceSHA256: pixelsKey, wrap: recipe.tileWrap || repair != nil,
+                    coarse: learnedCoarse,
                     shouldContinue: { control.shouldContinue },
                     progress: { control.reportLearned($0) }
                 )
@@ -302,6 +306,9 @@ enum MaterialEngine {
             warnings.append("Opposite image edges differ; inspect the tiled view or turn on Repair albedo.")
         }
         if let guide {
+            if guide.isCoarse {
+                warnings.append("Learned geometry is a quick preview; the full-quality estimate is being computed.")
+            }
             warnings.append("Learned geometry (\(Int((recipe.guideNormalWeight * 100).rounded())) %) comes from \(LearnedNormalEstimator.estimatorName) on \(guide.computeUnits == .all ? "the Neural Engine; fp16 results can vary slightly between chips" : "the CPU").")
         }
         if recipe.normalYDown {

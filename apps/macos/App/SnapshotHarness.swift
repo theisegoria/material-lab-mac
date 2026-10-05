@@ -38,6 +38,7 @@ enum SnapshotHarness {
         await waitForDerivation(store)
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_PRESET_CHECK"] != nil { await presetCheck(store: store) }
+        if environment["MATERIAL_LAB_SNAPSHOT_COARSE_CHECK"] != nil { await coarseCheck(store: store) }
         for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
         print("learned model at launch:", store.learned.statusTitle, store.learned.info?.origin.rawValue ?? "-",
               store.learned.info?.modelFile ?? "-")
@@ -106,6 +107,32 @@ enum SnapshotHarness {
             await capture(directory.appendingPathComponent("\(prefix)-link-\(appearanceName).png"))
         }
         NSApp.terminate(nil)
+    }
+
+    /// Self-check for coarse-first learned geometry: time to the first learned result and to the refined one.
+    private static func coarseCheck(store: MaterialLabStore) async {
+        for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
+        guard store.learned.info != nil else { print("coarse-check: no learned model installed"); return }
+        // Warm the model on a different weight so the timings exclude first-load compilation.
+        _ = try? LearnedNormalEstimator.shared.prepare()
+        LearnedNormalEstimator.shared.clearCache()
+        let started = Date()
+        store.recipe.guideNormalWeight = 1
+        var coarseAt: TimeInterval?, refinedAt: TimeInterval?, blockedWhileCoarse = false
+        for _ in 0..<1200 {
+            try? await Task.sleep(for: .milliseconds(25))
+            guard let guide = store.currentMaterial?.guide else { continue }
+            if guide.isCoarse, coarseAt == nil {
+                coarseAt = Date().timeIntervalSince(started)
+                blockedWhileCoarse = store.exportBlocker != nil
+            }
+            if !guide.isCoarse, !store.isDeriving { refinedAt = Date().timeIntervalSince(started); break }
+        }
+        let ok = coarseAt != nil && refinedAt != nil && blockedWhileCoarse && store.exportBlocker == nil
+        print("coarse-check:", ok ? "PASS" : "FAIL",
+              "first learned result", coarseAt.map { String(format: "%.2f s", $0) } ?? "none",
+              "refined", refinedAt.map { String(format: "%.2f s", $0) } ?? "none",
+              "export blocked while coarse", blockedWhileCoarse)
     }
 
     /// Self-check for saved recipes: save, edit, apply restores, file round-trips; renders the row; cleans up.

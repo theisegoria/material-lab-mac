@@ -18,6 +18,8 @@ final class LearnedModelStore {
     private(set) var info: LearnedModelInfo?
     /// Tile progress of a running inference, nil when idle.
     var inferenceProgress: Float?
+    /// Pass count and time left for the running inference (nil when idle).
+    var inferenceDetail: LearnedProgress?
     var lastInferenceDuration: TimeInterval?
     var cpuOnly = UserDefaults.standard.bool(forKey: "materialLab.learnedCPUOnly") {
         didSet {

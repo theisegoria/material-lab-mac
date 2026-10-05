@@ -132,6 +132,7 @@ final class MaterialLabStore {
     /// Plain-language reason export is unavailable, or nil when it can proceed.
     var exportBlocker: String? {
         if isExporting { return "An export is already in progress." }
+        if currentMaterial?.guide?.isCoarse == true { return "Refining learned geometry. Export when it finishes." }
         if isBatching { return "Wait for the batch to finish before exporting." }
         guard selectedSource != nil else { return "Select a source to export." }
         guard currentMaterial != nil else { return "Derive maps before exporting." }
@@ -372,7 +373,8 @@ final class MaterialLabStore {
         }
     }
 
-    func deriveSelected() {
+    /// `coarseLearned`: show a quick learned estimate first, then refine automatically (interactive edits).
+    func deriveSelected(coarseLearned: Bool = true) {
         debounceTask?.cancel()
         debounceTask = nil
         guard let source = selectedSource, !isBatching else { return }
@@ -388,17 +390,21 @@ final class MaterialLabStore {
         }, onLearned: { [weak self] value in
             Task { @MainActor in
                 guard let self, self.deriveGeneration == generation else { return }
-                self.learned.inferenceProgress = value
+                self.learned.inferenceProgress = value?.fraction
+                self.learned.inferenceDetail = value
             }
         })
         deriveControl = control
         learned.inferenceProgress = nil
+        learned.inferenceDetail = nil
         progress = 0
         isDeriving = true
         derivationError = nil
         status = "Deriving maps for \(source.displayName)…"
         Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Result { try MaterialEngine.derive(source: source, recipe: chosenRecipe, control: control) }
+            let result = Result {
+                try MaterialEngine.derive(source: source, recipe: chosenRecipe, control: control, learnedCoarse: coarseLearned)
+            }
             await self?.finishDerivation(result, generation: generation, source: source, recipe: chosenRecipe)
         }
     }
@@ -411,6 +417,7 @@ final class MaterialLabStore {
         isDeriving = false
         deriveControl = nil
         learned.inferenceProgress = nil
+        learned.inferenceDetail = nil
         switch result {
         case .success(let value):
             guard selectedSourceID == source.id else { return }
@@ -424,6 +431,11 @@ final class MaterialLabStore {
                 ? "Derived \(value.maps.count) maps in \(ms) ms."
                 : "Recipe changed while deriving; updating…"
             if recipe != chosenRecipe, autoDerive { scheduleDerive() }
+            else if value.guide?.isCoarse == true {
+                // The quick learned field is on screen; compute the full-quality one now (then it is cached).
+                status = "Showing a quick learned estimate; refining…"
+                deriveSelected(coarseLearned: false)
+            }
         case .failure(let error):
             if case MaterialEngineError.cancelled = error { return }
             derivationError = error.localizedDescription

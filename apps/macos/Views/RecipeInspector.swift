@@ -279,7 +279,7 @@ private struct LearnedGeometryRow: View {
                     .progressViewStyle(.linear)
                     .controlSize(.mini)
                     .tint(.purple)
-                Text(value == 0 ? "Preparing learned model…" : "Estimating geometry \(Int(value * 100))%")
+                Text(learnedProgressText(value))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .fixedSize()
@@ -296,6 +296,16 @@ private struct LearnedGeometryRow: View {
             .foregroundStyle(.secondary)
             .transition(.opacity)
         }
+    }
+
+    private func learnedProgressText(_ value: Float) -> String {
+        guard let detail = learned.inferenceDetail, detail.passes > 0 else { return "Preparing learned model…" }
+        if detail.coarse { return "Quick estimate…" }
+        var text = "Refining · pass \(detail.pass) of \(detail.passes)"
+        if let remaining = detail.remaining, detail.pass >= 2, remaining >= 0.5 {
+            text += " · ~\(Int(remaining.rounded())) s"
+        }
+        return text
     }
 
     private var caption: String {
