@@ -145,4 +145,77 @@ final class MaterialCaptureUITests: XCTestCase {
         sleep(1)
         shot("10-mac")
     }
+
+    /// Marketing screenshots. Runs only when MARKETING_DIR is supplied
+    /// (`TEST_RUNNER_MARKETING_DIR=/path xcodebuild test -only-testing:MaterialCaptureUITests/testMarketingTour …`).
+    /// Expects the hero texture as the most recent photo in the simulator library.
+    func testMarketingTour() throws {
+        guard let directory = ProcessInfo.processInfo.environment["MARKETING_DIR"], !directory.isEmpty else {
+            throw XCTSkip("Set MARKETING_DIR to record marketing screenshots")
+        }
+        let suffix = ProcessInfo.processInfo.environment["MARKETING_SUFFIX"] ?? ""
+        let label = ProcessInfo.processInfo.environment["MARKETING_LABEL"] ?? "Red fireclay brick"
+        let app = launchFresh()
+        func toTop() {
+            let scroll = app.scrollViews.firstMatch
+            for _ in 0..<3 where scroll.exists { scroll.swipeDown(velocity: .fast) }
+        }
+        func shot(_ name: String, settle: UInt32 = 2, top: Bool = true) {
+            if top { toTop() }
+            sleep(settle)
+            let data = XCUIScreen.main.screenshot().pngRepresentation
+            try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name)\(suffix).png"))
+        }
+        XCTAssertTrue(app.buttons["Photos"].waitForExistence(timeout: 20))
+        importFirstPhoto(app)
+        let field = app.textFields["semantic-label"]
+        XCTAssertTrue(field.waitForExistence(timeout: 20))
+        field.tap()
+        field.typeText(label)
+        app.toolbars.buttons["Done"].firstMatch.tap()
+
+        // Material prior: stone.
+        let prior = app.buttons["material-prior"]
+        if prior.waitForExistence(timeout: 5) {
+            if !prior.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            prior.tap()
+            let stone = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Stone")).firstMatch
+            if stone.waitForExistence(timeout: 3) { stone.tap() }
+        }
+        // Learned geometry at full weight: expand the sheet and scroll to the slider.
+        app.buttons["open-recipe"].firstMatch.tap()
+        shot("04-recipe", settle: 3, top: false)
+        let learned = app.sliders.matching(NSPredicate(
+            format: "identifier == 'learned-geometry' OR label CONTAINS[c] 'Learned'")).firstMatch
+        for _ in 0..<8 where !(learned.exists && learned.isHittable) { app.swipeUp(velocity: .slow) }
+        if learned.exists, learned.isEnabled {
+            learned.adjust(toNormalizedSliderPosition: 1)
+        } else {
+            print("MARKETING: learned slider unavailable\n\(app.debugDescription)")
+        }
+        for _ in 0..<8 { app.swipeDown(velocity: .slow) }
+        app.buttons["recipe-done"].tap()
+        // Learned inference plus the live preview.
+        shot("01-albedo", settle: 30)
+
+        func chip(_ title: String) {
+            let button = app.buttons[title]
+            if button.waitForExistence(timeout: 3) { button.tap() }
+        }
+        chip("Normal")
+        shot("02-normal")
+        chip("Height")
+        shot("03-height")
+        chip("Albedo")
+        let modes = app.segmentedControls["preview-mode"]
+        modes.buttons["Lit"].tap()
+        shot("05-lit", settle: 6)
+        modes.buttons["Tiled"].tap()
+        shot("06-tiled")
+        modes.buttons["Compare"].tap()
+        shot("07-compare")
+        modes.buttons["Map"].tap()
+        app.tabBars.buttons["Mac"].tap()
+        shot("08-mac", top: false)
+    }
 }
