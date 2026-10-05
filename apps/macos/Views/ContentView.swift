@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Bindable var store: MaterialLabStore
     @State private var dropTargeted = false
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         NavigationSplitView {
@@ -22,6 +23,8 @@ struct ContentView: View {
             if dropTargeted { DropOverlay().transition(.opacity) }
         }
         .onOpenURL { url in store.handleDrop([url]) }
+        .onAppear { store.undoManager = undoManager }
+        .onChange(of: undoManager) { _, manager in store.undoManager = manager }
         .fileImporter(
             isPresented: $store.showSourceImporter,
             allowedContentTypes: [.image],

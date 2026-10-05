@@ -38,6 +38,22 @@ enum MaterialLibrary {
     private static var importedFolder: URL { appSupport.appendingPathComponent("Sources", isDirectory: true) }
     private static var savedSourcesURL: URL { appSupport.appendingPathComponent("sources.json") }
     private static var metadataURL: URL { appSupport.appendingPathComponent("source-metadata.json") }
+    private static var recipesURL: URL { appSupport.appendingPathComponent("recipes.json") }
+
+    /// Per-source recipes, keyed by source ID, so tuning survives relaunch.
+    static func loadRecipes() -> [String: MaterialRecipe] {
+        guard let data = try? Data(contentsOf: recipesURL),
+              let recipes = try? JSONDecoder().decode([String: MaterialRecipe].self, from: data)
+        else { return [:] }
+        return recipes
+    }
+
+    static func saveRecipes(_ recipes: [String: MaterialRecipe]) throws {
+        try prepareDirectories()
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(recipes).write(to: recipesURL, options: .atomic)
+    }
 
     static func prepareDirectories() throws {
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)

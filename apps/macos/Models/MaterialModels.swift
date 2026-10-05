@@ -27,7 +27,7 @@ struct MaterialSource: Identifiable, Hashable, Sendable {
     var displayName: String { semanticLabel.replacingOccurrences(of: "_", with: " ") }
 }
 
-enum MaterialPreset: String, CaseIterable, Identifiable, Sendable {
+enum MaterialPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     case flat, stone, fabric, organic, coatedMetal, bareMetal
     var id: String { rawValue }
 
@@ -106,8 +106,75 @@ struct MaterialRecipe: Equatable, Sendable {
     var normalConvention: String { normalYDown ? "-Y" : "+Y" }
 }
 
+/// Persisted per source (MaterialLibrary.recipes). Every field decodes optionally on top of the preset's
+/// defaults, so recipes saved by older builds keep loading as fields are added.
+extension MaterialRecipe: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels, tileWrap
+        case assignedMetalnessEnabled, assignedMetalness, bentNormalEnabled, normalStrength, normalYDown
+        case aoStrength, albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
+        case reliefMaskPath, heightOverridePath
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self = MaterialEngine.defaultRecipe(for: try c.decodeIfPresent(MaterialPreset.self, forKey: .preset) ?? .flat)
+        func value<T: Decodable>(_ key: CodingKeys, _ current: T) -> T {
+            ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? current
+        }
+        heightStrength = value(.heightStrength, heightStrength)
+        heightPolarity = value(.heightPolarity, heightPolarity)
+        roughnessBase = value(.roughnessBase, roughnessBase)
+        roughnessVariation = value(.roughnessVariation, roughnessVariation)
+        aoRadiusPixels = value(.aoRadiusPixels, aoRadiusPixels)
+        tileWrap = value(.tileWrap, tileWrap)
+        assignedMetalnessEnabled = value(.assignedMetalnessEnabled, assignedMetalnessEnabled)
+        assignedMetalness = value(.assignedMetalness, assignedMetalness)
+        bentNormalEnabled = value(.bentNormalEnabled, bentNormalEnabled)
+        normalStrength = value(.normalStrength, normalStrength)
+        normalYDown = value(.normalYDown, normalYDown)
+        aoStrength = value(.aoStrength, aoStrength)
+        albedoEqualize = value(.albedoEqualize, albedoEqualize)
+        seamlessBlend = value(.seamlessBlend, seamlessBlend)
+        guideNormalWeight = value(.guideNormalWeight, guideNormalWeight)
+        seamlessMode = value(.seamlessMode, seamlessMode)
+        albedoRepair = value(.albedoRepair, albedoRepair)
+        // Side inputs are kept only while their files still exist, so a moved file cannot break derivation.
+        func existing(_ key: CodingKeys) -> URL? {
+            guard let path = value(key, String?.none), FileManager.default.fileExists(atPath: path) else { return nil }
+            return URL(fileURLWithPath: path)
+        }
+        reliefMaskURL = existing(.reliefMaskPath)
+        heightOverrideURL = existing(.heightOverridePath)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(preset, forKey: .preset)
+        try c.encode(heightStrength, forKey: .heightStrength)
+        try c.encode(heightPolarity, forKey: .heightPolarity)
+        try c.encode(roughnessBase, forKey: .roughnessBase)
+        try c.encode(roughnessVariation, forKey: .roughnessVariation)
+        try c.encode(aoRadiusPixels, forKey: .aoRadiusPixels)
+        try c.encode(tileWrap, forKey: .tileWrap)
+        try c.encode(assignedMetalnessEnabled, forKey: .assignedMetalnessEnabled)
+        try c.encode(assignedMetalness, forKey: .assignedMetalness)
+        try c.encode(bentNormalEnabled, forKey: .bentNormalEnabled)
+        try c.encode(normalStrength, forKey: .normalStrength)
+        try c.encode(normalYDown, forKey: .normalYDown)
+        try c.encode(aoStrength, forKey: .aoStrength)
+        try c.encode(albedoEqualize, forKey: .albedoEqualize)
+        try c.encode(seamlessBlend, forKey: .seamlessBlend)
+        try c.encode(guideNormalWeight, forKey: .guideNormalWeight)
+        try c.encode(seamlessMode, forKey: .seamlessMode)
+        try c.encode(albedoRepair, forKey: .albedoRepair)
+        try c.encodeIfPresent(reliefMaskURL?.path, forKey: .reliefMaskPath)
+        try c.encodeIfPresent(heightOverrideURL?.path, forKey: .heightOverridePath)
+    }
+}
+
 /// PBRLabRecipe.seamless_mode: 1 = aligned minimum-error seam cut, 0 = histogram-preserving blend.
-enum SeamlessMode: String, CaseIterable, Identifiable, Sendable {
+enum SeamlessMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case cut, blend
     var id: String { rawValue }
     var title: String { self == .cut ? "Structured" : "Soft blend" }
@@ -121,7 +188,7 @@ enum SeamlessMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// PBRLabRecipe.albedo_repair (1.4.0). Off keeps the legacy Make-tileable behaviour.
-enum AlbedoRepair: String, CaseIterable, Identifiable, Sendable {
+enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
     case off, auto, quilt, blend
     var id: String { rawValue }
     var title: String {

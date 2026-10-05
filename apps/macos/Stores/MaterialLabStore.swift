@@ -90,6 +90,10 @@ final class MaterialLabStore {
 
     @ObservationIgnored private var started = false
     @ObservationIgnored private var recipesBySource: [String: MaterialRecipe] = [:]
+    @ObservationIgnored private var recipeSaveTask: Task<Void, Never>?
+    /// The window's undo manager (set by ContentView). Recipe edits are undoable per source.
+    @ObservationIgnored weak var undoManager: UndoManager?
+    @ObservationIgnored private var lastUndoRegistration: (source: String, at: Date)?
     @ObservationIgnored private var suppressRecipeObserver = false
     @ObservationIgnored private var deriveControl: DerivationControl?
     @ObservationIgnored private var batchControl: DerivationControl?
@@ -172,6 +176,7 @@ final class MaterialLabStore {
                 self.selectSource(source.id)
                 self.status = "Capture imported from iPhone and checksum verified."
             }
+            recipesBySource = MaterialLibrary.loadRecipes()
             sources = MaterialLibrary.loadSavedSources() + MaterialLibrary.loadInbox()
             if let savedCatalog = UserDefaults.standard.string(forKey: "materialLab.catalogPath") {
                 let url = URL(fileURLWithPath: savedCatalog)
@@ -223,6 +228,7 @@ final class MaterialLabStore {
     private func applySeededRecipe(_ seeded: MaterialRecipe, for id: String) {
         guard selectedSourceID == id, recipesBySource[id] == nil else { return }
         recipesBySource[id] = seeded
+        scheduleRecipeSave()
         setRecipeSilently(seeded)
         if autoDerive { deriveSelected() }
     }
@@ -253,8 +259,51 @@ final class MaterialLabStore {
 
     private func recipeDidChange(from oldValue: MaterialRecipe) {
         guard !suppressRecipeObserver, recipe != oldValue else { return }
-        if let id = selectedSourceID { recipesBySource[id] = recipe }
+        if let id = selectedSourceID {
+            recipesBySource[id] = recipe
+            registerUndo(restoring: oldValue, for: id)
+            scheduleRecipeSave()
+        }
         if autoDerive { scheduleDerive() }
+    }
+
+    /// One undo step per gesture: changes to the same source within 0.75 s (a slider drag, typing a value)
+    /// coalesce into the step that restores the value before the gesture began.
+    private func registerUndo(restoring oldValue: MaterialRecipe, for id: String) {
+        guard let undoManager else { return }
+        let replaying = undoManager.isUndoing || undoManager.isRedoing
+        // Coalesce only into a step that still exists on the stack (it may have been cleared or undone).
+        if !replaying, undoManager.canUndo, let last = lastUndoRegistration, last.source == id,
+           Date().timeIntervalSince(last.at) < 0.75 {
+            lastUndoRegistration = (id, Date())
+            return
+        }
+        lastUndoRegistration = replaying ? nil : (id, Date())
+        undoManager.registerUndo(withTarget: self) { store in
+            MainActor.assumeIsolated { store.restoreRecipe(oldValue, for: id) }
+        }
+        undoManager.setActionName("Recipe Change")
+    }
+
+    /// Starts the next edit as a new undo step.
+    func resetUndoCoalescing() { lastUndoRegistration = nil }
+
+    private func restoreRecipe(_ value: MaterialRecipe, for id: String) {
+        if selectedSourceID != id { selectSource(id) }
+        recipe = value
+        lastUndoRegistration = nil
+    }
+
+    private func scheduleRecipeSave() {
+        recipeSaveTask?.cancel()
+        recipeSaveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled, let self else { return }
+            // Transient verification sources (SnapshotHarness) are never persisted.
+            let snapshot = self.recipesBySource.filter { !$0.key.hasPrefix("snapshot:") }
+            do { try MaterialLibrary.saveRecipes(snapshot) }
+            catch { self.status = "Could not save recipes: \(error.localizedDescription)" }
+        }
     }
 
     func choosePreset(_ preset: MaterialPreset) {

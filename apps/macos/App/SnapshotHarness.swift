@@ -36,6 +36,7 @@ enum SnapshotHarness {
             }
         }
         await waitForDerivation(store)
+        if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
         for _ in 0..<600 where !store.learned.hasResolved { try? await Task.sleep(for: .milliseconds(100)) }
         print("learned model at launch:", store.learned.statusTitle, store.learned.info?.origin.rawValue ?? "-",
               store.learned.info?.modelFile ?? "-")
@@ -104,6 +105,36 @@ enum SnapshotHarness {
             await capture(directory.appendingPathComponent("\(prefix)-link-\(appearanceName).png"))
         }
         NSApp.terminate(nil)
+    }
+
+    /// Self-check for recipe undo: a burst of edits is one step, a later edit another; undo and redo walk them.
+    private static func undoCheck(store: MaterialLabStore) async {
+        guard let undo = store.undoManager else { print("undo-check: no undo manager"); return }
+        // Without user events nothing closes AppKit's event groups. AppKit drops event groups that end up empty
+        // (every coalesced drag event), so each gesture amounts to one group: emulate exactly that.
+        undo.removeAllActions()
+        store.resetUndoCoalescing()
+        undo.groupsByEvent = false
+        defer { undo.groupsByEvent = true }
+        let start = store.recipe.heightStrength
+        undo.beginUndoGrouping()
+        for value: Float in [0.05, 0.10, 0.15] {
+            store.recipe.heightStrength = value
+            try? await Task.sleep(for: .milliseconds(80))
+        }
+        undo.endUndoGrouping()
+        try? await Task.sleep(for: .seconds(1))
+        undo.beginUndoGrouping(); store.recipe.roughnessBase = 0.33; undo.endUndoGrouping()
+        try? await Task.sleep(for: .seconds(1))
+        undo.undo()
+        let afterFirst = (store.recipe.heightStrength, store.recipe.roughnessBase)
+        undo.undo()
+        let afterSecond = store.recipe.heightStrength
+        undo.redo()
+        let afterRedo = store.recipe.heightStrength
+        let ok = afterFirst.0 == 0.15 && afterFirst.1 != 0.33 && afterSecond == start && afterRedo == 0.15
+        print("undo-check:", ok ? "PASS" : "FAIL", "start", start, "after undo 1", afterFirst, "after undo 2", afterSecond, "after redo", afterRedo)
+        try? await Task.sleep(for: .seconds(1.5)) // Let the debounced recipe save land.
     }
 
     /// Tile view of the source with Make tileable off, Structured (seam cut) and Soft blend, plus a
