@@ -1,4 +1,4 @@
-# Homebrew formula for the material-lab binary release. scripts/release_cli_github.sh fills in VERSION and SHA256.
+# Homebrew formula for the material-lab binary release. Fill in VERSION and SHA256 from scripts/package_cli_release.sh output.
 class MaterialLab < Formula
   desc "Turn a photograph into editable PBR texture maps, on your Mac"
   homepage "https://github.com/theisegoria/material-lab-cli"
