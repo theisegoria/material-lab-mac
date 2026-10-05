@@ -22,9 +22,13 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <mutex>
+#include <thread>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -229,6 +233,11 @@ struct Options {
     std::vector<fs::path> diffBundles;
     std::string exportFormat;
     bool json = false;
+    // Pipeline.
+    fs::path recipeFile, saveRecipe, report, watch;
+    std::string savedRecipe;
+    std::vector<std::string> alsoExport;
+    int jobs = 1;
     bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty(); }
 };
 PBRLabPreset parsePreset(const std::string& s) {
@@ -271,6 +280,15 @@ constexpr const char* kUsage =
     "  --repair-albedo off|blend|quilt|auto  rebuild the albedo itself so it tiles (band = --seamless, default 0.12);\n"
     "    the repaired albedo feeds every derived map and the learned estimator (auto: quilt unless its cut is costly)\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
+    "Recipes and pipelines:\n"
+    "  --recipe FILE|BUNDLE  start from a recipe JSON (snake_case or the apps' camelCase) or a bundle's recipe\n"
+    "  --saved-recipe NAME  use a recipe saved in the Material Lab Mac app   --save-recipe FILE  write the recipe\n"
+    "  --also-export glb,usdz,unreal,unity-hdrp,godot,blender  export beside each derived bundle\n"
+    "  --jobs 1..8  parallel catalog items   --report FILE.json  per-item status   --keep-going\n"
+    "  --watch DIR --output DIR  derive every image dropped into DIR until interrupted\n"
+    "Bundle tools (each validates its bundles first):\n"
+    "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
+    "  --export BUNDLE --format glb|usdz|unreal|unity-hdrp|godot|blender --output PATH\n"
     "Learned geometry (see docs/LEARNED_NORMALS.md):\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
     "  --guide-normals PNG  use precomputed +Y tangent normals instead  --guide-weight 0..1 (default 1)\n"
@@ -279,6 +297,122 @@ constexpr const char* kUsage =
     "Optional local pre-upscale: --pre-upscale-exec ABSOLUTE_EXECUTABLE --pre-upscale-arg ARG (repeat; include\n"
     "  {input} and {output} placeholders) [--pre-upscale-timeout SECONDS, default 600]. No shell or network is\n"
     "  invoked by Material Lab.\n";
+// ---------------------------------------------------------------------------------------------
+// Recipe files. Accepts a bundle manifest recipe (snake_case), the Mac and iOS apps' recipes (camelCase),
+// a full manifest, or a .pbrmaterial bundle; fields absent from the file keep the preset's defaults.
+PBRLabPreset presetFromName(NSString* name) {
+    if (!name) return PBRLabPresetFlat;
+    NSString* key = [[name stringByReplacingOccurrencesOfString:@"-" withString:@""] lowercaseString];
+    if ([key isEqualToString:@"stone"]) return PBRLabPresetStone;
+    if ([key isEqualToString:@"fabric"]) return PBRLabPresetFabric;
+    if ([key isEqualToString:@"organic"]) return PBRLabPresetOrganic;
+    if ([key isEqualToString:@"coatedmetal"]) return PBRLabPresetCoatedMetal;
+    if ([key isEqualToString:@"baremetal"]) return PBRLabPresetBareMetal;
+    if ([key isEqualToString:@"flat"]) return PBRLabPresetFlat;
+    throw std::runtime_error("recipe has an unknown preset: " + str(name));
+}
+PBRLabRecipe recipeFromObject(NSDictionary* r) {
+    auto field = [&](const char* snake, const char* camel) -> id { id v = r[@(snake)]; return v ?: r[@(camel)]; };
+    PBRLabRecipe recipe = PBRLabDefaultRecipe(presetFromName(asString(r[@"preset"])));
+    auto num = [&](const char* snake, const char* camel, float& target) {
+        id v = field(snake, camel);
+        if (!v) return;
+        NSNumber* n = asNumber(v);
+        if (!n) throw std::runtime_error(std::string("recipe field ") + snake + " must be a number");
+        target = n.floatValue;
+    };
+    auto boolean = [&](const char* snake, const char* camel, uint32_t& target) {
+        id v = field(snake, camel);
+        if (!v) return;
+        if (!isBoolean(v)) throw std::runtime_error(std::string("recipe field ") + snake + " must be true or false");
+        target = [v boolValue] ? 1 : 0;
+    };
+    num("height_strength", "heightStrength", recipe.height_strength);
+    num("roughness_base", "roughnessBase", recipe.roughness_base);
+    num("roughness_variation", "roughnessVariation", recipe.roughness_variation);
+    num("ao_radius_pixels", "aoRadiusPixels", recipe.ao_radius_pixels);
+    num("normal_strength", "normalStrength", recipe.normal_strength);
+    num("ao_strength", "aoStrength", recipe.ao_strength);
+    num("albedo_equalize", "albedoEqualize", recipe.albedo_equalize);
+    num("seamless_blend", "seamlessBlend", recipe.seamless_blend);
+    num("guide_normal_weight", "guideNormalWeight", recipe.guide_normal_weight);
+    if (id polarity = field("height_polarity", "heightPolarity")) {
+        if (!unitPolarity(polarity)) throw std::runtime_error("recipe field height_polarity must be 1 or -1");
+        recipe.height_polarity = [polarity intValue];
+    }
+    boolean("tile_wrap", "tileWrap", recipe.tile_wrap);
+    boolean("normal_y_down", "normalYDown", recipe.normal_y_down);
+    boolean("bent_normal_enabled", "bentNormalEnabled", recipe.bent_normal_enabled);
+    if (r[@"bentNormal"]) boolean("bentNormal", "bentNormal", recipe.bent_normal_enabled);  // iOS spelling
+    boolean("assigned_metalness_enabled", "assignedMetalnessEnabled", recipe.assigned_metalness_enabled);
+    if (id metal = field("assigned_metalness", "assignedMetalness")) {
+        if (NSNumber* n = asNumber(metal)) {
+            recipe.assigned_metalness = n.floatValue;
+            if (!r[@"assigned_metalness_enabled"] && !r[@"assignedMetalnessEnabled"]) recipe.assigned_metalness_enabled = 1;
+        }
+    }
+    if (NSString* mode = asString(field("seamless_mode", "seamlessMode"))) {
+        if (![mode isEqualToString:@"cut"] && ![mode isEqualToString:@"blend"]) throw std::runtime_error("recipe seamless_mode must be cut or blend");
+        recipe.seamless_mode = [mode isEqualToString:@"cut"] ? 1 : 0;
+    }
+    if (NSString* repair = asString(field("albedo_repair", "albedoRepair"))) {
+        NSUInteger index = [@[@"off", @"blend", @"quilt", @"auto"] indexOfObject:repair];
+        if (index == NSNotFound) throw std::runtime_error("recipe albedo_repair must be off, blend, quilt or auto");
+        recipe.albedo_repair = static_cast<uint32_t>(index);
+    }
+    return recipe;
+}
+// The recipe as written into bundle manifests and by --save-recipe (snake_case).
+NSDictionary* recipeDictionary(const PBRLabRecipe& r) {
+    return @{
+        @"preset": ns(presetName(r.preset)),
+        @"height_strength": @(r.height_strength),
+        @"height_polarity": @(r.height_polarity),
+        @"roughness_base": @(r.roughness_base),
+        @"roughness_variation": @(r.roughness_variation),
+        @"ao_radius_pixels": @(r.ao_radius_pixels),
+        @"tile_wrap": @(r.tile_wrap != 0),
+        @"assigned_metalness_enabled": @(r.assigned_metalness_enabled != 0),
+        @"assigned_metalness": @(r.assigned_metalness),
+        @"bent_normal_enabled": @(r.bent_normal_enabled != 0),
+        @"normal_strength": @(r.normal_strength),
+        @"normal_y_down": @(r.normal_y_down != 0),
+        @"ao_strength": @(r.ao_strength),
+        @"albedo_equalize": @(r.albedo_equalize),
+        @"seamless_blend": @(r.seamless_blend),
+        @"guide_normal_weight": @(r.guide_normal_weight),
+        @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
+        @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
+    };
+}
+PBRLabRecipe loadRecipeFile(const fs::path& path) {
+    fs::path file = fs::is_directory(path) ? path / "manifest.json" : path;
+    NSData* data = boundedDataAt(file, 4 * 1024 * 1024);
+    if (!data) throw std::runtime_error("cannot read recipe file: " + file.string());
+    id root = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    NSDictionary* object = asDictionary(root);
+    if (!object) throw std::runtime_error("recipe file must contain a JSON object: " + file.string());
+    if (NSDictionary* nested = asDictionary(object[@"recipe"])) object = nested;
+    if (!object[@"preset"]) throw std::runtime_error("recipe file has no preset: " + file.string());
+    return recipeFromObject(object);
+}
+PBRLabRecipe loadSavedRecipe(const std::string& name) {
+    const char* home = getenv("HOME");
+    const fs::path file = fs::path(home ? home : "") / "Library/Application Support/Material Lab/saved-recipes.json";
+    NSData* data = boundedDataAt(file, 4 * 1024 * 1024);
+    if (!data) throw std::runtime_error("no saved recipes from the Material Lab app at " + file.string());
+    NSArray* saved = asArray([NSJSONSerialization JSONObjectWithData:data options:0 error:nil]);
+    std::string available;
+    for (id value in saved) {
+        NSDictionary* entry = asDictionary(value);
+        NSString* entryName = asString(entry[@"name"]);
+        if (!entryName || !asDictionary(entry[@"recipe"])) continue;
+        if ([entryName caseInsensitiveCompare:ns(name)] == NSOrderedSame) return recipeFromObject(entry[@"recipe"]);
+        available += (available.empty() ? "" : ", ") + str(entryName);
+    }
+    throw std::runtime_error("no saved recipe named \"" + name + "\"" + (available.empty() ? "" : " (saved: " + available + ")"));
+}
+
 Options parse(int argc, const char** argv) {
     Options o;
     std::optional<PBRLabPreset> preset;
@@ -346,17 +480,44 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--export") o.exportBundle = value();
         else if (flag == "--format") o.exportFormat = value();
         else if (flag == "--json") o.json = true;
+        else if (flag == "--recipe") o.recipeFile = value();
+        else if (flag == "--saved-recipe") o.savedRecipe = value();
+        else if (flag == "--save-recipe") o.saveRecipe = value();
+        else if (flag == "--report") o.report = value();
+        else if (flag == "--watch") o.watch = value();
+        else if (flag == "--jobs") {
+            o.jobs = static_cast<int>(number(value()));
+            if (o.jobs < 1 || o.jobs > 8) throw std::runtime_error("--jobs must be 1..8");
+        }
+        else if (flag == "--also-export") {
+            std::string list = value();
+            for (size_t start = 0; start <= list.size();) {
+                size_t comma = list.find(',', start);
+                std::string format = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+                if (!format.empty()) o.alsoExport.push_back(format);
+                if (comma == std::string::npos) break;
+                start = comma + 1;
+            }
+        }
         else if (flag == "--help") { std::cout << kUsage; std::exit(0); }
         else throw std::runtime_error("unknown option: " + flag);
     }
-    o.recipe = PBRLabDefaultRecipe(preset.value_or(PBRLabPresetFlat));
+    if (!o.recipeFile.empty() && !o.savedRecipe.empty()) throw std::runtime_error("use either --recipe or --saved-recipe");
+    const bool recipeSource = !o.recipeFile.empty() || !o.savedRecipe.empty();
+    if (recipeSource && preset) throw std::runtime_error("--preset cannot be combined with a recipe file (the recipe names its preset)");
+    o.recipe = !o.recipeFile.empty() ? loadRecipeFile(o.recipeFile)
+             : !o.savedRecipe.empty() ? loadSavedRecipe(o.savedRecipe)
+             : PBRLabDefaultRecipe(preset.value_or(PBRLabPresetFlat));
     const bool hasGuide = !o.learnedModel.empty() || !o.guideNormals.empty();
     if (!o.learnedModel.empty() && !o.guideNormals.empty())
         throw std::runtime_error("use either --learned-normals or --guide-normals, not both");
-    if (hasGuide) o.recipe.guide_normal_weight = 1.0f;
+    // A guide defaults to full weight, unless a recipe file already chose one.
+    if (hasGuide && !(recipeSource && o.recipe.guide_normal_weight > 0)) o.recipe.guide_normal_weight = 1.0f;
     for (auto& apply : overrides) apply(o.recipe);
     if (o.recipe.guide_normal_weight > 0 && !hasGuide)
-        throw std::runtime_error("--guide-weight needs --learned-normals or --guide-normals");
+        throw std::runtime_error(recipeSource && !o.guideWeightSet
+            ? "the recipe uses learned geometry: add --learned-normals MODEL (or --guide-normals PNG), or --guide-weight 0"
+            : "--guide-weight needs --learned-normals or --guide-normals");
     if (o.recipe.albedo_repair != 0 && o.recipe.tile_wrap == 0)
         throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
@@ -372,8 +533,15 @@ Options parse(int argc, const char** argv) {
         if (!o.input.empty() || !o.catalog.empty() || !o.output.empty() ||
             !o.preUpscaleExec.empty() || !o.preUpscaleArgs.empty())
             throw std::runtime_error("--validate cannot be combined with derive options");
-    } else if (o.output.empty() || (o.input.empty() == o.catalog.empty()))
-        throw std::runtime_error("provide exactly one of --input or --catalog, plus --output");
+    } else if (!o.saveRecipe.empty() && o.input.empty() && o.catalog.empty() && o.watch.empty()) {
+        // --save-recipe on its own writes the recipe and exits.
+    } else if (o.output.empty() || (!o.input.empty() + !o.catalog.empty() + !o.watch.empty()) != 1)
+        throw std::runtime_error("provide exactly one of --input, --catalog or --watch, plus --output");
+    for (const auto& format : o.alsoExport) {
+        static const std::set<std::string> known = {"glb", "usdz", "unreal", "unity-hdrp", "godot", "blender"};
+        if (!known.count(format)) throw std::runtime_error("unknown --also-export format: " + format);
+    }
+    if (o.jobs > 1 && o.catalog.empty()) throw std::runtime_error("--jobs applies to --catalog batches");
     if (o.preUpscaleExec.empty() != o.preUpscaleArgs.empty())
         throw std::runtime_error("pre-upscale executable and repeated arguments must be supplied together");
     if (!o.preUpscaleExec.empty()) {
@@ -553,6 +721,8 @@ constexpr int kLearnedTile = PBRLAB_GUIDE_TILE;
 struct GuideNormals { std::vector<uint8_t> rgba; NSMutableDictionary* provenance = nil; };
 
 struct LoadedModel { MLModel* model = nil; NSDictionary* metadata = nil; std::string file; };
+std::mutex gLearnedMutex;
+std::mutex gOutputMutex;  // One whole line at a time from concurrent batch jobs.  // Guards the model cache and serializes inference across batch jobs.
 LoadedModel& learnedModel(const fs::path& path, bool cpuOnly) {
     static std::map<std::string, LoadedModel> cache;
     std::string key = path.string() + (cpuOnly ? "#cpu" : "#all");
@@ -577,6 +747,7 @@ LoadedModel& learnedModel(const fs::path& path, bool cpuOnly) {
 
 // The tiling contract lives in the core (PBRLabGuideTiler) so every client feeds identical guide normals.
 GuideNormals runLearnedNormals(const Image& image, const Options& options) {
+    std::lock_guard<std::mutex> lock(gLearnedMutex);
     const int n = static_cast<int>(image.width);
     LoadedModel& loaded = learnedModel(options.learnedModel, options.learnedCpuOnly);
     std::unique_ptr<PBRLabGuideTiler, decltype(&PBRLabGuideTilerFree)> tiler(
@@ -779,26 +950,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
         }
         PBRLabSeamMetrics seam = PBRLabGetSeamMetrics(result.get());
         const PBRLabRecipe& r = options.recipe;
-        NSDictionary* recipe = @{
-            @"preset": ns(presetName(r.preset)),
-            @"height_strength": @(r.height_strength),
-            @"height_polarity": @(r.height_polarity),
-            @"roughness_base": @(r.roughness_base),
-            @"roughness_variation": @(r.roughness_variation),
-            @"ao_radius_pixels": @(r.ao_radius_pixels),
-            @"tile_wrap": @(r.tile_wrap != 0),
-            @"assigned_metalness_enabled": @(r.assigned_metalness_enabled != 0),
-            @"assigned_metalness": @(r.assigned_metalness),
-            @"bent_normal_enabled": @(r.bent_normal_enabled != 0),
-            @"normal_strength": @(r.normal_strength),
-            @"normal_y_down": @(r.normal_y_down != 0),
-            @"ao_strength": @(r.ao_strength),
-            @"albedo_equalize": @(r.albedo_equalize),
-            @"seamless_blend": @(r.seamless_blend),
-            @"guide_normal_weight": @(useGuide ? r.guide_normal_weight : 0.0f),
-            @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
-            @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
-        };
+        NSMutableDictionary* recipe = [recipeDictionary(r) mutableCopy];
+        recipe[@"guide_normal_weight"] = @(useGuide ? r.guide_normal_weight : 0.0f);
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
         if (pre.provenance) {
@@ -866,7 +1019,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             throw std::runtime_error("bundle output appeared during derivation: " + outputPath.string());
         fs::rename(temp, outputPath);
     } catch (...) { std::error_code ignored; fs::remove_all(temp, ignored); throw; }
-    std::cout << outputPath.string() << '\n';
+    { std::lock_guard<std::mutex> lock(gOutputMutex); std::cout << outputPath.string() << '\n'; }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1306,6 +1459,64 @@ fs::path resolveCatalogPath(const fs::path& catalogDir, NSString* relative) {
     return canonical;
 }
 struct BatchItem { fs::path source, output; std::string id, label; ReviewInfo review; };
+struct ItemResult { bool attempted = false, ok = false; double seconds = 0; std::string error; std::vector<std::string> exports; };
+
+// Follow-on exports beside the bundle: <stem>.glb / <stem>.usdz, or a <stem>-<format> folder.
+std::vector<std::string> alsoExport(const fs::path& bundle, const Options& options) {
+    std::vector<std::string> written;
+    for (const auto& format : options.alsoExport) {
+        const std::string stem = bundle.stem().string();
+        const fs::path target = bundle.parent_path() /
+            (format == "glb" || format == "usdz" ? stem + "." + format : stem + "-" + format);
+        mltools::exportBundle(bundle, format, target, false);
+        written.push_back(target.string());
+    }
+    return written;
+}
+
+ItemResult processItem(const fs::path& source, const fs::path& output, const std::string& id, const std::string& label,
+                       const Options& options, const ReviewInfo* review) {
+    ItemResult result;
+    result.attempted = true;
+    const auto started = std::chrono::steady_clock::now();
+    try {
+        @autoreleasepool {
+            deriveOne(source, output, id, label, options, review);
+            result.exports = alsoExport(output, options);
+        }
+        result.ok = true;
+    } catch (const Interrupted&) {
+        throw;
+    } catch (const std::exception& e) {
+        result.error = e.what();
+    }
+    result.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+    return result;
+}
+
+void writeReport(const fs::path& path, const std::vector<BatchItem>& items, const std::vector<ItemResult>& results) {
+    NSMutableArray* rows = [NSMutableArray array];
+    for (size_t i = 0; i < items.size() && i < results.size(); ++i) {
+        const auto& r = results[i];
+        NSMutableDictionary* row = [@{@"id": ns(items[i].id), @"source": ns(items[i].source.string()),
+                                      @"output": ns(items[i].output.string()),
+                                      @"status": !r.attempted ? @"not_attempted" : r.ok ? @"derived" : @"failed",
+                                      @"seconds": @(std::round(r.seconds * 1000) / 1000)} mutableCopy];
+        if (!r.error.empty()) row[@"error"] = ns(r.error);
+        if (!r.exports.empty()) {
+            NSMutableArray* exports = [NSMutableArray array];
+            for (const auto& e : r.exports) [exports addObject:ns(e)];
+            row[@"exports"] = exports;
+        }
+        [rows addObject:row];
+    }
+    NSDictionary* report = @{@"tool": @"material-lab", @"algorithm_version": ns(PBRLabVersion()), @"items": rows};
+    NSData* data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+    std::string error;
+    if (!pbrlab::writeFileAtomically(path.string(),
+            std::vector<uint8_t>(static_cast<const uint8_t*>(data.bytes), static_cast<const uint8_t*>(data.bytes) + data.length), error))
+        throw std::runtime_error("cannot write report: " + error);
+}
 int batch(const Options& options) {
     NSData* data = boundedDataAt(options.catalog, 64ull * 1024 * 1024);
     if (!data) throw std::runtime_error("cannot read catalog");
@@ -1342,29 +1553,83 @@ int batch(const Options& options) {
     }
     if (plan.empty()) throw std::runtime_error("no reviewed materials in catalog; use --include-unreviewed to opt in to candidates");
     fs::create_directories(options.output);
-    size_t made = 0, failed = 0;
-    for (const auto& item : plan) {
-        checkInterrupted();
-        try {
-            @autoreleasepool { deriveOne(item.source, item.output, item.id, item.label, options, &item.review); }
-            ++made;
-        } catch (const Interrupted&) {
-            throw;
-        } catch (const std::exception& e) {
-            ++failed;
-            std::cerr << "material-lab: " << item.id << ": " << e.what() << '\n';
-            if (!options.keepGoing) {
-                std::cerr << "material-lab: stopping; derived " << made << ", failed " << failed
-                          << ", not attempted " << plan.size() - made - failed << " (use --keep-going to continue)\n";
-                return 1;
+    // Items run on `jobs` workers (derivation itself is multi-threaded, so a few jobs mostly overlap I/O,
+    // decoding and PNG encoding). Learned inference is serialized; the first failure stops new work unless
+    // --keep-going.
+    std::vector<ItemResult> results(plan.size());
+    std::atomic<size_t> next{0};
+    std::atomic<bool> stop{false};
+    std::mutex outputMutex;
+    auto worker = [&] {
+        for (size_t i; !stop && !gInterrupted && (i = next.fetch_add(1)) < plan.size();) {
+            const auto& item = plan[i];
+            results[i] = processItem(item.source, item.output, item.id, item.label, options, &item.review);
+            if (!results[i].ok) {
+                std::lock_guard<std::mutex> lock(outputMutex);
+                std::cerr << "material-lab: " << item.id << ": " << results[i].error << '\n';
+                if (!options.keepGoing) stop = true;
             }
         }
+    };
+    std::vector<std::thread> threads;
+    for (int t = 1; t < std::min<int>(options.jobs, static_cast<int>(plan.size())); ++t) threads.emplace_back(worker);
+    worker();
+    for (auto& thread : threads) thread.join();
+    checkInterrupted();
+    size_t made = 0, failed = 0, notAttempted = 0;
+    for (size_t i = 0; i < plan.size(); ++i) {
+        if (results[i].attempted) (results[i].ok ? made : failed)++;
+        else ++notAttempted;
     }
+    if (!options.report.empty()) writeReport(options.report, plan, results);
+    if (failed && !options.keepGoing)
+        std::cerr << "material-lab: stopping; derived " << made << ", failed " << failed << ", not attempted "
+                  << notAttempted << " (use --keep-going to continue)\n";
     std::cout << "derived " << made << " material bundles";
     if (failed) std::cout << ", " << failed << " failed";
     if (skipped) std::cout << ", " << skipped << " unreviewed skipped";
     std::cout << '\n';
     return failed ? 1 : 0;
+}
+
+// --watch: derive every new image dropped into a folder, until interrupted. A file is taken once its size
+// has been stable for two polls; images that already have a bundle in --output are skipped.
+int watchFolder(const Options& options) {
+    if (!fs::is_directory(options.watch)) throw std::runtime_error("--watch needs a folder: " + options.watch.string());
+    fs::create_directories(options.output);
+    static const std::set<std::string> extensions = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".heic", ".webp"};
+    std::map<fs::path, uintmax_t> sizes;
+    std::set<fs::path> done;
+    std::vector<BatchItem> items;
+    std::vector<ItemResult> results;
+    std::cout << "watching " << options.watch.string() << " (Ctrl-C to stop)" << std::endl;
+    while (!gInterrupted) {
+        std::error_code ec;
+        for (const auto& entry : fs::directory_iterator(options.watch, ec)) {
+            if (gInterrupted) break;
+            const fs::path path = entry.path();
+            std::string ext = path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (!entry.is_regular_file(ec) || !extensions.count(ext) || done.count(path) ||
+                path.filename().string().starts_with(".")) continue;
+            const std::string id = sanitized(path.stem().string());
+            const fs::path output = options.output / (id + ".pbrmaterial");
+            if (fs::exists(fs::symlink_status(output, ec))) { done.insert(path); continue; }
+            const uintmax_t size = entry.file_size(ec);
+            auto seen = sizes.find(path);
+            if (seen == sizes.end() || seen->second != size || size == 0) { sizes[path] = size; continue; }
+            done.insert(path);
+            BatchItem item{path, output, id, id, {}};
+            items.push_back(item);
+            results.push_back(processItem(path, output, id, id, options, nullptr));
+            if (!results.back().ok) std::cerr << "material-lab: " << id << ": " << results.back().error << '\n';
+            if (!options.report.empty()) writeReport(options.report, items, results);
+        }
+        for (int tick = 0; tick < 20 && !gInterrupted; ++tick) usleep(100000);
+    }
+    std::cout << "stopped watching; derived " << std::count_if(results.begin(), results.end(), [](const ItemResult& r) { return r.ok; })
+              << " of " << results.size() << '\n';
+    return 0;
 }
 
 int run(int argc, const char** argv) {
@@ -1388,12 +1653,28 @@ int run(int argc, const char** argv) {
         else validateCapture(options.validate);
         return 0;
     }
+    if (!options.saveRecipe.empty()) {
+        NSData* data = [NSJSONSerialization dataWithJSONObject:recipeDictionary(options.recipe)
+                                                       options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+        std::string error;
+        if (!pbrlab::writeFileAtomically(options.saveRecipe.string(),
+                std::vector<uint8_t>(static_cast<const uint8_t*>(data.bytes), static_cast<const uint8_t*>(data.bytes) + data.length), error))
+            throw std::runtime_error("cannot write recipe: " + error);
+        if (options.input.empty() && options.catalog.empty() && options.watch.empty()) {
+            std::cout << options.saveRecipe.string() << '\n';
+            return 0;
+        }
+    }
     if (!options.catalog.empty()) return batch(options);
+    if (!options.watch.empty()) return watchFolder(options);
     std::string id = options.id.empty() ? sanitized(options.input.stem().string()) : sanitized(options.id);
     std::string label = options.label.empty() ? id : options.label;
     fs::path destination = options.output;
     if (destination.extension() != ".pbrmaterial") destination += ".pbrmaterial";
-    deriveOne(options.input, destination, id, label, options);
+    const ItemResult result = processItem(options.input, destination, id, label, options, nullptr);
+    if (!options.report.empty()) writeReport(options.report, {BatchItem{options.input, destination, id, label, {}}}, {result});
+    if (!result.ok) throw std::runtime_error(result.error);
+    for (const auto& exported : result.exports) std::cout << exported << '\n';
     return 0;
 }
 } // namespace

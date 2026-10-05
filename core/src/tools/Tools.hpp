@@ -26,7 +26,8 @@ int contactSheet(const fs::path& bundle, const fs::path& output);
 // --diff: per-map mean and max absolute difference and PSNR, plus recipe differences.
 int diff(const fs::path& a, const fs::path& b, bool json);
 // --export: glb, usdz, unreal, unity-hdrp, godot or blender, written to `output` (a file or folder per format).
-int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output);
+// `announce` prints the written path (off for the CLI's own --also-export follow-ups).
+int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output, bool announce = true);
 
 // Shared helpers.
 Raster loadMap(const fs::path& bundle, const std::string& name);  // throws on a missing or undecodable map

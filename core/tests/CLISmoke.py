@@ -5,6 +5,8 @@ import hashlib
 import os
 import uuid
 import json
+import signal
+import time
 import shutil
 import pathlib
 import struct
@@ -462,6 +464,78 @@ def main() -> None:
         assert unreal_rows[3][1] == 255 - bundle_rows[3][1]
         run(cli, "--export", str(tool_a), "--format", "fbx", "--output", str(exports / "x"), expect_success=False)
         run(cli, "--export", str(tool_a), "--format", "glb", "--output", str(glb), expect_success=False)  # Exists.
+
+        # Recipes: from a bundle, from the apps' camelCase JSON, from the Mac app's saved recipes; save one.
+        pipeline = root / "pipeline"
+        pipeline.mkdir()
+        from_bundle = pipeline / "from-bundle.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(from_bundle), "--recipe", str(tool_b))
+        assert json.loads((from_bundle / "manifest.json").read_text())["recipe"]["normal_y_down"] is True
+        camel = pipeline / "camel.json"
+        camel.write_text(json.dumps({"preset": "coatedMetal", "heightStrength": 0.31, "normalYDown": False,
+                                     "seamlessMode": "blend", "albedoRepair": "quilt", "assignedMetalness": 0.4}))
+        saved_out = pipeline / "saved.json"
+        run(cli, "--recipe", str(camel), "--roughness", "0.2", "--save-recipe", str(saved_out))
+        saved = json.loads(saved_out.read_text())
+        assert saved["preset"] == "coated-metal" and abs(saved["height_strength"] - 0.31) < 1e-6
+        assert abs(saved["roughness_base"] - 0.2) < 1e-6 and saved["albedo_repair"] == "quilt"
+        assert saved["assigned_metalness_enabled"] is True and saved["seamless_mode"] == "blend"
+        home = pipeline / "home"
+        (home / "Library/Application Support/Material Lab").mkdir(parents=True)
+        (home / "Library/Application Support/Material Lab/saved-recipes.json").write_text(json.dumps(
+            [{"name": "Wet slate", "recipe": {"preset": "stone", "heightStrength": 0.12}}]))
+        env = dict(os.environ, HOME=str(home))
+        slate = subprocess.run([cli, "--saved-recipe", "wet SLATE", "--save-recipe", str(pipeline / "slate.json")],
+                               env=env, capture_output=True, text=True)
+        assert slate.returncode == 0, slate.stderr
+        assert abs(json.loads((pipeline / "slate.json").read_text())["height_strength"] - 0.12) < 1e-6
+        missing = subprocess.run([cli, "--saved-recipe", "nope", "--save-recipe", str(pipeline / "x.json")],
+                                 env=env, capture_output=True, text=True)
+        assert missing.returncode == 1 and "Wet slate" in missing.stderr
+        run(cli, "--recipe", str(camel), "--preset", "stone", "--save-recipe", str(pipeline / "y.json"), expect_success=False)
+
+        # --also-export and --report on a single derive.
+        exported = pipeline / "exported.pbrmaterial"
+        report = pipeline / "report.json"
+        run(cli, "--input", str(image), "--output", str(exported), "--also-export", "glb,godot", "--report", str(report))
+        assert (pipeline / "exported.glb").exists() and (pipeline / "exported-godot").is_dir()
+        assert json.loads(report.read_text())["items"][0]["status"] == "derived"
+        run(cli, "--input", str(image), "--output", str(pipeline / "bad"), "--also-export", "fbx", expect_success=False)
+
+        # Parallel catalog batch with a report.
+        batch_dir = pipeline / "batch"
+        batch_dir.mkdir()
+        for name in ("a", "b", "c"):
+            shutil.copy(image, batch_dir / f"{name}.png")
+        (batch_dir / "catalog.json").write_text(json.dumps({"items": [
+            {"path": f"{n}.png", "label": n, "reviewed": True} for n in ("a", "b", "c")]}))
+        batch_out, batch_report = pipeline / "batch-out", pipeline / "batch-report.json"
+        run(cli, "--catalog", str(batch_dir / "catalog.json"), "--output", str(batch_out), "--jobs", "2",
+            "--report", str(batch_report), "--preset", "stone")
+        rows = json.loads(batch_report.read_text())["items"]
+        assert sorted(r["status"] for r in rows) == ["derived"] * 3
+        for name in ("a", "b", "c"):
+            run(cli, "--validate", str(batch_out / f"{name}.pbrmaterial"))
+        run(cli, "--input", str(image), "--output", str(pipeline / "j"), "--jobs", "2", expect_success=False)
+
+        # --watch derives a dropped image, then stops cleanly on SIGINT.
+        inbox, watched = pipeline / "inbox", pipeline / "watched"
+        inbox.mkdir()
+        watcher = subprocess.Popen([cli, "--watch", str(inbox), "--output", str(watched)], stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True)
+        try:
+            time.sleep(0.5)
+            shutil.copy(image, inbox / "dropped.png")
+            for _ in range(100):
+                if (watched / "dropped.pbrmaterial" / "manifest.json").exists():
+                    break
+                time.sleep(0.2)
+            assert (watched / "dropped.pbrmaterial" / "manifest.json").exists(), "watch did not derive the dropped image"
+        finally:
+            watcher.send_signal(signal.SIGINT)
+            out, err = watcher.communicate(timeout=20)
+        assert "stopped watching; derived 1 of 1" in out, (out, err)
+        run(cli, "--validate", str(watched / "dropped.pbrmaterial"))
 
         # Non-ASCII labels survive; a bare relative --output lands in the working directory.
         label = "ardoise \u00e9clat \u77f3"

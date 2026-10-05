@@ -383,7 +383,7 @@ def Xform "Material_Lab" (
 
 } // namespace
 
-int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output) {
+int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output, bool announce) {
     static const char* const formats[] = {"glb", "usdz", "unreal", "unity-hdrp", "godot", "blender"};
     if (std::find_if(std::begin(formats), std::end(formats), [&](const char* f) { return format == f; }) == std::end(formats))
         throw std::runtime_error("unknown export format: " + format + " (use glb, usdz, unreal, unity-hdrp, godot or blender)");
@@ -392,7 +392,7 @@ int exportBundle(const fs::path& bundle, const std::string& format, const fs::pa
     if (format == "glb") exportGLB(material, output);
     else if (format == "usdz") exportUSDZ(material, output);
     else exportFolder(bundle, material, format, output);
-    std::cout << output.string() << '\n';
+    if (announce) std::cout << output.string() << '\n';
     return 0;
 }
 
