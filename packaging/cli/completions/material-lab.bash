@@ -1,0 +1,24 @@
+# bash completion for material-lab
+_material_lab() {
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    case "$prev" in
+        --preset) COMPREPLY=($(compgen -W "flat stone fabric organic coated-metal bare-metal" -- "$cur")); return ;;
+        --format|--also-export) COMPREPLY=($(compgen -W "glb usdz unreal unity-hdrp godot blender" -- "$cur")); return ;;
+        --repair-albedo) COMPREPLY=($(compgen -W "off auto quilt blend" -- "$cur")); return ;;
+        --seamless-mode) COMPREPLY=($(compgen -W "cut blend" -- "$cur")); return ;;
+        --polarity) COMPREPLY=($(compgen -W "1 -1" -- "$cur")); return ;;
+        --watch|--info|--contact-sheet|--export) COMPREPLY=($(compgen -d -- "$cur")); return ;;
+        --input|--output|--catalog|--validate|--recipe|--save-recipe|--report|--learned-normals|--guide-normals|--save-guide-normals|--diff)
+            COMPREPLY=($(compgen -f -- "$cur")); return ;;
+    esac
+    COMPREPLY=($(compgen -W "--input --output --catalog --watch --validate --label --id --preset --height-strength \
+        --polarity --normal-strength --roughness --roughness-variation --ao-radius --ao-strength --equalize --seamless \
+        --seamless-mode --repair-albedo --metalness --normal-dx --no-tile --bent-normal --learned --learned-normals \
+        --learned-cpu-only --guide-normals --guide-weight --save-guide-normals --recipe --saved-recipe --save-recipe \
+        --also-export --jobs --report --keep-going --include-unreviewed --info --contact-sheet --diff --export --format \
+        --json --version --help --relief-mask-r8 --height-override-r16le --pre-upscale-exec --pre-upscale-arg \
+        --pre-upscale-timeout" -- "$cur"))
+}
+complete -o filenames -F _material_lab material-lab

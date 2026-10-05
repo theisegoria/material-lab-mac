@@ -1,0 +1,59 @@
+#compdef material-lab
+# zsh completion for material-lab
+
+local -a presets formats repairs
+presets=(flat stone fabric organic coated-metal bare-metal)
+formats=(glb usdz unreal unity-hdrp godot blender)
+repairs=(off auto quilt blend)
+
+_arguments -s \
+  '--input[source image]:image:_files -g "*.(png|jpg|jpeg|tif|tiff|heic|webp)(-.)"' \
+  '--output[output bundle, folder or file]:path:_files' \
+  '--catalog[catalog JSON]:catalog:_files -g "*.json(-.)"' \
+  '--watch[folder to watch for new images]:folder:_files -/' \
+  '--validate[bundle or capture to validate]:path:_files' \
+  '--label[semantic label]:label:' \
+  '--id[material id]:id:' \
+  "--preset[material prior]:preset:(${presets})" \
+  '--height-strength[relief amplitude 0..0.5]:value:' \
+  '--polarity[bright details raised (1) or recessed (-1)]:polarity:(1 -1)' \
+  '--normal-strength[normal intensity 0..16]:value:' \
+  '--roughness[roughness prior 0..1]:value:' \
+  '--roughness-variation[roughness variation 0..1]:value:' \
+  '--ao-radius[occlusion radius in pixels]:value:' \
+  '--ao-strength[occlusion depth 0..4]:value:' \
+  '--equalize[remove lighting 0..1]:value:' \
+  '--seamless[tileable edge band 0..0.45]:value:' \
+  '--seamless-mode[tiling method]:mode:(cut blend)' \
+  "--repair-albedo[rebuild the albedo to tile]:repair:(${repairs})" \
+  '--metalness[assigned metalness 0..1]:value:' \
+  '--normal-dx[DirectX green-down normals]' \
+  '--no-tile[do not wrap filters at the edges]' \
+  '--relief-mask-r8[raw 8-bit relief mask]:file:_files' \
+  '--height-override-r16le[raw 16-bit authored height]:file:_files' \
+  '--pre-upscale-exec[local upscaler executable]:executable:_files' \
+  '*--pre-upscale-arg[upscaler argument]:argument:' \
+  '--pre-upscale-timeout[upscaler timeout in seconds]:seconds:' \
+  '--bent-normal[write a bent normal map]' \
+  '--learned[use the bundled learned-geometry model]' \
+  '--learned-normals[Core ML model]:model:_files' \
+  '--learned-cpu-only[run the model on the CPU]' \
+  '--guide-normals[precomputed +Y normals PNG]:png:_files -g "*.png(-.)"' \
+  '--guide-weight[learned geometry weight 0..1]:value:' \
+  '--save-guide-normals[write the guide normals]:png:_files' \
+  '--recipe[recipe JSON or bundle]:recipe:_files' \
+  '--saved-recipe[recipe saved in the Mac app]:name:' \
+  '--save-recipe[write the recipe as JSON]:file:_files' \
+  "--also-export[comma-separated formats]:formats:_sequence compadd - ${formats}" \
+  '--jobs[parallel catalog items 1..8]:jobs:(1 2 3 4)' \
+  '--report[per-item JSON report]:file:_files' \
+  '--keep-going[continue after a failed item]' \
+  '--include-unreviewed[include unreviewed catalog items]' \
+  '--info[describe a bundle]:bundle:_files -/' \
+  '--contact-sheet[one image of every map]:bundle:_files -/' \
+  '--diff[compare two bundles]:bundle:_files -/:bundle:_files -/' \
+  '--export[export a bundle]:bundle:_files -/' \
+  "--format[export format]:format:(${formats})" \
+  '--json[machine-readable output]' \
+  '--version[print the version]' \
+  '--help[show usage]'

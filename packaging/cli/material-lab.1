@@ -1,0 +1,197 @@
+.Dd October 6, 2026
+.Dt MATERIAL-LAB 1
+.Os macOS
+.Sh NAME
+.Nm material-lab
+.Nd turn a photograph into editable PBR texture maps
+.Sh SYNOPSIS
+.Nm
+.Fl -input Ar image
+.Fl -output Ar bundle
+.Op Ar recipe options
+.Nm
+.Fl -catalog Ar catalog.json
+.Fl -output Ar folder
+.Op Fl -jobs Ar n
+.Op Fl -report Ar report.json
+.Nm
+.Fl -watch Ar folder
+.Fl -output Ar folder
+.Nm
+.Fl -info | -contact-sheet | -export | -diff Ar bundle ...
+.Nm
+.Fl -validate Ar bundle
+.Sh DESCRIPTION
+.Nm
+derives a set of physically based rendering maps from one square photograph, entirely on this Mac:
+albedo, 16-bit height, tangent-space normal, roughness, ambient occlusion, cavity, convexity, slope and
+edge, with an optional bent normal and a packed ORM map.
+The result is a
+.Pa .pbrmaterial
+bundle: a folder of PNG maps and a
+.Pa manifest.json
+that records the recipe, source and map hashes, and how every map was made.
+.Pp
+A photograph does not uniquely determine shape or roughness.
+Every derived map is an estimate; roughness starts from the material preset, and metalness is exported
+only when assigned with
+.Fl -metalness .
+.Sh DERIVING
+.Bl -tag -width Ds
+.It Fl -input Ar image Fl -output Ar bundle
+Derive one image (PNG, JPEG, TIFF, HEIC; square, up to 4096 pixels).
+.It Fl -label Ar text , Fl -id Ar id
+Semantic label and material identifier recorded in the manifest.
+.It Fl -preset Ar flat | stone | fabric | organic | coated-metal | bare-metal
+Material prior for relief and roughness.
+Flat is the safe default for painted or unknown surfaces.
+.It Fl -height-strength Ar 0..0.5 , Fl -polarity Ar 1 | -1 , Fl -normal-strength Ar 0..16
+Relief amplitude, whether bright details are raised (1) or recessed (-1), and normal intensity.
+.It Fl -roughness Ar 0..1 , Fl -roughness-variation Ar 0..1
+Roughness prior and how much it varies with surface texture.
+.It Fl -ao-radius Ar 0..64 , Fl -ao-strength Ar 0..4 , Fl -bent-normal
+Ambient occlusion search radius in pixels, depth exaggeration, and an optional bent-normal map.
+.It Fl -equalize Ar 0..1
+Remove uneven lighting from the photograph before it becomes false relief.
+.It Fl -repair-albedo Ar off | blend | quilt | auto
+Rebuild the albedo itself so it tiles on both axes; the repaired albedo feeds every map.
+.It Fl -seamless Ar 0..0.45 , Fl -seamless-mode Ar cut | blend
+Edge band for making the result tileable: an aligned seam cut for structured textures, or a
+histogram-preserving blend for fine noise.
+.It Fl -normal-dx
+Write DirectX-style (green-down) normals instead of OpenGL-style (+Y).
+.It Fl -metalness Ar 0..1
+Assign metalness and write a packed ORM map.
+.It Fl -no-tile
+Do not wrap filters at the image edges.
+.It Fl -relief-mask-r8 Ar file
+Raw 8-bit mask, one byte per pixel: 0 suppresses inferred relief, 255 keeps it.
+.It Fl -height-override-r16le Ar file
+Raw 16-bit little-endian authored height that replaces inference.
+.It Fl -pre-upscale-exec Ar executable Fl -pre-upscale-arg Ar argument ...
+Run a local upscaler before derivation.
+Arguments must include the
+.Ql {input}
+and
+.Ql {output}
+placeholders; no shell is involved.
+.Fl -pre-upscale-timeout Ar seconds
+limits it (default 600).
+.El
+.Sh LEARNED GEOMETRY
+.Bl -tag -width Ds
+.It Fl -learned
+Run the bundled MoGe-2 normal estimator on the Neural Engine and fuse its geometry with the photograph's
+detail.
+The model is found beside the binary, in the Material Lab app, or at
+.Ev MATERIAL_LAB_MODEL .
+.It Fl -learned-normals Ar model
+Use a specific Core ML model
+.Pq Pa .mlmodelc No or Pa .mlpackage .
+.It Fl -guide-weight Ar 0..1
+Weight of the learned geometry (1 when a model is given).
+.It Fl -learned-cpu-only
+Run the estimator on the CPU for more reproducible output.
+.It Fl -guide-normals Ar png
+Use precomputed +Y tangent normals instead of running a model.
+.It Fl -save-guide-normals Ar png
+Also write the guide normals that were used, for reuse with
+.Fl -guide-normals .
+.El
+.Sh RECIPES AND PIPELINES
+.Bl -tag -width Ds
+.It Fl -recipe Ar file | bundle
+Start from a recipe: a JSON object (snake_case, or the camelCase used by the Material Lab apps), a
+manifest, or an existing bundle.
+Explicit options still override it.
+.It Fl -saved-recipe Ar name
+Use a recipe saved in the Material Lab Mac app.
+.It Fl -save-recipe Ar file
+Write the effective recipe as JSON; on its own, writes it and exits.
+.It Fl -catalog Ar catalog.json
+Derive every reviewed item of a catalog: a JSON object whose
+.Ql items
+array lists
+.Ql path ,
+.Ql label
+and
+.Ql reviewed
+for each image.
+.Fl -include-unreviewed
+opts in to candidates; failures stop the batch unless
+.Fl -keep-going .
+.It Fl -jobs Ar 1..8
+Derive catalog items in parallel.
+.It Fl -report Ar report.json
+Write per-item status, time, errors and exports.
+.It Fl -watch Ar folder
+Derive every image dropped into the folder, once its size is stable, until interrupted.
+.It Fl -also-export Ar formats
+Comma-separated export formats written beside each derived bundle.
+.El
+.Sh BUNDLE TOOLS
+Each tool validates its bundles first.
+.Bl -tag -width Ds
+.It Fl -info Ar bundle Op Fl -json
+Print the label, recipe, maps, seam measures, relief and learned-geometry provenance.
+.It Fl -contact-sheet Ar bundle Fl -output Ar sheet.png
+Write one labelled image of every map.
+.It Fl -diff Ar bundle_a bundle_b Op Fl -json
+Compare recipes and maps (mean and maximum difference, PSNR).
+.It Fl -export Ar bundle Fl -format Ar format Fl -output Ar path
+.Bl -tag -width unity-hdrp -compact
+.It Cm glb
+glTF 2.0 binary: a textured plane with base colour, normal and ORM.
+.It Cm usdz
+USDZ with a UsdPreviewSurface, for Quick Look and AR Quick Look.
+.It Cm unreal
+BaseColor, DirectX Normal, ORM and Height textures.
+.It Cm unity-hdrp
+BaseColor, Normal, Mask Map (metallic, occlusion, detail, smoothness) and Height.
+.It Cm godot
+Albedo, Normal, ORM and Height for ORMMaterial3D.
+.It Cm blender
+Separate base colour, normal, roughness, occlusion, metallic and height maps.
+.El
+.It Fl -validate Ar bundle | capture
+Check a bundle's manifest, hashes and PNG encodings, or a Material Capture file.
+.It Fl -version
+Print the version of
+.Nm
+and of its derivation core.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width MATERIAL_LAB_MODEL
+.It Ev MATERIAL_LAB_MODEL
+Path to a learned-geometry model used by
+.Fl -learned .
+.El
+.Sh EXIT STATUS
+0 on success, 1 on any error (including a validation failure), and 128 plus the signal number when
+interrupted.
+.Sh EXAMPLES
+Derive a brick wall with learned geometry, rebuild it to tile, and export for Unreal:
+.Bd -literal -offset indent
+material-lab --input wall.jpg --output wall --label "red brick" \e
+    --preset stone --learned --repair-albedo auto --also-export unreal
+.Ed
+.Pp
+Turn a folder of photographs into bundles and glTF files, two at a time:
+.Bd -literal -offset indent
+material-lab --catalog catalog.json --output out --recipe slate.json \e
+    --jobs 2 --also-export glb --report report.json
+.Ed
+.Pp
+Inspect a result:
+.Bd -literal -offset indent
+material-lab --info wall.pbrmaterial
+material-lab --contact-sheet wall.pbrmaterial --output wall.png
+.Ed
+.Sh PRIVACY
+Everything runs locally.
+.Nm
+makes no network connections; the optional pre-upscale hook runs only the executable you name.
+.Sh SEE ALSO
+Material Lab for Mac and Material Capture for iPhone.
+.Sh ACKNOWLEDGEMENTS
+Learned geometry uses Microsoft MoGe-2 (MIT) with DINOv2 modules (Apache-2.0).

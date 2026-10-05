@@ -266,6 +266,27 @@ float number(const std::string& s) {
     if (parsed != s.size() || !std::isfinite(n)) throw std::runtime_error("invalid number: " + s);
     return n;
 }
+constexpr const char* kCLIVersion = "1.0.0";
+
+// --learned: the model shipped beside the binary (<prefix>/share/material-lab), the one the Mac app installs,
+// or MATERIAL_LAB_MODEL. Returns an empty path when none is found.
+fs::path findLearnedModel(const char* argv0) {
+    std::vector<fs::path> candidates;
+    if (const char* env = getenv("MATERIAL_LAB_MODEL")) candidates.emplace_back(env);
+    std::error_code ec;
+    fs::path executable = fs::canonical(fs::absolute(argv0), ec);
+    if (!ec) {
+        const fs::path prefix = executable.parent_path().parent_path();
+        candidates.push_back(prefix / "share/material-lab/MoGe2Normals.mlmodelc");
+        candidates.push_back(executable.parent_path() / "MoGe2Normals.mlmodelc");
+    }
+    if (const char* home = getenv("HOME"))
+        candidates.push_back(fs::path(home) / "Library/Application Support/Material Lab/Models/MoGe2Normals.mlmodelc");
+    for (const auto& candidate : candidates)
+        if (fs::exists(candidate, ec)) return candidate;
+    return {};
+}
+
 constexpr const char* kUsage =
     "material-lab --input IMAGE --output BUNDLE_DIR [--label TEXT --id ID] [recipe flags]\n"
     "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed] [--keep-going]\n"
@@ -289,7 +310,8 @@ constexpr const char* kUsage =
     "Bundle tools (each validates its bundles first):\n"
     "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
     "  --export BUNDLE --format glb|usdz|unreal|unity-hdrp|godot|blender --output PATH\n"
-    "Learned geometry (see docs/LEARNED_NORMALS.md):\n"
+    "Learned geometry (see man material-lab):\n"
+    "  --learned  use the bundled MoGe-2 model (or the Material Lab app's)   --version\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
     "  --guide-normals PNG  use precomputed +Y tangent normals instead  --guide-weight 0..1 (default 1)\n"
     "  --learned-cpu-only  run the estimator on CPU for more reproducible output\n"
@@ -460,6 +482,16 @@ Options parse(int argc, const char** argv) {
             overrides.push_back([=](PBRLabRecipe& r) { r.assigned_metalness_enabled = 1; r.assigned_metalness = n; });
         }
         else if (flag == "--learned-normals") o.learnedModel = value();
+        else if (flag == "--learned") {
+            o.learnedModel = findLearnedModel(argv[0]);
+            if (o.learnedModel.empty())
+                throw std::runtime_error("--learned: no MoGe-2 model found beside material-lab, in the Material Lab app, "
+                                         "or at $MATERIAL_LAB_MODEL; pass --learned-normals MODEL instead");
+        }
+        else if (flag == "--version") {
+            std::cout << "material-lab " << kCLIVersion << " (derivation core " << PBRLabVersion() << ")\n";
+            std::exit(0);
+        }
         else if (flag == "--guide-normals") o.guideNormals = value();
         else if (flag == "--learned-cpu-only") o.learnedCpuOnly = true;
         else if (flag == "--save-guide-normals") o.saveGuideNormals = value();
