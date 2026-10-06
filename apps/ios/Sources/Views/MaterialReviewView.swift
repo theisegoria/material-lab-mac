@@ -50,6 +50,9 @@ struct MaterialReviewView: View {
     @State private var exportBundle = false
     @State private var exportMap = false
     @State private var isPackaging = false
+    @State private var showExportTargets = false
+    @State private var exportFolder: ExportFolderDocument?
+    @State private var exportingFolder = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case label, category }
@@ -115,6 +118,18 @@ struct MaterialReviewView: View {
                       contentType: .pbrCapture,
                       defaultFilename: safeFilename(store.semanticLabel) + ".pbrcapture") { result in
             if case .failure(let error) = result { store.errorMessage = error.localizedDescription }
+        }
+        .sheet(isPresented: $showExportTargets) {
+            ExportTargetsSheet(store: store) { folder in
+                exportFolder = ExportFolderDocument(url: folder)
+                exportingFolder = true
+            }
+            .presentationDetents([.large])
+        }
+        .fileExporter(isPresented: $exportingFolder, document: exportFolder, contentType: .folder,
+                      defaultFilename: exportFolder?.url?.lastPathComponent ?? "material") { result in
+            if case .failure(let error) = result { store.errorMessage = error.localizedDescription }
+            if let url = exportFolder?.url { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         }
         .fileExporter(isPresented: $exportMap, document: mapDocument,
                       contentType: .png,
@@ -332,12 +347,27 @@ struct MaterialReviewView: View {
         Card(title: "Export", symbol: "square.and.arrow.up") {
             VStack(spacing: 10) {
                 Button {
-                    Task { await exportCapture() }
+                    focusedField = nil
+                    if store.trimmedLabel.isEmpty {
+                        store.errorMessage = CaptureError.missingLabel.localizedDescription
+                    } else {
+                        showExportTargets = true
+                    }
                 } label: {
-                    Label(isPackaging ? "Packaging…" : "Save .pbrcapture to Files", systemImage: "doc.badge.arrow.up")
+                    Label("Export Material…", systemImage: "square.and.arrow.up.on.square")
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(.glassProminent)
+                .accessibilityIdentifier("export-material")
+                .accessibilityHint("Saves the PBR maps with glTF, USDZ, Unreal, Unity and other formats to Files")
+
+                Button {
+                    Task { await exportCapture() }
+                } label: {
+                    Label(isPackaging ? "Packaging…" : "Save .pbrcapture for Mac", systemImage: "doc.badge.arrow.up")
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                }
+                .buttonStyle(.glass)
                 .disabled(isPackaging)
                 .accessibilityIdentifier("export-material-bundle")
 

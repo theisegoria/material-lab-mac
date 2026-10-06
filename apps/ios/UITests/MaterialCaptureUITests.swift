@@ -181,6 +181,55 @@ final class MaterialCaptureUITests: XCTestCase {
         shot("learned-2-refining")
     }
 
+    /// Material library picker and export sheet. Runs only when SCREENSHOT_DIR is supplied.
+    func testPresetAndExportShots() throws {
+        guard let directory = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"], !directory.isEmpty else {
+            throw XCTSkip("Set SCREENSHOT_DIR to record preset and export screenshots")
+        }
+        func shot(_ name: String) {
+            let data = XCUIScreen.main.screenshot().pngRepresentation
+            try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+        }
+        let app = launchFresh()
+        importFirstPhoto(app)
+        let label = app.textFields["semantic-label"]
+        XCTAssertTrue(label.waitForExistence(timeout: 20))
+        label.tap()
+        label.typeText("Fireclay brick")
+        app.toolbars.buttons["Done"].firstMatch.tap()
+        app.buttons["open-recipe"].tap()
+        let material = app.buttons["material-preset"]
+        XCTAssertTrue(material.waitForExistence(timeout: 10))
+        material.tap()
+        let brick = app.buttons["material-preset-red-brick"]
+        XCTAssertTrue(brick.waitForExistence(timeout: 10))
+        sleep(1)
+        shot("presets-1-picker")
+        brick.tap()
+        sleep(1)
+        shot("presets-2-recipe")
+        app.buttons["recipe-done"].tap()
+        let derive = app.buttons["derive-material"]
+        for _ in 0..<4 where !derive.isHittable { app.swipeUp() }
+        derive.tap()
+        let export = app.buttons["export-material"]
+        XCTAssertTrue(export.waitForExistence(timeout: 120))
+        for _ in 0..<4 where !export.isHittable { app.swipeUp() }
+        sleep(1)
+        shot("export-1-card")
+        export.tap()
+        XCTAssertTrue(app.switches["export-target-glb"].waitForExistence(timeout: 10))
+        app.switches["export-target-glb"].tap()
+        app.switches["export-target-unreal"].tap()
+        sleep(1)
+        shot("export-2-sheet")
+        app.buttons["export-targets-save"].tap()
+        let save = app.buttons["Save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 60), "The Files exporter should open with the export folder")
+        sleep(1)
+        shot("export-3-files")
+    }
+
     /// Marketing screenshots. Runs only when MARKETING_DIR is supplied
     /// (`TEST_RUNNER_MARKETING_DIR=/path xcodebuild test -only-testing:MaterialCaptureUITests/testMarketingTour …`).
     /// Expects the hero texture as the most recent photo in the simulator library.

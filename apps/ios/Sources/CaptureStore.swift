@@ -225,6 +225,9 @@ final class CaptureStore {
 
     func applySavedRecipe(_ saved: SavedRecipe) { recipe = saved.recipe }
 
+    /// Starts from a material-library preset, keeping export, tiling and learned-geometry choices.
+    func applyLibraryPreset(_ preset: LibraryPreset) { recipe = recipe.applyingLibraryPreset(preset) }
+
     func deleteSavedRecipe(_ saved: SavedRecipe) {
         savedRecipes.removeAll { $0.id == saved.id }
         library?.saveSavedRecipes(savedRecipes)
@@ -492,6 +495,42 @@ final class CaptureStore {
                                     recipe: recipe, material: derived, linkToken: linkToken,
                                     captureId: captureId)
         }.value
+    }
+
+    /// Engine and interchange formats written beside the .pbrmaterial bundle (remembered across launches).
+    var exportTargets: Set<String> = ExportTargetPreference.load() {
+        didSet { ExportTargetPreference.save(exportTargets) }
+    }
+
+    /// Writes "<label> material/" in a temporary folder: the .pbrmaterial bundle (validator-compatible, as from the
+    /// Mac app and CLI) plus every chosen export target. Returns the folder for the Files exporter.
+    func makeMaterialExport() async throws -> URL {
+        let label = trimmedLabel
+        guard !label.isEmpty else { throw CaptureError.missingLabel }
+        guard let source, let derived, hasExportableMaps else {
+            throw CaptureError.derivationFailed("Inputs changed; derive again before export")
+        }
+        let category = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        let identity = MaterialBundleWriter.Identity(label: label, category: category.isEmpty ? "uncategorized" : category,
+                                                     origin: source.origin, captureMode: source.captureMode(for: crop))
+        let targets = ExportTarget.named(exportTargets)
+        let slug = Self.exportSlug(label)
+        return try await Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            let staging = fm.temporaryDirectory.appending(path: "material-export-\(UUID().uuidString)", directoryHint: .isDirectory)
+            let folder = staging.appending(path: "\(slug) material", directoryHint: .isDirectory)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let bundle = try MaterialBundleWriter.write(derived, identity: identity, into: folder, name: slug)
+            for target in targets { try target.export(bundle: bundle) }
+            return folder
+        }.value
+    }
+
+    /// Filesystem-safe name from the label ("Red brick #2" → "red-brick-2").
+    static func exportSlug(_ label: String) -> String {
+        let cleaned = label.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return cleaned.isEmpty ? "material" : String(cleaned.prefix(64))
     }
 
     // MARK: Persistence

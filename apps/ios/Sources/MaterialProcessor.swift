@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -37,6 +38,9 @@ enum MaterialPreset: String, CaseIterable, Codable, Identifiable, Sendable {
         case .bareMetal: PBRLabPresetBareMetal
         }
     }
+    init(_ value: PBRLabPreset) {
+        self = Self.allCases.first { $0.cValue == value } ?? .flat
+    }
 }
 
 /// How Make tileable joins opposite edges (core 1.2.0 `seamless_mode`); emitted as "cut" or "blend".
@@ -73,6 +77,9 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     var seamlessMode: SeamlessMode = .cut
     /// Core 1.4.0: rebuild the albedo itself so it tiles; the repaired albedo feeds every derived map.
     var albedoRepair: AlbedoRepair = .off
+    /// The material-library preset (LibraryPreset) this recipe started from; later edits keep the name, as the CLI
+    /// does. Recorded as recipe.material_preset in bundles.
+    var materialPreset: String?
 
     /// Whether the core changes the albedo pixels (delighting, edge treatment or repair).
     var conditionsAlbedo: Bool { albedoEqualize > 0 || seamlessBlend > 0 || albedoRepair != .off }
@@ -104,6 +111,24 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         seamlessMode = defaults.seamless_mode == 1 ? .cut : .blend
     }
 
+    /// A library preset's recipe (its prior plus tuned values), keeping the caller's export, tiling, lighting-cleanup
+    /// and learned-geometry choices.
+    func applyingLibraryPreset(_ library: LibraryPreset) -> Self {
+        let r = library.recipe
+        var next = applyingPreset(MaterialPreset(r.preset))
+        next.heightStrength = r.height_strength
+        next.heightPolarity = r.height_polarity
+        next.roughnessBase = r.roughness_base
+        next.roughnessVariation = r.roughness_variation
+        next.aoRadiusPixels = r.ao_radius_pixels
+        next.aoStrength = r.ao_strength
+        next.normalStrength = r.normal_strength
+        next.albedoEqualize = max(albedoEqualize, r.albedo_equalize)
+        next.assignedMetalness = r.assigned_metalness_enabled != 0 ? r.assigned_metalness : nil
+        next.materialPreset = library.id
+        return next
+    }
+
     /// Switch the material prior while keeping export, tiling and lighting-cleanup choices.
     func applyingPreset(_ preset: MaterialPreset) -> Self {
         var next = Self(preset: preset)
@@ -121,7 +146,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels
         case tileWrap, assignedMetalness, bentNormal, normalStrength, normalYDown, aoStrength
-        case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
+        case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair, materialPreset
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +170,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         // Recipes saved before the seam cut existed used the histogram blend.
         seamlessMode = try c.decodeIfPresent(SeamlessMode.self, forKey: .seamlessMode) ?? .blend
         albedoRepair = try c.decodeIfPresent(AlbedoRepair.self, forKey: .albedoRepair) ?? .off
+        materialPreset = LibraryPreset.named(try c.decodeIfPresent(String.self, forKey: .materialPreset))?.id
     }
 
     func encode(to encoder: Encoder) throws {
@@ -166,6 +192,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         try c.encode(guideNormalWeight, forKey: .guideNormalWeight)
         try c.encode(seamlessMode, forKey: .seamlessMode)
         try c.encode(albedoRepair, forKey: .albedoRepair)
+        try c.encodeIfPresent(materialPreset, forKey: .materialPreset)
     }
 
     var cValue: PBRLabRecipe {
@@ -332,6 +359,22 @@ struct SeamDiagnostics: Codable, Sendable {
     let albedoValueDelta: Float
 }
 
+/// How the core built the geometry (PBRLabDerivationInfo; the manifest's `relief`, algorithm 1.3.0).
+struct ReliefDiagnostics: Sendable, Equatable {
+    let heightSpanTileWidths: Float
+    let rmsSlope: Float
+    let learnedFormShare: Float
+    let learnedDetailCorrelation: Float
+    let detailPolarity: Int
+    let heightWrapSeamRatio: Float
+}
+
+/// SHA-256 of the straight RGBA8 albedo before and after repair (manifest `albedo_repair`).
+struct RepairDigests: Sendable, Equatable {
+    let sourceRGBA8: String
+    let repairedRGBA8: String
+}
+
 struct ImageQualityDiagnostics: Codable, Sendable {
     let brightNeutralFraction: Double
     let laplacianVariance: Double
@@ -360,6 +403,10 @@ struct DerivedMaterial: @unchecked Sendable {
     var learnedField: LearnedNormalField? = nil
     /// Present when the albedo was repaired before derivation (core 1.4.0).
     var repair: AlbedoRepairResult? = nil
+    /// Geometry diagnostics for .pbrmaterial manifests (full derivations only).
+    var relief: ReliefDiagnostics? = nil
+    /// Hashes of the albedo before and after repair, when repair ran.
+    var repairDigests: RepairDigests? = nil
 }
 
 /// Where a derivation gets learned guide normals when `recipe.guideNormalWeight > 0`.
@@ -456,6 +503,7 @@ enum MaterialProcessor {
         }
         var maps: [MaterialMapKind: DerivedMap] = [:]
         var seam = SeamDiagnostics(heightValueDelta: 0, heightGradientDelta: 0, albedoValueDelta: 0)
+        var relief: ReliefDiagnostics?
         var error = [CChar](repeating: 0, count: 1024)
         let context = control.map { Unmanaged.passUnretained($0).toOpaque() }
         let callback: PBRLabProgressCallback? = control == nil ? nil : { progress, context in
@@ -496,6 +544,12 @@ enum MaterialProcessor {
                 seam = SeamDiagnostics(heightValueDelta: cSeam.height_value_delta,
                                        heightGradientDelta: cSeam.height_gradient_delta,
                                        albedoValueDelta: cSeam.albedo_value_delta)
+                let info = PBRLabGetDerivationInfo(result)
+                relief = ReliefDiagnostics(heightSpanTileWidths: info.height_span_tile_widths, rmsSlope: info.rms_slope,
+                                           learnedFormShare: info.learned_form_share,
+                                           learnedDetailCorrelation: info.learned_detail_correlation,
+                                           detailPolarity: Int(info.detail_polarity),
+                                           heightWrapSeamRatio: info.height_wrap_seam_ratio)
                 for (index, kind) in MaterialMapKind.allCases.enumerated() {
                     if control?.report(0.85 + 0.15 * Double(index) / Double(MaterialMapKind.allCases.count)) == false {
                         throw CaptureError.cancelled
@@ -529,7 +583,14 @@ enum MaterialProcessor {
         return DerivedMaterial(maps: maps, sourcePNG: sourcePNG, correctedSource: corrected, seam: seam,
                                quality: quality, algorithmVersion: String(cString: PBRLabVersion()),
                                resolution: resolution, recipe: recipe, isPreview: preview,
-                               guideNormals: guideNormals?.provenance, learnedField: learnedField, repair: repair)
+                               guideNormals: guideNormals?.provenance, learnedField: learnedField, repair: repair,
+                               relief: relief,
+                               repairDigests: repair == nil || preview ? nil
+                                   : RepairDigests(sourceRGBA8: Self.sha256(correctedRGBA), repairedRGBA8: Self.sha256(rgba)))
+    }
+
+    static func sha256(_ bytes: [UInt8]) -> String {
+        SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
     /// PBRLabConditionAlbedo: delighting plus the requested albedo repair.

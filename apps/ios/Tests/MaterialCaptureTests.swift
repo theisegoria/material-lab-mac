@@ -309,7 +309,7 @@ final class MaterialCaptureTests: XCTestCase {
         recipe.guideNormalWeight = 1
         store.recipe = recipe
         var sawQuickPreview = false, sawCoarseProgress = false, sawFullPasses = false
-        let deadline = Date().addingTimeInterval(120)
+        let deadline = Date().addingTimeInterval(300)  // simulator inference runs on the CPU
         repeat {
             try await Task.sleep(for: .milliseconds(20))
             if store.showsQuickLearnedEstimate { sawQuickPreview = true }
@@ -327,6 +327,48 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertEqual(store.livePreview?.guideNormals?.workResolution, 1024)
         await store.derive()
         XCTAssertEqual(store.derived?.guideNormals?.workResolution, 1024, "Exports never carry the quick estimate")
+    }
+
+    @MainActor
+    func testMaterialExportWritesValidatorShapedBundleAndEveryTarget() async throws {
+        let store = CaptureStore()
+        await store.refreshLearnedModel()
+        let received = await store.receive(origin: .files, data: try XCTUnwrap(syntheticBricks(size: 512).pngData()))
+        XCTAssertTrue(received, store.errorMessage ?? "Import failed")
+        store.semanticLabel = "Export bricks"
+        store.resolution = 512
+        let library = try XCTUnwrap(LibraryPreset.named("red-brick"))
+        store.recipe = store.recipe.applyingLibraryPreset(library)
+        store.recipe.albedoRepair = .auto
+        store.recipe.bentNormal = true
+        if store.learnedModel != nil { store.recipe.guideNormalWeight = 1 }
+        XCTAssertEqual(store.recipe.materialPreset, "red-brick")
+        XCTAssertEqual(store.recipe.preset, .stone)
+        XCTAssertEqual(store.recipe.roughnessBase, library.recipe.roughness_base)
+        await store.derive()
+        XCTAssertTrue(store.hasExportableMaps, store.errorMessage ?? "Derivation failed")
+        let savedTargets = ExportTargetPreference.load()
+        defer { ExportTargetPreference.save(savedTargets) }
+        store.exportTargets = Set(ExportTarget.all.map(\.id))
+        let folder = try await store.makeMaterialExport()
+        let bundle = folder.appending(path: "export-bricks.pbrmaterial")
+        let manifestData = try Data(contentsOf: bundle.appending(path: "manifest.json"))
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let recipe = try XCTUnwrap(manifest["recipe"] as? [String: Any])
+        XCTAssertEqual(recipe["material_preset"] as? String, "red-brick")
+        XCTAssertEqual(recipe["preset"] as? String, "stone")
+        XCTAssertNotNil(manifest["relief"])
+        XCTAssertNotNil(manifest["albedo_repair"])
+        XCTAssertEqual((manifest["maps"] as? [String: Any])?.count, 10, "Nine required maps plus the bent normal")
+        for target in ExportTarget.all {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: target.destination(beside: bundle).path), target.id)
+        }
+        // Hand the folder to the host so the CLI validator can check it (TEST_RUNNER_EXPORT_DIR).
+        if let host = ProcessInfo.processInfo.environment["EXPORT_DIR"], !host.isEmpty {
+            let destination = URL(fileURLWithPath: host).appending(path: folder.lastPathComponent)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: folder, to: destination)
+        }
     }
 
     @MainActor

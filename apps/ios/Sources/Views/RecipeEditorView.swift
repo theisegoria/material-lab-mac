@@ -13,7 +13,18 @@ struct RecipeEditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Material prior", selection: Binding(get: { store.recipe.preset },
+                    NavigationLink {
+                        MaterialPresetPicker(store: store)
+                    } label: {
+                        LabeledContent {
+                            Text(LibraryPreset.named(store.recipe.materialPreset)?.title ?? "Choose")
+                        } label: {
+                            Label("Material", systemImage: LibraryPreset.named(store.recipe.materialPreset)?.symbol
+                                  ?? "square.stack.3d.up")
+                        }
+                    }
+                    .accessibilityIdentifier("material-preset")
+                    Picker("Relief prior", selection: Binding(get: { store.recipe.preset },
                                                                 set: { store.setPreset($0) })) {
                         ForEach(MaterialPreset.allCases) { preset in
                             Label(preset.title, systemImage: preset.symbol).tag(preset)

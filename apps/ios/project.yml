@@ -31,6 +31,16 @@ targets:
         compilerFlags: ['-std=c++23', '-O3']
       - path: ../../core/src/MaterialPresets.cpp
         compilerFlags: ['-std=c++23']
+      # The shared engine/interchange exporter (glTF, USDZ, MaterialX, Unreal, Unity...), as in the CLI.
+      - path: ../../core/src/PNGWriter.cpp
+        compilerFlags: ['-std=c++23', '-O2']
+      - path: ../../core/src/tools/Common.mm
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      - path: ../../core/src/tools/Export.mm
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      - path: ../../core/src/tools/ExportAPI.mm
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      - path: ../shared
     # The optional MoGe-2 learned-normal model (git-ignored, ~56 MB; see docs/LEARNED_NORMALS.md) is compiled into
     # the bundle when present. A script phase rather than a source reference: Xcode fails the build on a missing
     # .mlpackage even when XcodeGen marks the path optional, and builds without the model must still succeed.
@@ -53,6 +63,8 @@ targets:
           rm -rf "$out"
           mkdir -p "$dst"
           xcrun coremlcompiler compile "$src" "$dst" --platform ios --deployment-target "$IPHONEOS_DEPLOYMENT_TARGET"
+    dependencies:
+      - sdk: libz.tbd
     settings:
       base:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
