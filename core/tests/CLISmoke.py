@@ -52,6 +52,33 @@ def sample_height_png(path: pathlib.Path) -> None:
     path.write_bytes(png)
 
 
+def gray_png(path: pathlib.Path, values) -> None:
+    """A 16x16 8-bit grayscale PNG; values(x, y) -> 0..255."""
+    rows = bytearray()
+    for y in range(16):
+        rows.append(0)
+        rows.extend(values(x, y) for x in range(16))
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(rows))
+    png += chunk(b"IEND", b"")
+    path.write_bytes(png)
+
+
+def rgb_png(path: pathlib.Path, pixel) -> None:
+    """A 16x16 8-bit RGB PNG; pixel(x, y) -> (r, g, b)."""
+    rows = bytearray()
+    for y in range(16):
+        rows.append(0)
+        for x in range(16):
+            rows.extend(pixel(x, y))
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(rows))
+    png += chunk(b"IEND", b"")
+    path.write_bytes(png)
+
+
 def run(cli: str, *args: str, expect_success=True, cwd=None) -> subprocess.CompletedProcess:
     process = subprocess.run([cli, *args], text=True, capture_output=True, cwd=cwd)
     if (process.returncode == 0) != expect_success:
@@ -480,6 +507,39 @@ def main() -> None:
         formats = json.loads(run(cli, "--list-formats", "--json").stdout)
         assert [f["identifier"] for f in formats][:2] == ["glb", "usdz"] and len(formats) == 11
         assert all(f["title"] and f["detail"] for f in formats)
+        # Authored inputs: a hand-made albedo and artist maps replace derived ones exactly.
+        authored_dir = root / "authored"
+        authored_dir.mkdir()
+        gray_png(authored_dir / "rough.png", lambda x, y: x * 16)
+        gray_png(authored_dir / "metal.png", lambda x, y: 255 if x < 8 else 0)
+        gray_png(authored_dir / "ao.png", lambda x, y: 128 + y * 8)
+        rgb_png(authored_dir / "normal.png", lambda x, y: (128 + (x % 4) * 20, 128 - (y % 4) * 20, 230))
+        sample_height_png(authored_dir / "height.png")
+        authored_bundle = authored_dir / "hand.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(authored_bundle), "--authored", "--normal-map",
+            str(authored_dir / "normal.png"), "--normal-map-dx", "--roughness-map", str(authored_dir / "rough.png"),
+            "--ao-map", str(authored_dir / "ao.png"), "--metalness-map", str(authored_dir / "metal.png"))
+        run(cli, "--validate", str(authored_bundle))
+        hand = json.loads((authored_bundle / "manifest.json").read_text())
+        assert hand["source"]["source_kind"] == "authored_albedo" and hand["maps"]["albedo"]["provenance"] == "authored_albedo"
+        assert hand["maps"]["normal"]["provenance"] == "authored_normal_map"
+        assert hand["maps"]["height"]["provenance"] == "integrated_from_authored_normal_map"
+        assert sorted(hand["authored_inputs"]) == ["ao", "metalness", "normal", "roughness"]
+        assert hand["recipe"]["assigned_metalness_enabled"] is True and "orm" in hand["maps"]
+        _, _, _, rough_rows = read_png(authored_bundle / "roughness.png")
+        _, _, _, orm_rows = read_png(authored_bundle / "orm.png")
+        _, _, _, normal_rows = read_png(authored_bundle / "normal.png")
+        assert rough_rows[0][4 * 5] == 80 and orm_rows[0][4 * 2 + 2] == 255 and orm_rows[0][4 * 12 + 2] == 0
+        assert normal_rows[1][1] == 255 - (128 - 20)  # DirectX input flipped to the bundle's +Y
+        # The exporter carries the per-pixel metalness into Unity's metallic map.
+        run(cli, "--export", str(authored_bundle), "--format", "unity", "--output", str(authored_dir / "unity"))
+        _, _, _, unity_rows = read_png(authored_dir / "unity" / "Source_MetallicSmoothness.png")
+        assert unity_rows[0][0] == 255 and unity_rows[0][4 * 12] == 0
+        height_bundle = authored_dir / "height.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(height_bundle), "--preset", "stone", "--height-map", str(authored_dir / "height.png"))
+        assert json.loads((height_bundle / "manifest.json").read_text())["maps"]["height"]["provenance"] == "authored_height_override"
+        run(cli, "--input", str(image), "--output", str(authored_dir / "x"), "--normal-map-dx", expect_success=False)
+
         # Material presets: the library is listed, recorded in manifests and saved recipes, and validated.
         listed = json.loads(run(cli, "--list-presets", "--json").stdout)
         assert len(listed) >= 30 and {"red-brick", "wood-planks", "brushed-steel"} <= {p["identifier"] for p in listed}

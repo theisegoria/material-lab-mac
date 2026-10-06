@@ -79,6 +79,22 @@ Do not wrap filters at the image edges.
 Raw 8-bit mask, one byte per pixel: 0 suppresses inferred relief, 255 keeps it.
 .It Fl -height-override-r16le Ar file
 Raw 16-bit little-endian authored height that replaces inference.
+.It Fl -authored
+The input is a hand-made albedo (painted or drawn, not photographed).
+It is recorded as authored; derivation leaves it untouched unless
+.Fl -equalize
+or
+.Fl -repair-albedo
+ask otherwise.
+.It Fl -height-map Ar image , Fl -normal-map Ar image Op Fl -normal-map-dx
+Artist-made height (8- or 16-bit) or tangent-space normal map (+Y unless
+.Fl -normal-map-dx ) ,
+resampled to the source size, that replaces the derived one.
+An authored normal map also drives height, ambient occlusion and the masks.
+.It Fl -roughness-map Ar image , Fl -ao-map Ar image , Fl -metalness-map Ar image
+Artist-made grayscale maps that replace the derived roughness and occlusion, or provide per-pixel metalness
+(written to the ORM map).
+The manifest records every authored input by name and hash.
 .It Fl -pre-upscale-exec Ar executable Fl -pre-upscale-arg Ar argument ...
 Run a local upscaler before derivation.
 Arguments must include the

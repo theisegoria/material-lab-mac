@@ -28,6 +28,13 @@ _arguments -s \
   '--seamless-mode[tiling method]:mode:(cut blend)' \
   "--repair-albedo[rebuild the albedo to tile]:repair:(${repairs})" \
   '--metalness[assigned metalness 0..1]:value:' \
+  '--authored[the input is a hand-made albedo]' \
+  '--height-map[authored height image]:image:_files' \
+  '--normal-map[authored normal map]:image:_files' \
+  '--normal-map-dx[the authored normal map is DirectX]' \
+  '--roughness-map[authored roughness image]:image:_files' \
+  '--ao-map[authored ambient occlusion image]:image:_files' \
+  '--metalness-map[authored metalness image]:image:_files' \
   '--normal-dx[DirectX green-down normals]' \
   '--no-tile[do not wrap filters at the edges]' \
   '--relief-mask-r8[raw 8-bit relief mask]:file:_files' \

@@ -241,6 +241,15 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
     if (in->guide_normal_rgba8 && in->guide_normal_row_bytes < static_cast<size_t>(in->width) * 4) {
         why = "guide normal row stride is too short"; return false;
     }
+    if ((in->authored_normal_rgba8 && in->authored_normal_row_bytes < static_cast<size_t>(in->width) * 4) ||
+        (in->authored_roughness_r8 && in->authored_roughness_row_bytes < in->width) ||
+        (in->authored_ao_r8 && in->authored_ao_row_bytes < in->width) ||
+        (in->authored_metalness_r8 && in->authored_metalness_row_bytes < in->width)) {
+        why = "authored map row stride is too short"; return false;
+    }
+    if (in->authored_metalness_r8 && r && !r->assigned_metalness_enabled) {
+        why = "an authored metalness map needs assigned metalness enabled"; return false;
+    }
     auto in01 = [](float v, float hi) { return std::isfinite(v) && v >= 0 && v <= hi; };
     if (r->preset < PBRLabPresetFlat || r->preset > PBRLabPresetBareMetal ||
         !in01(r->height_strength, .5f) ||
@@ -867,6 +876,18 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
     setError(error, error_capacity, "");
     std::string why;
     if (!valid(input, recipe, why)) { setError(error, error_capacity, why.c_str()); return nullptr; }
+    // An authored normal map is the geometry: integrate it into height at full weight in place of guide normals.
+    PBRLabInput authoredInput;
+    PBRLabRecipe authoredRecipe;
+    if (input->authored_normal_rgba8 && !input->height_override_r16) {
+        authoredInput = *input;
+        authoredInput.guide_normal_rgba8 = input->authored_normal_rgba8;
+        authoredInput.guide_normal_row_bytes = input->authored_normal_row_bytes;
+        authoredRecipe = *recipe;
+        authoredRecipe.guide_normal_weight = 1.0f;
+        input = &authoredInput;
+        recipe = &authoredRecipe;
+    }
     try {
         const int width = static_cast<int>(input->width);
         const int height = static_cast<int>(input->height);
@@ -1227,6 +1248,27 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 }
             }
         }, progress, context, .34f, .95f);
+
+        // Authored maps replace the derived ones (the ORM channels follow them).
+        for (int y = 0; y < height; ++y) {
+            const uint8_t *nRow = input->authored_normal_rgba8 ? input->authored_normal_rgba8 + static_cast<size_t>(y) * input->authored_normal_row_bytes : nullptr;
+            const uint8_t *rRow = input->authored_roughness_r8 ? input->authored_roughness_r8 + static_cast<size_t>(y) * input->authored_roughness_row_bytes : nullptr;
+            const uint8_t *aRow = input->authored_ao_r8 ? input->authored_ao_r8 + static_cast<size_t>(y) * input->authored_ao_row_bytes : nullptr;
+            const uint8_t *mRow = input->authored_metalness_r8 ? input->authored_metalness_r8 + static_cast<size_t>(y) * input->authored_metalness_row_bytes : nullptr;
+            for (int x = 0; x < width; ++x) {
+                const size_t i = static_cast<size_t>(y) * width + x;
+                if (nRow) {
+                    normal[i * 4] = nRow[x * 4];
+                    normal[i * 4 + 1] = recipe->normal_y_down ? static_cast<uint8_t>(255 - nRow[x * 4 + 1]) : nRow[x * 4 + 1];
+                    normal[i * 4 + 2] = nRow[x * 4 + 2];
+                    normal[i * 4 + 3] = 255;
+                }
+                auto gray = [&](std::vector<uint8_t> &map, uint8_t v) { map[i * 4] = map[i * 4 + 1] = map[i * 4 + 2] = v; map[i * 4 + 3] = 255; };
+                if (rRow) { gray(roughness, rRow[x]); if (orm) (*orm)[i * 4 + 1] = rRow[x]; }
+                if (aRow) { gray(ao, aRow[x]); if (orm) (*orm)[i * 4] = aRow[x]; }
+                if (mRow && orm) (*orm)[i * 4 + 2] = mRow[x];
+            }
+        }
         checkpoint(progress, context, .97f);
 
         float heightDelta = 0, gradientDelta = 0, albedoSeam = 0;

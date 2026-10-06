@@ -227,6 +227,9 @@ struct Options {
     std::string label, id;
     PBRLabRecipe recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
     fs::path learnedModel, guideNormals, saveGuideNormals;
+    // Authored inputs: the source is an artist-made albedo, and/or artist-made maps replace derived ones.
+    bool authoredAlbedo = false, normalMapDX = false;
+    fs::path heightMap, normalMap, roughnessMap, aoMap, metalnessMap;
     bool learnedCpuOnly = false, guideWeightSet = false;
     bool includeUnreviewed = false, keepGoing = false;
     double preUpscaleTimeout = 600;
@@ -312,6 +315,10 @@ constexpr const char* kUsage =
     "  --repair-albedo off|blend|quilt|auto  rebuild the albedo itself so it tiles (band = --seamless, default 0.12);\n"
     "    the repaired albedo feeds every derived map and the learned estimator (auto: quilt unless its cut is costly)\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
+    "Authored inputs (artist-made images; resampled to the source size):\n"
+    "  --authored  the input is a hand-made albedo (recorded as authored)\n"
+    "  --height-map IMG  --normal-map IMG [--normal-map-dx]  --roughness-map IMG  --ao-map IMG  --metalness-map IMG\n"
+    "    replace the derived map; an authored normal map also drives height, AO and the masks\n"
     "Recipes and pipelines:\n"
     "  --recipe FILE|BUNDLE  start from a recipe JSON (snake_case or the apps' camelCase) or a bundle's recipe\n"
     "  --saved-recipe NAME  use a recipe saved in the Material Lab Mac app   --save-recipe FILE  write the recipe\n"
@@ -532,6 +539,13 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--guide-weight") { recipeNumber(&PBRLabRecipe::guide_normal_weight); o.guideWeightSet = true; }
         else if (flag == "--relief-mask-r8") o.mask = value();
         else if (flag == "--height-override-r16le") o.heightOverride = value();
+        else if (flag == "--authored") o.authoredAlbedo = true;
+        else if (flag == "--height-map") o.heightMap = value();
+        else if (flag == "--normal-map") o.normalMap = value();
+        else if (flag == "--normal-map-dx") o.normalMapDX = true;
+        else if (flag == "--roughness-map") o.roughnessMap = value();
+        else if (flag == "--ao-map") o.aoMap = value();
+        else if (flag == "--metalness-map") o.metalnessMap = value();
         else if (flag == "--include-unreviewed") o.includeUnreviewed = true;
         else if (flag == "--keep-going") o.keepGoing = true;
         else if (flag == "--pre-upscale-exec") o.preUpscaleExec = value();
@@ -575,17 +589,24 @@ Options parse(int argc, const char** argv) {
              : !o.savedRecipe.empty() ? loadSavedRecipe(o.savedRecipe, &o.materialPreset)
              : preset.value_or(PBRLabDefaultRecipe(PBRLabPresetFlat));
     const bool hasGuide = !o.learnedModel.empty() || !o.guideNormals.empty();
+    // Authored height or normals supply the geometry a learned-geometry recipe asks for.
+    const bool authoredGeometry = !o.normalMap.empty() || !o.heightMap.empty() || !o.heightOverride.empty();
     if (!o.learnedModel.empty() && !o.guideNormals.empty())
         throw std::runtime_error("use either --learned-normals or --guide-normals, not both");
     // A guide defaults to full weight, unless a recipe file already chose one.
     if (hasGuide && !(recipeSource && o.recipe.guide_normal_weight > 0)) o.recipe.guide_normal_weight = 1.0f;
     for (auto& apply : overrides) apply(o.recipe);
-    if (o.recipe.guide_normal_weight > 0 && !hasGuide)
+    if (o.recipe.guide_normal_weight > 0 && !hasGuide && !authoredGeometry)
         throw std::runtime_error(recipeSource && !o.guideWeightSet
             ? "the recipe uses learned geometry: add --learned-normals MODEL (or --guide-normals PNG), or --guide-weight 0"
             : "--guide-weight needs --learned-normals or --guide-normals");
     if (o.recipe.albedo_repair != 0 && o.recipe.tile_wrap == 0)
         throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
+    if (!o.heightMap.empty() && !o.heightOverride.empty())
+        throw std::runtime_error("use either --height-map or --height-override-r16le");
+    if (o.normalMapDX && o.normalMap.empty()) throw std::runtime_error("--normal-map-dx describes --normal-map");
+    // An authored metalness map fills the ORM blue channel, which exists only with assigned metalness.
+    if (!o.metalnessMap.empty()) o.recipe.assigned_metalness_enabled = 1;
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
         throw std::runtime_error("--save-guide-normals needs --learned-normals and a single --input");
     if (o.listPresets || o.listFormats) {
@@ -911,6 +932,35 @@ GuideNormals loadGuideNormalsPNG(const fs::path& path, uint32_t size) {
     return guide;
 }
 
+// An authored data map (any ImageIO format) resampled to size x size without colour management: RGBA8 normals,
+// R8 masks, or R16 little-endian height (16-bit sources keep their precision).
+enum class DataMap { normalRGBA8, gray8, height16 };
+std::vector<uint8_t> loadDataMap(const fs::path& path, uint32_t size, DataMap kind, const char* flag) {
+    NSData* data = boundedDataAt(path, 256ull * 1024 * 1024);
+    if (!data) throw std::runtime_error(std::string("cannot read ") + flag + " file: " + path.string());
+    CGImageSourceRef source = CGImageSourceCreateWithData((__bridge CFDataRef)data, nullptr);
+    CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, nullptr) : nullptr;
+    if (source) CFRelease(source);
+    if (!image) throw std::runtime_error(std::string("cannot decode ") + flag + " image: " + path.string());
+    const bool rgba = kind == DataMap::normalRGBA8, sixteen = kind == DataMap::height16;
+    const size_t channels = rgba ? 4 : 1, bytes = sixteen ? 2 : 1;
+    std::vector<uint8_t> out(static_cast<size_t>(size) * size * channels * bytes);
+    CGColorSpaceRef space = rgba ? CGColorSpaceCreateDeviceRGB() : CGColorSpaceCreateDeviceGray();
+    const uint32_t info = rgba ? static_cast<uint32_t>(kCGImageAlphaNoneSkipLast) | static_cast<uint32_t>(kCGBitmapByteOrder32Big)
+                               : static_cast<uint32_t>(kCGImageAlphaNone) | (sixteen ? static_cast<uint32_t>(kCGBitmapByteOrder16Little) : 0u);
+    CGContextRef context = CGBitmapContextCreate(out.data(), size, size, sixteen ? 16 : 8, size * channels * bytes, space,
+                                                 static_cast<CGBitmapInfo>(info));
+    CGColorSpaceRelease(space);
+    if (!context) { CGImageRelease(image); throw std::runtime_error(std::string("cannot allocate the ") + flag + " buffer"); }
+    CGContextSetBlendMode(context, kCGBlendModeCopy);
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextDrawImage(context, CGRectMake(0, 0, size, size), image);
+    CGContextRelease(context);
+    CGImageRelease(image);
+    if (rgba) for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
+    return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Derivation.
 int progressCallback(float, void*) { return gInterrupted ? 0 : 1; }
@@ -939,8 +989,11 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
     PBRLabAlbedoRepairInfo repairInfo{};
     const std::string sourcePixelsHash = hash(image.pixels.data(), image.pixels.size());
     if (repairAlbedo) {
-        PBRLabInput plain{image.pixels.data(), static_cast<size_t>(image.width) * 4, nullptr, 0, nullptr, 0,
-                          image.width, image.height, nullptr, 0};
+        PBRLabInput plain{};
+        plain.rgba8 = image.pixels.data();
+        plain.rgba_row_bytes = static_cast<size_t>(image.width) * 4;
+        plain.width = image.width;
+        plain.height = image.height;
         std::vector<uint8_t> repaired(image.pixels.size());
         char repairError[256]{};
         if (!PBRLabConditionAlbedo(&plain, &options.recipe, repaired.data(), static_cast<size_t>(image.width) * 4,
@@ -953,9 +1006,31 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
         checkInterrupted();
     }
     auto mask = options.mask.empty() ? std::vector<uint8_t>{} : rawFile(options.mask, count);
-    auto authored = options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
+    auto authored = !options.heightMap.empty() ? loadDataMap(options.heightMap, image.width, DataMap::height16, "--height-map")
+                  : options.heightOverride.empty() ? std::vector<uint8_t>{} : rawFile(options.heightOverride, count * 2);
+    auto authoredNormal = options.normalMap.empty() ? std::vector<uint8_t>{}
+                        : loadDataMap(options.normalMap, image.width, DataMap::normalRGBA8, "--normal-map");
+    if (options.normalMapDX) for (size_t i = 1; i < authoredNormal.size(); i += 4) authoredNormal[i] = 255 - authoredNormal[i];
+    auto authoredRoughness = options.roughnessMap.empty() ? std::vector<uint8_t>{}
+                           : loadDataMap(options.roughnessMap, image.width, DataMap::gray8, "--roughness-map");
+    auto authoredAO = options.aoMap.empty() ? std::vector<uint8_t>{} : loadDataMap(options.aoMap, image.width, DataMap::gray8, "--ao-map");
+    auto authoredMetal = options.metalnessMap.empty() ? std::vector<uint8_t>{}
+                       : loadDataMap(options.metalnessMap, image.width, DataMap::gray8, "--metalness-map");
+    // The manifest records each authored input file by hash.
+    NSMutableDictionary* authoredInputs = [NSMutableDictionary dictionary];
+    auto recordAuthored = [&](const char* role, const fs::path& path) {
+        if (path.empty()) return;
+        NSData* file = boundedDataAt(path, 256ull * 1024 * 1024);
+        authoredInputs[@(role)] = @{@"file": ns(path.filename().string()), @"sha256": ns(hash(file))};
+    };
+    recordAuthored("height", options.heightMap.empty() ? options.heightOverride : options.heightMap);
+    recordAuthored("normal", options.normalMap);
+    recordAuthored("roughness", options.roughnessMap);
+    recordAuthored("ao", options.aoMap);
+    recordAuthored("metalness", options.metalnessMap);
     GuideNormals guide;
-    const bool useGuide = options.recipe.guide_normal_weight > 0 && authored.empty();
+    // Authored height or normals are the geometry, so the learned estimator is not run.
+    const bool useGuide = options.recipe.guide_normal_weight > 0 && authored.empty() && authoredNormal.empty();
     if (useGuide) guide = !options.learnedModel.empty() ? runLearnedNormals(image, options)
                                                        : loadGuideNormalsPNG(options.guideNormals, image.width);
     if (useGuide && !options.saveGuideNormals.empty()) {
@@ -971,7 +1046,11 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                       mask.empty() ? nullptr : mask.data(), mask.empty() ? 0 : image.width,
                       authored.empty() ? nullptr : authored.data(), authored.empty() ? 0 : static_cast<size_t>(image.width) * 2,
                       image.width, image.height, useGuide ? guide.rgba.data() : nullptr,
-                      useGuide ? static_cast<size_t>(image.width) * 4 : 0};
+                      useGuide ? static_cast<size_t>(image.width) * 4 : 0,
+                      authoredNormal.empty() ? nullptr : authoredNormal.data(), authoredNormal.empty() ? 0 : static_cast<size_t>(image.width) * 4,
+                      authoredRoughness.empty() ? nullptr : authoredRoughness.data(), authoredRoughness.empty() ? 0 : image.width,
+                      authoredAO.empty() ? nullptr : authoredAO.data(), authoredAO.empty() ? 0 : image.width,
+                      authoredMetal.empty() ? nullptr : authoredMetal.data(), authoredMetal.empty() ? 0 : image.width};
     char error[256]{};
     std::unique_ptr<PBRLabResult, decltype(&PBRLabFreeResult)> result(
         PBRLabDerive(&input, &derivationRecipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);
@@ -1010,7 +1089,14 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                 throw std::runtime_error(pngError);
             NSString* provenance = @(role.provenance);
             if (role.kind == PBRLabMapAlbedo && repairAlbedo) provenance = @"repaired_tileable_albedo_derived_from_source";
+            else if (role.kind == PBRLabMapAlbedo && options.authoredAlbedo) provenance = @"authored_albedo";
+            if (role.kind == PBRLabMapNormal && !authoredNormal.empty()) provenance = @"authored_normal_map";
+            if (role.kind == PBRLabMapRoughness && !authoredRoughness.empty()) provenance = @"authored_roughness_map";
+            if (role.kind == PBRLabMapAO && !authoredAO.empty()) provenance = @"authored_ao_map";
+            if (role.kind == PBRLabMapORM && (!authoredMetal.empty() || !authoredRoughness.empty() || !authoredAO.empty()))
+                provenance = @"authored_and_estimated_channels";
             if (role.kind == PBRLabMapHeight) provenance = !authored.empty() ? @"authored_height_override" :
+                !authoredNormal.empty() ? @"integrated_from_authored_normal_map" :
                 useGuide ? (options.recipe.preset == PBRLabPresetFlat ? @"learned_normals"
                                                                       : @"estimated_from_albedo_and_learned_normals") :
                 options.recipe.preset == PBRLabPresetFlat ? @"flat_prior" : @"estimated_from_albedo";
@@ -1023,7 +1109,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
         recipe[@"guide_normal_weight"] = @(useGuide ? r.guide_normal_weight : 0.0f);
         if (!options.materialPreset.empty()) recipe[@"material_preset"] = ns(options.materialPreset);
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
-                                                @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
+                                                @"color_space": @"converted_to_sRGB",
+                                                @"source_kind": options.authoredAlbedo ? @"authored_albedo" : @"user_supplied_image"} mutableCopy];
         if (pre.provenance) {
             sourceManifest[@"processed_sha256"] = pre.provenance[@"output_sha256"];
             sourceManifest[@"pre_upscale"] = pre.provenance;
@@ -1044,6 +1131,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             @"runtime_admitted": @NO
         } mutableCopy];
         if (useGuide) manifest[@"guide_normals"] = guide.provenance;
+        if (authoredInputs.count) manifest[@"authored_inputs"] = authoredInputs;
         if (repairAlbedo) {
             auto seamJSON = [](const PBRLabWrapSeam& seam) {
                 return @{@"pixel_x": @(seam.pixel_x), @"pixel_y": @(seam.pixel_y), @"tone_x": @(seam.tone_x),

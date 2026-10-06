@@ -52,6 +52,19 @@ typedef struct PBRLabInput {
     // linear RGBA8, same size as the source. Integrated to height and blended by guide_normal_weight.
     const uint8_t *guide_normal_rgba8;
     size_t guide_normal_row_bytes;
+    // Authored inputs (the derivation is unchanged when they are absent): artist-made maps, same size as the
+    // source, that replace the derived ones. Normal: tangent space, +Y / green-up, linear RGBA8; unless
+    // height_override_r16 is set it is also integrated into height at full weight (in place of guide normals), so
+    // height, AO and the masks agree with it. Roughness, AO (255 = unoccluded) and metalness: linear R8.
+    // Metalness needs recipe.assigned_metalness_enabled (it fills the ORM blue channel).
+    const uint8_t *authored_normal_rgba8;
+    size_t authored_normal_row_bytes;
+    const uint8_t *authored_roughness_r8;
+    size_t authored_roughness_row_bytes;
+    const uint8_t *authored_ao_r8;
+    size_t authored_ao_row_bytes;
+    const uint8_t *authored_metalness_r8;
+    size_t authored_metalness_row_bytes;
 } PBRLabInput;
 
 typedef struct PBRLabRecipe {

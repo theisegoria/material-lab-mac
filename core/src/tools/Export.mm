@@ -16,9 +16,12 @@ namespace {
 struct Material {
     std::string label, slug, titleCase, convention;
     bool metalAssigned = false;
-    float metal = 0;
+    float metal = 0;                  // The recipe's assigned value (or the mean of an authored metalness map).
+    std::vector<uint8_t> metalBytes;  // Per pixel: the ORM map's blue channel when the bundle has one.
+    bool metalVaries = false;
     Raster albedo, normal, roughness, ao, height;
     uint32_t size() const { return albedo.width; }
+    uint8_t metalAt(size_t pixel) const { return metalBytes[pixel]; }
 };
 
 NSDictionary* loadManifestObject(const fs::path& bundle) {
@@ -60,6 +63,16 @@ Material load(const fs::path& bundle) {
     material.roughness = loadMap(bundle, "roughness");
     material.ao = loadMap(bundle, "ao");
     material.height = loadMap(bundle, "height");
+    const size_t pixels = static_cast<size_t>(material.size()) * material.size();
+    material.metalBytes.assign(pixels, static_cast<uint8_t>(std::lround(material.metal * 255)));
+    if (material.metalAssigned && fs::exists(bundle / "orm.png")) {
+        const Raster orm = loadMap(bundle, "orm");
+        double sum = 0;
+        for (size_t i = 0; i < pixels; ++i) { material.metalBytes[i] = orm.bytes[i * 4 + 2]; sum += material.metalBytes[i]; }
+        material.metalVaries = std::any_of(material.metalBytes.begin(), material.metalBytes.end(),
+                                           [&](uint8_t v) { return v != material.metalBytes[0]; });
+        material.metal = static_cast<float>(sum / pixels / 255.0);
+    }
     return material;
 }
 
@@ -77,11 +90,10 @@ std::vector<uint8_t> normalRGBA(const Material& m, const std::string& convention
 std::vector<uint8_t> ormRGBA(const Material& m) {
     const size_t pixels = static_cast<size_t>(m.size()) * m.size();
     std::vector<uint8_t> out(pixels * 4, 255);
-    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
     for (size_t i = 0; i < pixels; ++i) {
         out[i * 4] = byteAt(m.ao, i, 0);
         out[i * 4 + 1] = byteAt(m.roughness, i, 0);
-        out[i * 4 + 2] = metal;
+        out[i * 4 + 2] = m.metalAt(i);
     }
     return out;
 }
@@ -90,9 +102,8 @@ std::vector<uint8_t> ormRGBA(const Material& m) {
 std::vector<uint8_t> hdrpMaskRGBA(const Material& m) {
     const size_t pixels = static_cast<size_t>(m.size()) * m.size();
     std::vector<uint8_t> out(pixels * 4);
-    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
     for (size_t i = 0; i < pixels; ++i) {
-        out[i * 4] = metal;
+        out[i * 4] = m.metalAt(i);
         out[i * 4 + 1] = byteAt(m.ao, i, 0);
         out[i * 4 + 2] = 0;
         out[i * 4 + 3] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
@@ -104,9 +115,8 @@ std::vector<uint8_t> hdrpMaskRGBA(const Material& m) {
 std::vector<uint8_t> unityMetallicRGBA(const Material& m) {
     const size_t pixels = static_cast<size_t>(m.size()) * m.size();
     std::vector<uint8_t> out(pixels * 4, 0);
-    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
     for (size_t i = 0; i < pixels; ++i) {
-        out[i * 4] = metal;
+        out[i * 4] = m.metalAt(i);
         out[i * 4 + 3] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
     }
     return out;
@@ -127,10 +137,9 @@ std::vector<uint8_t> labNormalRGBA(const Material& m) {
 std::vector<uint8_t> labSpecularRGBA(const Material& m) {
     const size_t pixels = static_cast<size_t>(m.size()) * m.size();
     std::vector<uint8_t> out(pixels * 4);
-    const uint8_t f0 = m.metalAssigned && m.metal >= .5f ? 255 : 10;
     for (size_t i = 0; i < pixels; ++i) {
         out[i * 4] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
-        out[i * 4 + 1] = f0;
+        out[i * 4 + 1] = m.metalAt(i) >= 128 ? 255 : 10;
         out[i * 4 + 2] = 0;
         out[i * 4 + 3] = 255;
     }
@@ -165,14 +174,15 @@ std::vector<uint8_t> shrinkRGBA(const std::vector<uint8_t>& in, uint32_t size, u
     return result;
 }
 
-std::vector<uint8_t> grayRGBA(const Raster& r) {
-    std::vector<uint8_t> out = r.bytes;
-    for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
+// Per-pixel metalness as an opaque gray RGBA image.
+std::vector<uint8_t> metalRGBA(const Material& m) {
+    std::vector<uint8_t> out(m.metalBytes.size() * 4, 255);
+    for (size_t i = 0; i < m.metalBytes.size(); ++i) out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = m.metalBytes[i];
     return out;
 }
 
-std::vector<uint8_t> constantGray(uint32_t size, uint8_t value) {
-    std::vector<uint8_t> out(static_cast<size_t>(size) * size * 4, value);
+std::vector<uint8_t> grayRGBA(const Raster& r) {
+    std::vector<uint8_t> out = r.bytes;
     for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
     return out;
 }
@@ -232,6 +242,11 @@ std::vector<uint8_t> materialXDocument(const Material& m) {
         "    <normalmap name=\"normal_map\" type=\"vector3\">\n"
         "      <input name=\"in\" type=\"vector3\" nodename=\"normal_image\" />\n"
         "    </normalmap>\n"
+        + std::string(m.metalVaries ?
+        "    <image name=\"metalness_image\" type=\"float\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + s + "_metallic.png\" />\n"
+        "    </image>\n"
+        "    <output name=\"metalness_output\" type=\"float\" nodename=\"metalness_image\" />\n" : "") +
         "    <output name=\"base_color_output\" type=\"color3\" nodename=\"base_color_image\" />\n"
         "    <output name=\"roughness_output\" type=\"float\" nodename=\"roughness_image\" />\n"
         "    <output name=\"normal_output\" type=\"vector3\" nodename=\"normal_map\" />\n"
@@ -239,7 +254,8 @@ std::vector<uint8_t> materialXDocument(const Material& m) {
         "  <standard_surface name=\"SR_" + n + "\" type=\"surfaceshader\">\n"
         "    <input name=\"base\" type=\"float\" value=\"1.0\" />\n"
         "    <input name=\"base_color\" type=\"color3\" nodegraph=\"NG_" + n + "\" output=\"base_color_output\" />\n"
-        "    <input name=\"metalness\" type=\"float\" value=\"" + metal + "\" />\n"
+        + (m.metalVaries ? "    <input name=\"metalness\" type=\"float\" nodegraph=\"NG_" + n + "\" output=\"metalness_output\" />\n"
+                         : "    <input name=\"metalness\" type=\"float\" value=\"" + std::string(metal) + "\" />\n") +
         "    <input name=\"specular_roughness\" type=\"float\" nodegraph=\"NG_" + n + "\" output=\"roughness_output\" />\n"
         "    <input name=\"normal\" type=\"vector3\" nodegraph=\"NG_" + n + "\" output=\"normal_output\" />\n"
         "  </standard_surface>\n"
@@ -288,7 +304,7 @@ void exportFolder(const fs::path& bundle, const Material& m, const std::string& 
         put(m.titleCase + "_BaseColor.png", albedoPNG(m), @"Base Color (sRGB)");
         put(m.titleCase + "_Normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal (OpenGL)");
         put(m.titleCase + "_Roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"Roughness");
-        put(m.titleCase + "_Metallic.png", encodeRGBA8(n, n, constantGray(n, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+        put(m.titleCase + "_Metallic.png", encodeRGBA8(n, n, metalRGBA(m), false),
             @"Metallic");
         put(m.titleCase + "_AmbientOcclusion.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient Occlusion");
         put(m.titleCase + "_Height.png", heightPNG(m), @"Height, 16-bit");
@@ -300,7 +316,7 @@ void exportFolder(const fs::path& bundle, const Material& m, const std::string& 
         put(m.titleCase + "_NormalMap.png", encodeRGBA8(r, r, shrinkRGBA(normalRGBA(m, "+Y"), n, factor, true), false), @"NormalMap");
         put(m.titleCase + "_RoughnessMap.png", encodeRGBA8(r, r, shrinkRGBA(grayRGBA(m.roughness), n, factor, false), false),
             @"RoughnessMap");
-        put(m.titleCase + "_MetalnessMap.png", encodeRGBA8(r, r, constantGray(r, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+        put(m.titleCase + "_MetalnessMap.png", encodeRGBA8(r, r, shrinkRGBA(metalRGBA(m), n, factor, false), false),
             @"MetalnessMap");
     } else if (format == "minecraft-labpbr") {
         // A resource pack: the colour, _n and _s textures replace a block texture of the same name (rename to the
@@ -324,6 +340,7 @@ void exportFolder(const fs::path& bundle, const Material& m, const std::string& 
         put(m.slug + "_roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"specular_roughness");
         put(m.slug + "_ao.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient occlusion (not wired; standard_surface has no input)");
         put(m.slug + "_height.png", heightPNG(m), @"Height, 16-bit (wire to displacement if wanted)");
+        if (m.metalVaries) put(m.slug + "_metallic.png", encodeRGBA8(n, n, metalRGBA(m), false), @"metalness");
         put(m.slug + ".mtlx", materialXDocument(m), @"MaterialX 1.38 standard_surface material");
     } else {  // blender
         put(m.slug + "_base_color.png", albedoPNG(m), @"Base Color (sRGB)");
@@ -331,7 +348,7 @@ void exportFolder(const fs::path& bundle, const Material& m, const std::string& 
         put(m.slug + "_roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"Roughness (Non-Color)");
         put(m.slug + "_ao.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient occlusion (Non-Color)");
         if (m.metalAssigned)
-            put(m.slug + "_metallic.png", encodeRGBA8(n, n, constantGray(n, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+            put(m.slug + "_metallic.png", encodeRGBA8(n, n, metalRGBA(m), false),
                 @"Metallic (Non-Color)");
         put(m.slug + "_height.png", heightPNG(m), @"Displacement height, 16-bit (Non-Color)");
     }
