@@ -15,7 +15,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(MATERIAL_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../core")
-add_library(pbr_material_core STATIC "${MATERIAL_CORE_DIR}/src/PBRMaterialLab.cpp")
+add_library(pbr_material_core STATIC "${MATERIAL_CORE_DIR}/src/PBRMaterialLab.cpp"
+            "${MATERIAL_CORE_DIR}/src/MaterialPresets.cpp")
 target_include_directories(pbr_material_core PUBLIC "${MATERIAL_CORE_DIR}/include")
 # The derivation core is compute-bound; always optimize it, even in Debug app builds.
 target_compile_options(pbr_material_core PRIVATE -Wall -Wextra -Wpedantic -O3)

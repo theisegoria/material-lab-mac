@@ -453,7 +453,10 @@ def main() -> None:
             check = subprocess.run(["usdchecker", "--arkit", str(usdz)], capture_output=True, text=True)
             assert check.returncode == 0, check.stdout + check.stderr
         for fmt, expected in (("unreal", "T_ToolA_Normal.png"), ("unity-hdrp", "ToolA_MaskMap.png"),
-                              ("godot", "tool_a_orm.png"), ("blender", "tool_a_roughness.png")):
+                              ("godot", "tool_a_orm.png"), ("blender", "tool_a_roughness.png"),
+                              ("unity", "ToolA_MetallicSmoothness.png"), ("substance", "ToolA_AmbientOcclusion.png"),
+                              ("roblox", "ToolA_NormalMap.png"), ("materialx", "tool_a.mtlx"),
+                              ("minecraft-labpbr", "assets/minecraft/textures/block/tool_a_s.png")):
             folder = exports / fmt
             run(cli, "--export", str(tool_a), "--format", fmt, "--output", str(folder))
             assert (folder / expected).exists(), sorted(p.name for p in folder.iterdir())
@@ -462,8 +465,36 @@ def main() -> None:
         _, _, nbpp, bundle_rows = read_png(tool_a / "normal.png")
         _, _, _, unreal_rows = read_png(exports / "unreal" / "T_ToolA_Normal.png")
         assert unreal_rows[3][1] == 255 - bundle_rows[3][1]
+        # LabPBR _n: DirectX green, ambient occlusion in blue, height in alpha (never 0).
+        _, _, _, lab_rows = read_png(exports / "minecraft-labpbr/assets/minecraft/textures/block/tool_a_n.png")
+        _, _, _, ao_rows = read_png(tool_a / "ao.png")
+        assert lab_rows[3][1] == 255 - bundle_rows[3][1] and lab_rows[3][2] == ao_rows[3][0]
+        assert min(row[x] for row in lab_rows for x in range(3, len(row), 4)) >= 1
+        import xml.etree.ElementTree as ET
+        mtlx = ET.parse(exports / "materialx" / "tool_a.mtlx").getroot()
+        assert mtlx.tag == "materialx" and mtlx.find("surfacematerial") is not None
+        assert json.loads((exports / "minecraft-labpbr" / "pack.mcmeta").read_text())["pack"]["pack_format"] > 0
         run(cli, "--export", str(tool_a), "--format", "fbx", "--output", str(exports / "x"), expect_success=False)
         run(cli, "--export", str(tool_a), "--format", "glb", "--output", str(glb), expect_success=False)  # Exists.
+
+        # Material presets: the library is listed, recorded in manifests and saved recipes, and validated.
+        listed = json.loads(run(cli, "--list-presets", "--json").stdout)
+        assert len(listed) >= 30 and {"red-brick", "wood-planks", "brushed-steel"} <= {p["identifier"] for p in listed}
+        steel = next(p for p in listed if p["identifier"] == "brushed-steel")
+        assert steel["recipe"]["preset"] == "bare-metal" and steel["recipe"]["assigned_metalness_enabled"] is True
+        preset_bundle = root / "preset-brick.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(preset_bundle), "--preset", "red-brick")
+        preset_manifest = json.loads((preset_bundle / "manifest.json").read_text())
+        assert preset_manifest["recipe"]["material_preset"] == "red-brick" and preset_manifest["recipe"]["preset"] == "stone"
+        assert abs(preset_manifest["recipe"]["roughness_base"] - 0.82) < 1e-6
+        # A later prior replaces the library preset, and is not recorded as one.
+        prior_bundle = root / "prior.pbrmaterial"
+        run(cli, "--input", str(image), "--output", str(prior_bundle), "--preset", "red-brick", "--preset", "fabric")
+        assert "material_preset" not in json.loads((prior_bundle / "manifest.json").read_text())["recipe"]
+        run(cli, "--input", str(image), "--output", str(root / "bad"), "--preset", "unobtainium", expect_success=False)
+        preset_manifest["recipe"]["material_preset"] = "unobtainium"
+        (preset_bundle / "manifest.json").write_text(json.dumps(preset_manifest))
+        run(cli, "--validate", str(preset_bundle), expect_success=False)
 
         # Recipes: from a bundle, from the apps' camelCase JSON, from the Mac app's saved recipes; save one.
         pipeline = root / "pipeline"

@@ -42,9 +42,20 @@ only when assigned with
 Derive one image (PNG, JPEG, TIFF, HEIC; square, up to 4096 pixels).
 .It Fl -label Ar text , Fl -id Ar id
 Semantic label and material identifier recorded in the manifest.
-.It Fl -preset Ar flat | stone | fabric | organic | coated-metal | bare-metal
-Material prior for relief and roughness.
+.It Fl -preset Ar name
+A material preset from the built-in library (for example
+.Cm red-brick , wood-planks , concrete , brushed-steel
+or
+.Cm rusted-steel ) ,
+or one of the relief priors
+.Cm flat , stone , fabric , organic , coated-metal
+and
+.Cm bare-metal .
+A library preset is a tuned starting recipe built on a prior; later flags adjust it, and the manifest records
+its name.
 Flat is the safe default for painted or unknown surfaces.
+.It Fl -list-presets Op Fl -json
+List the material presets by category, with their prior and roughness (or their full recipes as JSON).
 .It Fl -height-strength Ar 0..0.5 , Fl -polarity Ar 1 | -1 , Fl -normal-strength Ar 0..16
 Relief amplitude, whether bright details are raised (1) or recessed (-1), and normal intensity.
 .It Fl -roughness Ar 0..1 , Fl -roughness-variation Ar 0..1
@@ -139,19 +150,33 @@ Write one labelled image of every map.
 .It Fl -diff Ar bundle_a bundle_b Op Fl -json
 Compare recipes and maps (mean and maximum difference, PSNR).
 .It Fl -export Ar bundle Fl -format Ar format Fl -output Ar path
-.Bl -tag -width unity-hdrp -compact
+.Bl -tag -width minecraft-labpbr -compact
 .It Cm glb
 glTF 2.0 binary: a textured plane with base colour, normal and ORM.
 .It Cm usdz
 USDZ with a UsdPreviewSurface, for Quick Look and AR Quick Look.
+.It Cm materialx
+A MaterialX standard_surface document with its textures (Houdini, Maya, Blender, USD, Omniverse).
 .It Cm unreal
 BaseColor, DirectX Normal, ORM and Height textures.
+.It Cm unity
+Unity URP or Built-in: Base Map, Normal, Metallic (smoothness in alpha), Occlusion and Height.
 .It Cm unity-hdrp
 BaseColor, Normal, Mask Map (metallic, occlusion, detail, smoothness) and Height.
 .It Cm godot
 Albedo, Normal, ORM and Height for ORMMaterial3D.
 .It Cm blender
 Separate base colour, normal, roughness, occlusion, metallic and height maps.
+.It Cm substance
+BaseColor, Normal, Roughness, Metallic, AmbientOcclusion and Height, named for Substance 3D Painter and Designer.
+.It Cm roblox
+SurfaceAppearance ColorMap, NormalMap, RoughnessMap and MetalnessMap, at most 1024 pixels.
+.It Cm minecraft-labpbr
+A resource pack with LabPBR 1.3 colour,
+.Pa _n
+and
+.Pa _s
+textures, for Iris or OptiFine shader packs.
 .El
 .It Fl -validate Ar bundle | capture
 Check a bundle's manifest, hashes and PNG encodings, or a Material Capture file.
@@ -173,7 +198,7 @@ interrupted.
 Derive a brick wall with learned geometry, rebuild it to tile, and export for Unreal:
 .Bd -literal -offset indent
 material-lab --input wall.jpg --output wall --label "red brick" \e
-    --preset stone --learned --repair-albedo auto --also-export unreal
+    --preset red-brick --learned --repair-albedo auto --also-export unreal
 .Ed
 .Pp
 Turn a folder of photographs into bundles and glTF files, two at a time:

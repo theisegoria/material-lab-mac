@@ -2,8 +2,8 @@
 # zsh completion for material-lab
 
 local -a presets formats repairs
-presets=(flat stone fabric organic coated-metal bare-metal)
-formats=(glb usdz unreal unity-hdrp godot blender)
+presets=(red-brick painted-brick cinder-block rubble-wall cobblestone slate sandstone polished-marble terracotta-roof roof-shingles concrete polished-concrete plaster stucco asphalt ceramic-tile floor-tile wood-planks varnished-wood raw-wood bark soil sand gravel grass moss canvas denim carpet leather brushed-steel galvanized-steel diamond-plate copper rusted-steel painted-metal plastic rubber cardboard flat stone fabric organic coated-metal bare-metal)
+formats=(glb usdz materialx unreal unity unity-hdrp godot blender substance roblox minecraft-labpbr)
 repairs=(off auto quilt blend)
 
 _arguments -s \
@@ -14,7 +14,8 @@ _arguments -s \
   '--validate[bundle or capture to validate]:path:_files' \
   '--label[semantic label]:label:' \
   '--id[material id]:id:' \
-  "--preset[material prior]:preset:(${presets})" \
+  "--preset[material preset or relief prior]:preset:(${presets})" \
+  '--list-presets[list the material presets]' \
   '--height-strength[relief amplitude 0..0.5]:value:' \
   '--polarity[bright details raised (1) or recessed (-1)]:polarity:(1 -1)' \
   '--normal-strength[normal intensity 0..16]:value:' \

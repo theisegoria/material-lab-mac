@@ -100,6 +100,71 @@ std::vector<uint8_t> hdrpMaskRGBA(const Material& m) {
     return out;
 }
 
+// Unity URP / Built-in Standard metallic map: R = metallic, G and B unused (0), A = smoothness.
+std::vector<uint8_t> unityMetallicRGBA(const Material& m) {
+    const size_t pixels = static_cast<size_t>(m.size()) * m.size();
+    std::vector<uint8_t> out(pixels * 4, 0);
+    const uint8_t metal = static_cast<uint8_t>(std::lround(m.metal * 255));
+    for (size_t i = 0; i < pixels; ++i) {
+        out[i * 4] = metal;
+        out[i * 4 + 3] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
+    }
+    return out;
+}
+
+// LabPBR 1.3 (shaderLABS): _n = R,G DirectX normal XY, B ambient occlusion (0 = fully occluded), A height (>= 1);
+// _s = R perceptual smoothness, G F0 (10 ~ 0.04 for dielectrics; 255 = use albedo as F0, i.e. metal), B porosity
+// (0), A emission (255 = none).
+std::vector<uint8_t> labNormalRGBA(const Material& m) {
+    std::vector<uint8_t> out = normalRGBA(m, "-Y");
+    const size_t pixels = static_cast<size_t>(m.size()) * m.size();
+    for (size_t i = 0; i < pixels; ++i) {
+        out[i * 4 + 2] = byteAt(m.ao, i, 0);
+        out[i * 4 + 3] = std::max<uint8_t>(1, m.height.bytes[i * 2]);  // high byte of 16-bit big-endian height
+    }
+    return out;
+}
+std::vector<uint8_t> labSpecularRGBA(const Material& m) {
+    const size_t pixels = static_cast<size_t>(m.size()) * m.size();
+    std::vector<uint8_t> out(pixels * 4);
+    const uint8_t f0 = m.metalAssigned && m.metal >= .5f ? 255 : 10;
+    for (size_t i = 0; i < pixels; ++i) {
+        out[i * 4] = static_cast<uint8_t>(255 - byteAt(m.roughness, i, 0));
+        out[i * 4 + 1] = f0;
+        out[i * 4 + 2] = 0;
+        out[i * 4 + 3] = 255;
+    }
+    return out;
+}
+
+// Box-filters RGBA8 by an integer factor (sizes are powers of two in practice). `normals` renormalizes RGB as
+// tangent vectors after averaging.
+std::vector<uint8_t> shrinkRGBA(const std::vector<uint8_t>& in, uint32_t size, uint32_t factor, bool normals) {
+    if (factor <= 1) return in;
+    const uint32_t out = size / factor;
+    std::vector<uint8_t> result(static_cast<size_t>(out) * out * 4);
+    for (uint32_t y = 0; y < out; ++y)
+        for (uint32_t x = 0; x < out; ++x) {
+            float sum[4] = {0, 0, 0, 0};
+            for (uint32_t dy = 0; dy < factor; ++dy)
+                for (uint32_t dx = 0; dx < factor; ++dx) {
+                    const size_t i = (static_cast<size_t>(y * factor + dy) * size + x * factor + dx) * 4;
+                    for (int c = 0; c < 4; ++c) sum[c] += in[i + c];
+                }
+            const float n = static_cast<float>(factor * factor);
+            float v[4];
+            for (int c = 0; c < 4; ++c) v[c] = sum[c] / n;
+            if (normals) {
+                float vx = v[0] / 127.5f - 1, vy = v[1] / 127.5f - 1, vz = v[2] / 127.5f - 1;
+                const float length = std::max(1e-6f, std::sqrt(vx * vx + vy * vy + vz * vz));
+                v[0] = (vx / length + 1) * 127.5f; v[1] = (vy / length + 1) * 127.5f; v[2] = (vz / length + 1) * 127.5f;
+            }
+            const size_t o = (static_cast<size_t>(y) * out + x) * 4;
+            for (int c = 0; c < 4; ++c) result[o + c] = static_cast<uint8_t>(std::clamp(std::lround(v[c]), 0L, 255L));
+        }
+    return result;
+}
+
 std::vector<uint8_t> grayRGBA(const Raster& r) {
     std::vector<uint8_t> out = r.bytes;
     for (size_t i = 3; i < out.size(); i += 4) out[i] = 255;
@@ -129,6 +194,62 @@ void writeNote(const fs::path& folder, const fs::path& bundle, const std::string
                                                                     static_cast<const uint8_t*>(data.bytes) + data.length));
 }
 
+// ---- MaterialX -------------------------------------------------------------------------------------------
+
+std::string xmlEscape(const std::string& text) {
+    std::string out;
+    for (char c : text) {
+        switch (c) {
+        case '&': out += "&amp;"; break;
+        case '<': out += "&lt;"; break;
+        case '>': out += "&gt;"; break;
+        case '"': out += "&quot;"; break;
+        default: out += c;
+        }
+    }
+    return out;
+}
+
+// A standard_surface material reading the folder's textures (Houdini/Karma, Maya/Arnold, Blender, USD, Omniverse).
+std::vector<uint8_t> materialXDocument(const Material& m) {
+    const std::string n = m.titleCase, s = m.slug;
+    char metal[32];
+    snprintf(metal, sizeof metal, "%.4g", m.metal);
+    std::string xml =
+        "<?xml version=\"1.0\"?>\n"
+        "<!-- " + xmlEscape(m.label) + ": exported by Material Lab. Maps are estimates derived from one photograph. -->\n"
+        "<materialx version=\"1.38\" colorspace=\"lin_rec709\">\n"
+        "  <nodegraph name=\"NG_" + n + "\">\n"
+        "    <image name=\"base_color_image\" type=\"color3\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + s + "_base_color.png\" colorspace=\"srgb_texture\" />\n"
+        "    </image>\n"
+        "    <image name=\"roughness_image\" type=\"float\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + s + "_roughness.png\" />\n"
+        "    </image>\n"
+        "    <image name=\"normal_image\" type=\"vector3\">\n"
+        "      <input name=\"file\" type=\"filename\" value=\"" + s + "_normal.png\" />\n"
+        "    </image>\n"
+        "    <normalmap name=\"normal_map\" type=\"vector3\">\n"
+        "      <input name=\"in\" type=\"vector3\" nodename=\"normal_image\" />\n"
+        "    </normalmap>\n"
+        "    <output name=\"base_color_output\" type=\"color3\" nodename=\"base_color_image\" />\n"
+        "    <output name=\"roughness_output\" type=\"float\" nodename=\"roughness_image\" />\n"
+        "    <output name=\"normal_output\" type=\"vector3\" nodename=\"normal_map\" />\n"
+        "  </nodegraph>\n"
+        "  <standard_surface name=\"SR_" + n + "\" type=\"surfaceshader\">\n"
+        "    <input name=\"base\" type=\"float\" value=\"1.0\" />\n"
+        "    <input name=\"base_color\" type=\"color3\" nodegraph=\"NG_" + n + "\" output=\"base_color_output\" />\n"
+        "    <input name=\"metalness\" type=\"float\" value=\"" + metal + "\" />\n"
+        "    <input name=\"specular_roughness\" type=\"float\" nodegraph=\"NG_" + n + "\" output=\"roughness_output\" />\n"
+        "    <input name=\"normal\" type=\"vector3\" nodegraph=\"NG_" + n + "\" output=\"normal_output\" />\n"
+        "  </standard_surface>\n"
+        "  <surfacematerial name=\"M_" + n + "\" type=\"material\">\n"
+        "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"SR_" + n + "\" />\n"
+        "  </surfacematerial>\n"
+        "</materialx>\n";
+    return std::vector<uint8_t>(xml.begin(), xml.end());
+}
+
 // ---- Engine folders -------------------------------------------------------------------------------------
 
 void exportFolder(const fs::path& bundle, const Material& m, const std::string& format, const fs::path& folder) {
@@ -156,6 +277,54 @@ void exportFolder(const fs::path& bundle, const Material& m, const std::string& 
         put(m.slug + "_normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map (OpenGL)");
         put(m.slug + "_orm.png", encodeRGBA8(n, n, ormRGBA(m), false), @"ORMMaterial3D: R occlusion, G roughness, B metallic");
         put(m.slug + "_height.png", heightPNG(m), @"Height (heightmap / parallax), 16-bit");
+    } else if (format == "unity") {
+        put(m.titleCase + "_BaseMap.png", albedoPNG(m), @"Base Map (sRGB)");
+        put(m.titleCase + "_Normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map (Texture Type: Normal map)");
+        put(m.titleCase + "_MetallicSmoothness.png", encodeRGBA8(n, n, unityMetallicRGBA(m), false),
+            @"Metallic Map: R metallic, A smoothness (Smoothness Source: Metallic Alpha, sRGB off)");
+        put(m.titleCase + "_Occlusion.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Occlusion Map (sRGB off)");
+        put(m.titleCase + "_Height.png", heightPNG(m), @"Height Map / parallax, 16-bit (sRGB off)");
+    } else if (format == "substance") {
+        put(m.titleCase + "_BaseColor.png", albedoPNG(m), @"Base Color (sRGB)");
+        put(m.titleCase + "_Normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal (OpenGL)");
+        put(m.titleCase + "_Roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"Roughness");
+        put(m.titleCase + "_Metallic.png", encodeRGBA8(n, n, constantGray(n, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+            @"Metallic");
+        put(m.titleCase + "_AmbientOcclusion.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient Occlusion");
+        put(m.titleCase + "_Height.png", heightPNG(m), @"Height, 16-bit");
+    } else if (format == "roblox") {
+        // SurfaceAppearance takes at most 1024 x 1024 and OpenGL (+Y) tangent normals.
+        const uint32_t factor = n > 1024 ? n / 1024 : 1, r = n / factor;
+        put(m.titleCase + "_ColorMap.png", encodeRGBA8(r, r, shrinkRGBA(m.albedo.bytes, n, factor, false), true),
+            @"ColorMap (alpha is ignored unless AlphaMode is set)");
+        put(m.titleCase + "_NormalMap.png", encodeRGBA8(r, r, shrinkRGBA(normalRGBA(m, "+Y"), n, factor, true), false), @"NormalMap");
+        put(m.titleCase + "_RoughnessMap.png", encodeRGBA8(r, r, shrinkRGBA(grayRGBA(m.roughness), n, factor, false), false),
+            @"RoughnessMap");
+        put(m.titleCase + "_MetalnessMap.png", encodeRGBA8(r, r, constantGray(r, static_cast<uint8_t>(std::lround(m.metal * 255))), false),
+            @"MetalnessMap");
+    } else if (format == "minecraft-labpbr") {
+        // A resource pack: the colour, _n and _s textures replace a block texture of the same name (rename to the
+        // block you want, e.g. bricks.png). Needs a LabPBR shader pack (Iris or OptiFine).
+        const fs::path blocks = folder / "assets/minecraft/textures/block";
+        fs::create_directories(blocks);
+        const std::string base = "assets/minecraft/textures/block/" + m.slug;
+        put(base + ".png", albedoPNG(m), @"Colour texture (rename to the block it should replace)");
+        put(base + "_n.png", encodeRGBA8(n, n, labNormalRGBA(m), false),
+            @"LabPBR _n: RG DirectX normal, B ambient occlusion, A height");
+        put(base + "_s.png", encodeRGBA8(n, n, labSpecularRGBA(m), false),
+            @"LabPBR _s: R perceptual smoothness, G F0 (255 = metal), B porosity 0, A no emission");
+        NSDictionary* meta = @{@"pack": @{@"pack_format": @46,
+                                          @"description": [NSString stringWithFormat:@"%s (Material Lab, LabPBR 1.3)", m.label.c_str()]}};
+        NSData* json = [NSJSONSerialization dataWithJSONObject:meta options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+        put("pack.mcmeta", std::vector<uint8_t>(static_cast<const uint8_t*>(json.bytes), static_cast<const uint8_t*>(json.bytes) + json.length),
+            @"Resource pack metadata (pack_format 46 = Minecraft 1.21.4; edit for other versions)");
+    } else if (format == "materialx") {
+        put(m.slug + "_base_color.png", albedoPNG(m), @"base_color (srgb_texture)");
+        put(m.slug + "_normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"normal via normalmap (OpenGL tangent space)");
+        put(m.slug + "_roughness.png", encodeRGBA8(n, n, grayRGBA(m.roughness), false), @"specular_roughness");
+        put(m.slug + "_ao.png", encodeRGBA8(n, n, grayRGBA(m.ao), false), @"Ambient occlusion (not wired; standard_surface has no input)");
+        put(m.slug + "_height.png", heightPNG(m), @"Height, 16-bit (wire to displacement if wanted)");
+        put(m.slug + ".mtlx", materialXDocument(m), @"MaterialX 1.38 standard_surface material");
     } else {  // blender
         put(m.slug + "_base_color.png", albedoPNG(m), @"Base Color (sRGB)");
         put(m.slug + "_normal.png", encodeRGBA8(n, n, normalRGBA(m, "+Y"), false), @"Normal Map node (Non-Color, OpenGL)");
@@ -383,10 +552,18 @@ def Xform "Material_Lab" (
 
 } // namespace
 
+const std::vector<std::string>& exportFormats() {
+    static const std::vector<std::string> formats = {"glb", "usdz", "materialx", "unreal", "unity", "unity-hdrp", "godot",
+                                                     "blender", "substance", "roblox", "minecraft-labpbr"};
+    return formats;
+}
+
 int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output, bool announce) {
-    static const char* const formats[] = {"glb", "usdz", "unreal", "unity-hdrp", "godot", "blender"};
-    if (std::find_if(std::begin(formats), std::end(formats), [&](const char* f) { return format == f; }) == std::end(formats))
-        throw std::runtime_error("unknown export format: " + format + " (use glb, usdz, unreal, unity-hdrp, godot or blender)");
+    if (std::find(exportFormats().begin(), exportFormats().end(), format) == exportFormats().end()) {
+        std::string list;
+        for (const auto& f : exportFormats()) list += (list.empty() ? "" : ", ") + f;
+        throw std::runtime_error("unknown export format: " + format + " (use " + list + ")");
+    }
     if (fs::exists(fs::symlink_status(output))) throw std::runtime_error("export output already exists: " + output.string());
     const Material material = load(bundle);
     if (format == "glb") exportGLB(material, output);

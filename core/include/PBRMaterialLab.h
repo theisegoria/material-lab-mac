@@ -163,6 +163,19 @@ int PBRLabGuideTilerAddPrediction(PBRLabGuideTiler *tiler, uint32_t pass, const 
 int PBRLabGuideTilerFinish(PBRLabGuideTiler *tiler, uint32_t out_size, uint8_t *rgba8, size_t row_bytes);
 void PBRLabGuideTilerFree(PBRLabGuideTiler *tiler);
 
+// The material library: named starting recipes (brick, oak, rusted steel...) built on the six relief priors. A preset
+// only chooses recipe values, so derivations and algorithm_version are unchanged; manifests record the choice as
+// recipe.material_preset. Identifiers are stable kebab-case; titles and categories are English display names.
+typedef struct PBRLabMaterialPreset {
+    const char *identifier;
+    const char *title;
+    const char *category;
+    PBRLabRecipe recipe;
+} PBRLabMaterialPreset;
+uint32_t PBRLabMaterialPresetCount(void);
+const PBRLabMaterialPreset *PBRLabMaterialPresetAt(uint32_t index);        // NULL past the end.
+const PBRLabMaterialPreset *PBRLabFindMaterialPreset(const char *identifier); // NULL when unknown.
+
 #ifdef __cplusplus
 }
 #endif

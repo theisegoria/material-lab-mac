@@ -233,10 +233,12 @@ struct Options {
     fs::path infoBundle, contactSheetBundle, exportBundle;
     std::vector<fs::path> diffBundles;
     std::string exportFormat;
-    bool json = false;
+    bool json = false, listPresets = false;
     // Pipeline.
     fs::path recipeFile, saveRecipe, report, watch;
     std::string savedRecipe;
+    // A material-library preset (PBRLabFindMaterialPreset) the recipe started from; recorded in manifests.
+    std::string materialPreset;
     std::vector<std::string> alsoExport;
     int jobs = 1;
     bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty(); }
@@ -299,7 +301,8 @@ constexpr const char* kUsage =
     "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed] [--keep-going]\n"
     "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
     "Recipe flags (--preset applies first, wherever it appears):\n"
-    "  --preset flat|stone|fabric|organic|coated-metal|bare-metal\n"
+    "  --preset NAME  a material preset (red-brick, wood-planks, rusted-steel... see --list-presets [--json])\n"
+    "    or a relief prior: flat|stone|fabric|organic|coated-metal|bare-metal\n"
     "  --height-strength 0..0.5  --polarity -1|1  --roughness 0..1  --roughness-variation 0..1\n"
     "  --ao-radius 0..64  --ao-strength 0..4  --normal-strength 0..16  --normal-dx (green-down -Y normals)\n"
     "  --equalize 0..1 (albedo delighting)  --no-tile  --bent-normal\n"
@@ -311,12 +314,13 @@ constexpr const char* kUsage =
     "Recipes and pipelines:\n"
     "  --recipe FILE|BUNDLE  start from a recipe JSON (snake_case or the apps' camelCase) or a bundle's recipe\n"
     "  --saved-recipe NAME  use a recipe saved in the Material Lab Mac app   --save-recipe FILE  write the recipe\n"
-    "  --also-export glb,usdz,unreal,unity-hdrp,godot,blender  export beside each derived bundle\n"
+    "  --also-export FORMAT,...  export beside each derived bundle (formats as for --export)\n"
     "  --jobs 1..8  parallel catalog items   --report FILE.json  per-item status   --keep-going\n"
     "  --watch DIR --output DIR  derive every image dropped into DIR until interrupted\n"
     "Bundle tools (each validates its bundles first):\n"
     "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
-    "  --export BUNDLE --format glb|usdz|unreal|unity-hdrp|godot|blender --output PATH\n"
+    "  --export BUNDLE --format FORMAT --output PATH   FORMAT: glb, usdz, materialx, unreal, unity (URP/Built-in),\n"
+    "    unity-hdrp, godot, blender, substance, roblox, minecraft-labpbr\n"
     "Learned geometry (see man material-lab):\n"
     "  --learned  use the bundled MoGe-2 model (or the Material Lab app's)   --version\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
@@ -414,7 +418,13 @@ NSDictionary* recipeDictionary(const PBRLabRecipe& r) {
         @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
     };
 }
-PBRLabRecipe loadRecipeFile(const fs::path& path) {
+// The material-library preset a recipe object names (bundle manifests and --save-recipe use material_preset, the
+// apps materialPreset); empty when none or unknown.
+std::string materialPresetOf(NSDictionary* r) {
+    NSString* name = asString(r[@"material_preset"]) ?: asString(r[@"materialPreset"]);
+    return name && PBRLabFindMaterialPreset(name.UTF8String) ? str(name) : std::string();
+}
+PBRLabRecipe loadRecipeFile(const fs::path& path, std::string* materialPreset = nullptr) {
     fs::path file = fs::is_directory(path) ? path / "manifest.json" : path;
     NSData* data = boundedDataAt(file, 4 * 1024 * 1024);
     if (!data) throw std::runtime_error("cannot read recipe file: " + file.string());
@@ -423,9 +433,10 @@ PBRLabRecipe loadRecipeFile(const fs::path& path) {
     if (!object) throw std::runtime_error("recipe file must contain a JSON object: " + file.string());
     if (NSDictionary* nested = asDictionary(object[@"recipe"])) object = nested;
     if (!object[@"preset"]) throw std::runtime_error("recipe file has no preset: " + file.string());
+    if (materialPreset) *materialPreset = materialPresetOf(object);
     return recipeFromObject(object);
 }
-PBRLabRecipe loadSavedRecipe(const std::string& name) {
+PBRLabRecipe loadSavedRecipe(const std::string& name, std::string* materialPreset = nullptr) {
     const char* home = getenv("HOME");
     const fs::path file = fs::path(home ? home : "") / "Library/Application Support/Material Lab/saved-recipes.json";
     NSData* data = boundedDataAt(file, 4 * 1024 * 1024);
@@ -436,7 +447,10 @@ PBRLabRecipe loadSavedRecipe(const std::string& name) {
         NSDictionary* entry = asDictionary(value);
         NSString* entryName = asString(entry[@"name"]);
         if (!entryName || !asDictionary(entry[@"recipe"])) continue;
-        if ([entryName caseInsensitiveCompare:ns(name)] == NSOrderedSame) return recipeFromObject(entry[@"recipe"]);
+        if ([entryName caseInsensitiveCompare:ns(name)] == NSOrderedSame) {
+            if (materialPreset) *materialPreset = materialPresetOf(entry[@"recipe"]);
+            return recipeFromObject(entry[@"recipe"]);
+        }
         available += (available.empty() ? "" : ", ") + str(entryName);
     }
     throw std::runtime_error("no saved recipe named \"" + name + "\"" + (available.empty() ? "" : " (saved: " + available + ")"));
@@ -444,7 +458,7 @@ PBRLabRecipe loadSavedRecipe(const std::string& name) {
 
 Options parse(int argc, const char** argv) {
     Options o;
-    std::optional<PBRLabPreset> preset;
+    std::optional<PBRLabRecipe> preset;
     std::vector<std::function<void(PBRLabRecipe&)>> overrides;
     for (int i = 1; i < argc; ++i) {
         std::string flag = argv[i];
@@ -456,7 +470,18 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--validate") o.validate = value();
         else if (flag == "--id") o.id = value();
         else if (flag == "--label") o.label = value();
-        else if (flag == "--preset") preset = parsePreset(value());
+        else if (flag == "--preset") {
+            // A relief prior (stone, fabric...) or a material-library preset (red-brick, oak...).
+            const std::string name = value();
+            if (const PBRLabMaterialPreset* library = PBRLabFindMaterialPreset(name.c_str())) {
+                preset = library->recipe;
+                o.materialPreset = name;
+            } else {
+                preset = PBRLabDefaultRecipe(parsePreset(name));
+                o.materialPreset.clear();
+            }
+        }
+        else if (flag == "--list-presets") o.listPresets = true;
         else if (flag == "--height-strength") recipeNumber(&PBRLabRecipe::height_strength);
         else if (flag == "--polarity") {
             float n = number(value());
@@ -544,9 +569,9 @@ Options parse(int argc, const char** argv) {
     if (!o.recipeFile.empty() && !o.savedRecipe.empty()) throw std::runtime_error("use either --recipe or --saved-recipe");
     const bool recipeSource = !o.recipeFile.empty() || !o.savedRecipe.empty();
     if (recipeSource && preset) throw std::runtime_error("--preset cannot be combined with a recipe file (the recipe names its preset)");
-    o.recipe = !o.recipeFile.empty() ? loadRecipeFile(o.recipeFile)
-             : !o.savedRecipe.empty() ? loadSavedRecipe(o.savedRecipe)
-             : PBRLabDefaultRecipe(preset.value_or(PBRLabPresetFlat));
+    o.recipe = !o.recipeFile.empty() ? loadRecipeFile(o.recipeFile, &o.materialPreset)
+             : !o.savedRecipe.empty() ? loadSavedRecipe(o.savedRecipe, &o.materialPreset)
+             : preset.value_or(PBRLabDefaultRecipe(PBRLabPresetFlat));
     const bool hasGuide = !o.learnedModel.empty() || !o.guideNormals.empty();
     if (!o.learnedModel.empty() && !o.guideNormals.empty())
         throw std::runtime_error("use either --learned-normals or --guide-normals, not both");
@@ -561,7 +586,9 @@ Options parse(int argc, const char** argv) {
         throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
         throw std::runtime_error("--save-guide-normals needs --learned-normals and a single --input");
-    if (o.usesTool()) {
+    if (o.listPresets) {
+        // Lists and exits; no other options apply.
+    } else if (o.usesTool()) {
         const int tools = !o.infoBundle.empty() + !o.contactSheetBundle.empty() + !o.exportBundle.empty() + !o.diffBundles.empty();
         if (tools != 1 || !o.input.empty() || !o.catalog.empty() || !o.validate.empty())
             throw std::runtime_error("use one of --info, --contact-sheet, --diff or --export at a time, without derive options");
@@ -577,8 +604,9 @@ Options parse(int argc, const char** argv) {
     } else if (o.output.empty() || (!o.input.empty() + !o.catalog.empty() + !o.watch.empty()) != 1)
         throw std::runtime_error("provide exactly one of --input, --catalog or --watch, plus --output");
     for (const auto& format : o.alsoExport) {
-        static const std::set<std::string> known = {"glb", "usdz", "unreal", "unity-hdrp", "godot", "blender"};
-        if (!known.count(format)) throw std::runtime_error("unknown --also-export format: " + format);
+        const auto& known = mltools::exportFormats();
+        if (std::find(known.begin(), known.end(), format) == known.end())
+            throw std::runtime_error("unknown --also-export format: " + format);
     }
     if (o.jobs > 1 && o.catalog.empty()) throw std::runtime_error("--jobs applies to --catalog batches");
     if (o.preUpscaleExec.empty() != o.preUpscaleArgs.empty())
@@ -991,6 +1019,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
         const PBRLabRecipe& r = options.recipe;
         NSMutableDictionary* recipe = [recipeDictionary(r) mutableCopy];
         recipe[@"guide_normal_weight"] = @(useGuide ? r.guide_normal_weight : 0.0f);
+        if (!options.materialPreset.empty()) recipe[@"material_preset"] = ns(options.materialPreset);
         NSMutableDictionary* sourceManifest = [@{@"path": ns(inputPath.filename().string()), @"sha256": ns(hash(sourceData)),
                                                 @"color_space": @"converted_to_sRGB", @"source_kind": @"user_supplied_image"} mutableCopy];
         if (pre.provenance) {
@@ -1098,6 +1127,11 @@ bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string
         if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
     }
     if (!unitPolarity(recipe[key("height_polarity", "heightPolarity")])) { why = "height polarity"; return false; }
+    // Optional: the material-library preset the recipe started from.
+    if (id named = recipe[key("material_preset", "materialPreset")]) {
+        NSString* text = asString(named);
+        if (!text || !PBRLabFindMaterialPreset(text.UTF8String)) { why = "material preset"; return false; }
+    }
     // Optional (absent means off); from 1.4.0 on.
     if (id repair = recipe[key("albedo_repair", "albedoRepair")]) {
         NSString* text = asString(repair);
@@ -1673,6 +1707,34 @@ int watchFolder(const Options& options) {
 
 int run(int argc, const char** argv) {
     Options options = parse(argc, argv);
+    if (options.listPresets) {
+        if (options.json) {
+            NSMutableArray* list = [NSMutableArray array];
+            for (uint32_t i = 0; i < PBRLabMaterialPresetCount(); ++i) {
+                const PBRLabMaterialPreset* p = PBRLabMaterialPresetAt(i);
+                [list addObject:@{@"identifier": @(p->identifier), @"title": @(p->title), @"category": @(p->category),
+                                  @"recipe": recipeDictionary(p->recipe)}];
+            }
+            NSData* data = [NSJSONSerialization dataWithJSONObject:list options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+            std::cout << std::string(static_cast<const char*>(data.bytes), data.length) << '\n';
+            return 0;
+        }
+        std::string category;
+        for (uint32_t i = 0; i < PBRLabMaterialPresetCount(); ++i) {
+            const PBRLabMaterialPreset* p = PBRLabMaterialPresetAt(i);
+            if (category != p->category) {
+                category = p->category;
+                std::cout << (i ? "\n" : "") << category << '\n';
+            }
+            char line[160];
+            snprintf(line, sizeof line, "  %-20s %-24s %s, roughness %.2f%s\n", p->identifier, p->title,
+                     presetName(p->recipe.preset).c_str(), p->recipe.roughness_base,
+                     p->recipe.assigned_metalness_enabled ? (", metalness " + std::to_string(p->recipe.assigned_metalness).substr(0, 4)).c_str() : "");
+            std::cout << line;
+        }
+        std::cout << "\nRelief priors: flat, stone, fabric, organic, coated-metal, bare-metal\n";
+        return 0;
+    }
     if (options.usesTool()) {
         // Tools trust the bundle layout, so every bundle passes the full validator first.
         auto checked = [](const fs::path& bundle) {
@@ -1693,7 +1755,9 @@ int run(int argc, const char** argv) {
         return 0;
     }
     if (!options.saveRecipe.empty()) {
-        NSData* data = [NSJSONSerialization dataWithJSONObject:recipeDictionary(options.recipe)
+        NSMutableDictionary* saved = [recipeDictionary(options.recipe) mutableCopy];
+        if (!options.materialPreset.empty()) saved[@"material_preset"] = ns(options.materialPreset);
+        NSData* data = [NSJSONSerialization dataWithJSONObject:saved
                                                        options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
         std::string error;
         if (!pbrlab::writeFileAtomically(options.saveRecipe.string(),

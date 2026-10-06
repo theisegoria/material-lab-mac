@@ -1,6 +1,6 @@
 # fish completion for material-lab
-set -l presets flat stone fabric organic coated-metal bare-metal
-set -l formats glb usdz unreal unity-hdrp godot blender
+set -l presets red-brick painted-brick cinder-block rubble-wall cobblestone slate sandstone polished-marble terracotta-roof roof-shingles concrete polished-concrete plaster stucco asphalt ceramic-tile floor-tile wood-planks varnished-wood raw-wood bark soil sand gravel grass moss canvas denim carpet leather brushed-steel galvanized-steel diamond-plate copper rusted-steel painted-metal plastic rubber cardboard flat stone fabric organic coated-metal bare-metal
+set -l formats glb usdz materialx unreal unity unity-hdrp godot blender substance roblox minecraft-labpbr
 complete -c material-lab -l input -r -F -d 'Source image'
 complete -c material-lab -l output -r -F -d 'Output bundle, folder or file'
 complete -c material-lab -l catalog -r -F -d 'Catalog JSON'
@@ -8,7 +8,8 @@ complete -c material-lab -l watch -r -a '(__fish_complete_directories)' -d 'Fold
 complete -c material-lab -l validate -r -F -d 'Bundle or capture to validate'
 complete -c material-lab -l label -r -d 'Semantic label'
 complete -c material-lab -l id -r -d 'Material id'
-complete -c material-lab -l preset -x -a "$presets" -d 'Material prior'
+complete -c material-lab -l preset -x -a "$presets" -d 'Material preset or relief prior'
+complete -c material-lab -l list-presets -d 'List the material presets'
 complete -c material-lab -l height-strength -x -d 'Relief amplitude 0..0.5'
 complete -c material-lab -l polarity -x -a '1 -1' -d 'Bright details raised or recessed'
 complete -c material-lab -l normal-strength -x -d 'Normal intensity 0..16'

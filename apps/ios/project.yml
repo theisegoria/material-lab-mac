@@ -29,6 +29,8 @@ targets:
       - path: ../../core/src/PBRMaterialLab.cpp
         # The derivation kernel is ~10x slower at -O0; optimize it in every configuration.
         compilerFlags: ['-std=c++23', '-O3']
+      - path: ../../core/src/MaterialPresets.cpp
+        compilerFlags: ['-std=c++23']
     # The optional MoGe-2 learned-normal model (git-ignored, ~56 MB; see docs/LEARNED_NORMALS.md) is compiled into
     # the bundle when present. A script phase rather than a source reference: Xcode fails the build on a missing
     # .mlpackage even when XcodeGen marks the path optional, and builds without the model must still succeed.
