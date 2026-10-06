@@ -39,7 +39,7 @@ struct MaterialLabApp: App {
             }
             CommandGroup(replacing: .importExport) {
                 // Same predicate as the toolbar; when blocked the action explains why.
-                Button("Export Material Bundle…") { store.exportSelected() }
+                Button("Export Material…") { store.requestExport() }
                     .keyboardShortcut("e")
                     .disabled(!store.canExport)
             }

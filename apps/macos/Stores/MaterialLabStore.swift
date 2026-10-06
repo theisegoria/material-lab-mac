@@ -83,6 +83,11 @@ final class MaterialLabStore {
     var showHeightImporter = false
     var alert: MaterialAlert?
     var lastExportURL: URL?
+    /// Engine and interchange formats written beside every exported bundle (remembered across launches).
+    var exportTargets: Set<String> = ExportTargetPreference.load() {
+        didSet { ExportTargetPreference.save(exportTargets) }
+    }
+    var showExportSheet = false
     var includeUnreviewedBatch = false
     /// Named recipes the user saved, newest first.
     private(set) var savedRecipes: [SavedRecipe] = []
@@ -452,6 +457,16 @@ final class MaterialLabStore {
 
     // MARK: - Export
 
+    /// Opens the export sheet (formats to write beside the bundle).
+    func requestExport() {
+        if let blocker = exportBlocker {
+            status = blocker
+            NSSound.beep()
+            return
+        }
+        showExportSheet = true
+    }
+
     func exportSelected() {
         if let blocker = exportBlocker {
             status = blocker
@@ -460,19 +475,26 @@ final class MaterialLabStore {
         }
         guard let derived = currentMaterial, let destination = chooseDestination() else { return }
         isExporting = true
-        status = "Exporting validated PNG maps and manifest…"
+        let targets = ExportTarget.named(exportTargets)
+        status = targets.isEmpty ? "Exporting validated PNG maps and manifest…"
+                                 : "Exporting the bundle and \(targets.count) formats…"
         Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Result { try MaterialBundle.export(derived, into: destination) }
+            let result = Result { () throws -> (URL, Int) in
+                let bundle = try MaterialBundle.export(derived, into: destination)
+                for target in targets { try target.export(bundle: bundle) }
+                return (bundle, targets.count)
+            }
             await self?.finishExport(result)
         }
     }
 
-    private func finishExport(_ result: Result<URL, Error>) {
+    private func finishExport(_ result: Result<(URL, Int), Error>) {
         isExporting = false
         switch result {
-        case .success(let url):
+        case .success(let (url, formats)):
             lastExportURL = url
-            status = "Exported \(url.lastPathComponent)."
+            status = formats == 0 ? "Exported \(url.lastPathComponent)."
+                                  : "Exported \(url.lastPathComponent) and \(formats) format\(formats == 1 ? "" : "s")."
         case .failure(let error):
             status = "Export failed."
             alert = MaterialAlert(title: "Export Failed", message: error.localizedDescription)
@@ -483,6 +505,7 @@ final class MaterialLabStore {
         guard !isBatching, !isExporting, !eligibleBatchSources.isEmpty,
               let destination = chooseDestination() else { return }
         let targets = eligibleBatchSources
+        let formats = ExportTarget.named(exportTargets)
         let chosenRecipe = recipe
         debounceTask?.cancel()
         deriveControl?.cancel()
@@ -503,7 +526,8 @@ final class MaterialLabStore {
                 if !control.shouldContinue { break }
                 do {
                     let result = try MaterialEngine.derive(source: source, recipe: chosenRecipe, control: control)
-                    _ = try MaterialBundle.export(result, into: destination)
+                    let bundle = try MaterialBundle.export(result, into: destination)
+                    for format in formats { try format.export(bundle: bundle) }
                     finished += 1
                 } catch {
                     if !control.shouldContinue { break }

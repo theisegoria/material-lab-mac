@@ -1,4 +1,5 @@
 #ifndef MATERIAL_CAPTURE_BRIDGING_HEADER_H
 #define MATERIAL_CAPTURE_BRIDGING_HEADER_H
 #include "PBRMaterialLab.h"
+#include "PBRLabExport.h"
 #endif

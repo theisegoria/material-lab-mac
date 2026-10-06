@@ -55,13 +55,13 @@ struct MaterialWorkspace: View {
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {
             Button {
-                store.exportSelected()
+                store.requestExport()
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(.glassProminent)
             .disabled(!store.canExport)
-            .help(store.exportBlocker ?? "Export a validated .pbrmaterial bundle (⌘E)")
+            .help(store.exportBlocker ?? "Export the bundle and engine formats (⌘E)")
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {

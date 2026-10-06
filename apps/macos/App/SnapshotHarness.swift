@@ -60,8 +60,21 @@ enum SnapshotHarness {
         if let exportPath = environment["MATERIAL_LAB_SNAPSHOT_EXPORT"], let material = store.currentMaterial {
             let folder = URL(fileURLWithPath: exportPath, isDirectory: true)
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            do { print("exported:", try MaterialBundle.export(material, into: folder).path) }
-            catch { print("export failed:", error.localizedDescription) }
+            do {
+                let bundle = try MaterialBundle.export(material, into: folder)
+                print("exported:", bundle.path)
+                // Every engine and interchange format through the shared exporter.
+                if environment["MATERIAL_LAB_SNAPSHOT_EXPORT_ALL"] != nil {
+                    for target in ExportTarget.all { print("exported \(target.id):", try target.export(bundle: bundle).path) }
+                }
+            } catch { print("export failed:", error.localizedDescription) }
+            if environment["MATERIAL_LAB_SNAPSHOT_EXPORT_ALL"] != nil {
+                store.exportTargets = ["glb", "usdz", "unreal", "unity"]
+                for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                    await renderStandalone(ExportSheet(store: store), size: NSSize(width: 520, height: 620), appearance: appearance,
+                                           to: folder.appendingPathComponent("export-sheet-\(name).png"))
+                }
+            }
         }
         let appearances: [(String, NSAppearance.Name)] = [("light", .aqua), ("dark", .darkAqua)]
         for (appearanceName, appearance) in appearances {

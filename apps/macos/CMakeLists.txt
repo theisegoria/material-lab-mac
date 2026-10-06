@@ -7,7 +7,7 @@ endif()
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Material Lab build type (defaults to Release)" FORCE)
 endif()
-project(MaterialLab VERSION 0.1.0 LANGUAGES C CXX Swift)
+project(MaterialLab VERSION 0.1.0 LANGUAGES C CXX OBJCXX Swift)
 if(NOT APPLE OR NOT CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
     message(FATAL_ERROR "Material Lab requires Apple Silicon macOS")
 endif()
@@ -22,6 +22,15 @@ target_include_directories(pbr_material_core PUBLIC "${MATERIAL_CORE_DIR}/includ
 target_compile_options(pbr_material_core PRIVATE -Wall -Wextra -Wpedantic -O3)
 find_package(Threads REQUIRED)
 target_link_libraries(pbr_material_core PUBLIC Threads::Threads)
+
+# Engine and interchange exports (glTF, USDZ, MaterialX, Unreal, Unity, ...), shared with the CLI's --export.
+find_package(ZLIB REQUIRED)
+add_library(pbr_material_export STATIC "${MATERIAL_CORE_DIR}/src/PNGWriter.cpp"
+            "${MATERIAL_CORE_DIR}/src/tools/Common.mm" "${MATERIAL_CORE_DIR}/src/tools/Export.mm"
+            "${MATERIAL_CORE_DIR}/src/tools/ExportAPI.mm")
+target_include_directories(pbr_material_export PUBLIC "${MATERIAL_CORE_DIR}/include")
+target_compile_options(pbr_material_export PRIVATE -fobjc-arc -Wall -Wextra -O2)
+target_link_libraries(pbr_material_export PUBLIC ZLIB::ZLIB "-framework Foundation")
 
 set(MATERIAL_LAB_SWIFT
     App/MaterialLabApp.swift
@@ -45,11 +54,14 @@ set(MATERIAL_LAB_SWIFT
     Views/SourceMetadataEditor.swift
     Views/Material3DPreview.swift
     Views/LearnedGeometrySettings.swift
+    Views/ExportSheet.swift
+    ../shared/ExportTargets.swift
 )
 add_executable(MaterialLab MACOSX_BUNDLE ${MATERIAL_LAB_SWIFT})
 target_compile_options(MaterialLab PRIVATE -parse-as-library
-    -import-objc-header "${MATERIAL_CORE_DIR}/include/PBRMaterialLab.h")
-target_link_libraries(MaterialLab PRIVATE pbr_material_core
+    -import-objc-header "${CMAKE_CURRENT_SOURCE_DIR}/Support/MaterialLab-Bridging-Header.h"
+    -Xcc "-I${MATERIAL_CORE_DIR}/include")
+target_link_libraries(MaterialLab PRIVATE pbr_material_core pbr_material_export
     "-framework SwiftUI" "-framework AppKit" "-framework ImageIO"
     "-framework CoreGraphics" "-framework UniformTypeIdentifiers"
     "-framework Security" "-framework Network"

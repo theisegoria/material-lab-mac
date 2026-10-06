@@ -10,6 +10,7 @@
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
 #include "tools/Tools.hpp"
+#include "PBRLabExport.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -233,7 +234,7 @@ struct Options {
     fs::path infoBundle, contactSheetBundle, exportBundle;
     std::vector<fs::path> diffBundles;
     std::string exportFormat;
-    bool json = false, listPresets = false;
+    bool json = false, listPresets = false, listFormats = false;
     // Pipeline.
     fs::path recipeFile, saveRecipe, report, watch;
     std::string savedRecipe;
@@ -319,8 +320,8 @@ constexpr const char* kUsage =
     "  --watch DIR --output DIR  derive every image dropped into DIR until interrupted\n"
     "Bundle tools (each validates its bundles first):\n"
     "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
-    "  --export BUNDLE --format FORMAT --output PATH   FORMAT: glb, usdz, materialx, unreal, unity (URP/Built-in),\n"
-    "    unity-hdrp, godot, blender, substance, roblox, minecraft-labpbr\n"
+    "  --export BUNDLE --format FORMAT --output PATH   (--list-formats [--json] describes each) FORMAT: glb, usdz,\n"
+    "    materialx, unreal, unity (URP/Built-in), unity-hdrp, godot, blender, substance, roblox, minecraft-labpbr\n"
     "Learned geometry (see man material-lab):\n"
     "  --learned  use the bundled MoGe-2 model (or the Material Lab app's)   --version\n"
     "  --learned-normals MODEL.mlpackage|.mlmodelc  run a local Core ML tangent-normal estimator (MoGe-2)\n"
@@ -482,6 +483,7 @@ Options parse(int argc, const char** argv) {
             }
         }
         else if (flag == "--list-presets") o.listPresets = true;
+        else if (flag == "--list-formats") o.listFormats = true;
         else if (flag == "--height-strength") recipeNumber(&PBRLabRecipe::height_strength);
         else if (flag == "--polarity") {
             float n = number(value());
@@ -586,7 +588,7 @@ Options parse(int argc, const char** argv) {
         throw std::runtime_error("--repair-albedo makes a tileable albedo; it cannot be combined with --no-tile");
     if (!o.saveGuideNormals.empty() && (o.learnedModel.empty() || !o.catalog.empty()))
         throw std::runtime_error("--save-guide-normals needs --learned-normals and a single --input");
-    if (o.listPresets) {
+    if (o.listPresets || o.listFormats) {
         // Lists and exits; no other options apply.
     } else if (o.usesTool()) {
         const int tools = !o.infoBundle.empty() + !o.contactSheetBundle.empty() + !o.exportBundle.empty() + !o.diffBundles.empty();
@@ -1707,6 +1709,29 @@ int watchFolder(const Options& options) {
 
 int run(int argc, const char** argv) {
     Options options = parse(argc, argv);
+    if (options.listFormats) {
+        // The apps' table (PBRLabExport.h) must name exactly the exporter's formats, in order.
+        const auto& formats = mltools::exportFormats();
+        if (PBRLabExportFormatCount() != formats.size()) throw std::runtime_error("export format table is out of date");
+        NSMutableArray* list = [NSMutableArray array];
+        for (uint32_t i = 0; i < PBRLabExportFormatCount(); ++i) {
+            const PBRLabExportFormat* f = PBRLabExportFormatAt(i);
+            if (formats[i] != f->identifier) throw std::runtime_error("export format table is out of date");
+            if (options.json) {
+                [list addObject:@{@"identifier": @(f->identifier), @"title": @(f->title), @"detail": @(f->detail),
+                                  @"output": f->file_extension ? @(f->file_extension) : @"folder"}];
+            } else {
+                char line[256];
+                snprintf(line, sizeof line, "  %-17s %s\n", f->identifier, f->detail);
+                std::cout << line;
+            }
+        }
+        if (options.json) {
+            NSData* data = [NSJSONSerialization dataWithJSONObject:list options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+            std::cout << std::string(static_cast<const char*>(data.bytes), data.length) << '\n';
+        }
+        return 0;
+    }
     if (options.listPresets) {
         if (options.json) {
             NSMutableArray* list = [NSMutableArray array];

@@ -56,6 +56,7 @@ struct ContentView: View {
         .fileImporter(isPresented: $store.showHeightImporter, allowedContentTypes: [.png, .tiff, .image]) { result in
             if case .success(let url) = result { store.recipe.heightOverrideURL = url }
         }
+        .sheet(isPresented: $store.showExportSheet) { ExportSheet(store: store) }
         .sheet(item: $store.metadataEditorSource, onDismiss: {
             store.presentNextMetadataEditor()
         }) { source in

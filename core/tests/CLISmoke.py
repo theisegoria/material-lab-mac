@@ -477,6 +477,9 @@ def main() -> None:
         run(cli, "--export", str(tool_a), "--format", "fbx", "--output", str(exports / "x"), expect_success=False)
         run(cli, "--export", str(tool_a), "--format", "glb", "--output", str(glb), expect_success=False)  # Exists.
 
+        formats = json.loads(run(cli, "--list-formats", "--json").stdout)
+        assert [f["identifier"] for f in formats][:2] == ["glb", "usdz"] and len(formats) == 11
+        assert all(f["title"] and f["detail"] for f in formats)
         # Material presets: the library is listed, recorded in manifests and saved recipes, and validated.
         listed = json.loads(run(cli, "--list-presets", "--json").stdout)
         assert len(listed) >= 30 and {"red-brick", "wood-planks", "brushed-steel"} <= {p["identifier"] for p in listed}
