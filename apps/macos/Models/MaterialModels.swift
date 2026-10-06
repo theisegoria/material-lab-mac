@@ -89,6 +89,9 @@ struct MaterialRecipe: Equatable, Sendable {
     var albedoRepair: AlbedoRepair = .off
     var reliefMaskURL: URL?
     var heightOverrideURL: URL?
+    /// The material-library preset (LibraryPreset) this recipe started from; later edits keep the name, as in the
+    /// CLI. Recorded as recipe.material_preset in bundles.
+    var materialPreset: String? = nil
 
     /// Parameter ranges accepted by the 1.1.0 core.
     enum Range {
@@ -122,7 +125,7 @@ extension MaterialRecipe: Codable {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels, tileWrap
         case assignedMetalnessEnabled, assignedMetalness, bentNormalEnabled, normalStrength, normalYDown
         case aoStrength, albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
-        case reliefMaskPath, heightOverridePath
+        case reliefMaskPath, heightOverridePath, materialPreset
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +158,7 @@ extension MaterialRecipe: Codable {
         }
         reliefMaskURL = existing(.reliefMaskPath)
         heightOverrideURL = existing(.heightOverridePath)
+        materialPreset = LibraryPreset.named(value(.materialPreset, String?.none))?.id
     }
 
     func encode(to encoder: Encoder) throws {
@@ -179,6 +183,7 @@ extension MaterialRecipe: Codable {
         try c.encode(albedoRepair, forKey: .albedoRepair)
         try c.encodeIfPresent(reliefMaskURL?.path, forKey: .reliefMaskPath)
         try c.encodeIfPresent(heightOverrideURL?.path, forKey: .heightOverridePath)
+        try c.encodeIfPresent(materialPreset, forKey: .materialPreset)
     }
 }
 

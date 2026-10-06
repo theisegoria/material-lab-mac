@@ -731,7 +731,7 @@ enum MaterialEngine {
     }
 }
 
-private extension MaterialPreset {
+extension MaterialPreset {
     var cValue: PBRLabPreset {
         switch self {
         case .flat: PBRLabPresetFlat
@@ -741,6 +741,10 @@ private extension MaterialPreset {
         case .coatedMetal: PBRLabPresetCoatedMetal
         case .bareMetal: PBRLabPresetBareMetal
         }
+    }
+
+    init(cValue: PBRLabPreset) {
+        self = Self.allCases.first { $0.cValue == cValue } ?? .flat
     }
 }
 

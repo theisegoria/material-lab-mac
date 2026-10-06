@@ -56,6 +56,7 @@ set(MATERIAL_LAB_SWIFT
     Views/LearnedGeometrySettings.swift
     Views/ExportSheet.swift
     ../shared/ExportTargets.swift
+    ../shared/MaterialPresetLibrary.swift
 )
 add_executable(MaterialLab MACOSX_BUNDLE ${MATERIAL_LAB_SWIFT})
 target_compile_options(MaterialLab PRIVATE -parse-as-library

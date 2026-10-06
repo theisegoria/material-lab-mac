@@ -34,6 +34,9 @@ enum SnapshotHarness {
             if let mode = environment["MATERIAL_LAB_SNAPSHOT_REPAIR"].flatMap(AlbedoRepair.init(rawValue:)) {
                 store.recipe.albedoRepair = mode
             }
+            if let library = LibraryPreset.named(environment["MATERIAL_LAB_SNAPSHOT_LIBRARY_PRESET"]) {
+                store.chooseLibraryPreset(library)
+            }
         }
         await waitForDerivation(store)
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }

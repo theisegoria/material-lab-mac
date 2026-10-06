@@ -247,6 +247,7 @@ enum MaterialBundle {
         if let wrap = raw["tileWrap"] as? Bool { recipe.tileWrap = wrap }
         if let bent = raw["bentNormal"] as? Bool { recipe.bentNormalEnabled = bent }
         if let yDown = raw["normalYDown"] as? Bool { recipe.normalYDown = yDown }
+        recipe.materialPreset = LibraryPreset.named(raw["materialPreset"] as? String)?.id
         return recipe
     }
 
@@ -440,6 +441,7 @@ enum MaterialBundle {
             recipeManifest["height_override"] = url.lastPathComponent
             if let digest = material.heightOverrideSHA256 { recipeManifest["height_override_sha256"] = digest }
         }
+        if let preset = recipe.materialPreset { recipeManifest["material_preset"] = preset }
         cleanManifest["recipe"] = recipeManifest
         if let guide = material.guide, recipe.guideNormalWeight > 0 {
             cleanManifest["guide_normals"] = [

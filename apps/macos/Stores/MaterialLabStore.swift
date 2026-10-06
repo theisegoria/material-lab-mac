@@ -359,8 +359,37 @@ final class MaterialLabStore {
         recipe = next
     }
 
+    /// Applies a material-library preset (its prior plus tuned values), keeping side inputs, the normal
+    /// convention, learned geometry, tiling and albedo-repair choices.
+    func chooseLibraryPreset(_ library: LibraryPreset) {
+        let r = library.recipe
+        var next = MaterialEngine.defaultRecipe(for: MaterialPreset(cValue: r.preset))
+        next.heightStrength = r.height_strength
+        next.heightPolarity = r.height_polarity
+        next.roughnessBase = r.roughness_base
+        next.roughnessVariation = r.roughness_variation
+        next.aoRadiusPixels = r.ao_radius_pixels
+        next.aoStrength = r.ao_strength
+        next.normalStrength = r.normal_strength
+        next.albedoEqualize = max(recipe.albedoEqualize, r.albedo_equalize)
+        next.assignedMetalnessEnabled = r.assigned_metalness_enabled != 0
+        next.assignedMetalness = r.assigned_metalness
+        next.reliefMaskURL = recipe.reliefMaskURL
+        next.heightOverrideURL = recipe.heightOverrideURL
+        next.normalYDown = recipe.normalYDown
+        next.guideNormalWeight = recipe.guideNormalWeight
+        next.tileWrap = recipe.tileWrap
+        next.seamlessBlend = recipe.seamlessBlend
+        next.seamlessMode = recipe.seamlessMode
+        next.albedoRepair = recipe.albedoRepair
+        next.bentNormalEnabled = recipe.bentNormalEnabled
+        next.materialPreset = library.id
+        recipe = next
+    }
+
     func resetRecipe() {
-        choosePreset(recipe.preset)
+        if let library = LibraryPreset.named(recipe.materialPreset) { chooseLibraryPreset(library) }
+        else { choosePreset(recipe.preset) }
     }
 
     // MARK: - Derivation

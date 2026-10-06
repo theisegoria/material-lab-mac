@@ -8,7 +8,33 @@ struct RecipeInspector: View {
         Form {
             Section {
                 header
-                Picker("Preset", selection: Binding(
+                LabeledContent("Material") {
+                    Menu {
+                        ForEach(LibraryPreset.byCategory, id: \.category) { group in
+                            Section(group.category) {
+                                ForEach(group.presets) { preset in
+                                    Button {
+                                        store.chooseLibraryPreset(preset)
+                                    } label: {
+                                        if store.recipe.materialPreset == preset.id {
+                                            Label(preset.title, systemImage: "checkmark")
+                                        } else {
+                                            Text(preset.title)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(LibraryPreset.named(store.recipe.materialPreset)?.title ?? "Choose…",
+                              systemImage: LibraryPreset.named(store.recipe.materialPreset)?.symbol ?? "square.stack.3d.up")
+                    }
+                    .menuStyle(.button)
+                    .fixedSize()
+                    .accessibilityIdentifier("material-preset-menu")
+                    .help("Start from a tuned material: brick, concrete, wood, metal and more")
+                }
+                Picker("Relief prior", selection: Binding(
                     get: { store.recipe.preset },
                     set: { store.choosePreset($0) }
                 )) {
@@ -20,7 +46,7 @@ struct RecipeInspector: View {
                 Toggle("Live update", isOn: $store.autoDerive)
                     .help("Re-derive automatically ~150 ms after each change (⌥⌘R)")
             } footer: {
-                Text("Flat is the safe default for painted or unknown surfaces.")
+                Text("A material sets the relief prior plus tuned relief, roughness and AO. Flat is the safe default for painted or unknown surfaces.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
