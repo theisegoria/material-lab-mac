@@ -146,6 +146,41 @@ final class MaterialCaptureUITests: XCTestCase {
         shot("10-mac")
     }
 
+    /// Learned-geometry progress: the quick estimate, then "Refining · pass n of N · ~s". Runs only when
+    /// SCREENSHOT_DIR is supplied; expects a photo in the simulator library and the bundled model.
+    func testLearnedProgressShots() throws {
+        guard let directory = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"], !directory.isEmpty else {
+            throw XCTSkip("Set SCREENSHOT_DIR to record learned-progress screenshots")
+        }
+        func shot(_ name: String) {
+            let data = XCUIScreen.main.screenshot().pngRepresentation
+            try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+        }
+        let app = launchFresh()
+        importFirstPhoto(app)
+        let label = app.textFields["semantic-label"]
+        XCTAssertTrue(label.waitForExistence(timeout: 20))
+        label.tap()
+        label.typeText("Fireclay brick")
+        app.toolbars.buttons["Done"].firstMatch.tap()
+        app.buttons["open-recipe"].tap()
+        let slider = app.sliders["Learned geometry"]
+        XCTAssertTrue(app.buttons["recipe-done"].waitForExistence(timeout: 10))
+        var swipes = 0
+        while !(slider.exists && slider.isHittable) && swipes < 8 {
+            app.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        XCTAssertTrue(slider.isHittable, "The learned geometry slider should be reachable in the recipe sheet")
+        slider.adjust(toNormalizedSliderPosition: 1)
+        let quick = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Quick estimate")).firstMatch
+        if quick.waitForExistence(timeout: 30) { shot("learned-1-quick") }
+        let refining = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@",
+                                                            "Refining", "~")).firstMatch
+        XCTAssertTrue(refining.waitForExistence(timeout: 120), "The full field should report passes and time left")
+        shot("learned-2-refining")
+    }
+
     /// Marketing screenshots. Runs only when MARKETING_DIR is supplied
     /// (`TEST_RUNNER_MARKETING_DIR=/path xcodebuild test -only-testing:MaterialCaptureUITests/testMarketingTour …`).
     /// Expects the hero texture as the most recent photo in the simulator library.

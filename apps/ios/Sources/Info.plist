@@ -1,27 +1,72 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleDevelopmentRegion</key><string>en</string>
-<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
-<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-<key>CFBundleName</key><string>Material Capture</string>
-<key>CFBundleDisplayName</key><string>Material Capture</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.1.0</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>LSRequiresIPhoneOS</key><true/>
-<key>UILaunchScreen</key><dict/>
-<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
-<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
-<key>NSCameraUsageDescription</key><string>Capture material albedo candidates for local PBR map derivation.</string>
-<key>NSPhotoLibraryUsageDescription</key><string>Import a material photo for local PBR map derivation.</string>
-<key>NSLocalNetworkUsageDescription</key><string>Pair with Material Lab on your Mac to transfer material bundles.</string>
-<key>NSBonjourServices</key><array><string>_materiallab._tcp</string></array>
-<key>UTExportedTypeDeclarations</key><array><dict>
-  <key>UTTypeIdentifier</key><string>io.materiallab.pbrcapture</string>
-  <key>UTTypeDescription</key><string>PBR Capture</string>
-  <key>UTTypeConformsTo</key><array><string>public.json</string></array>
-  <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>pbrcapture</string></array><key>public.mime-type</key><string>application/vnd.materiallab.pbrcapture+json</string></dict>
-</dict></array>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).derive.*</string>
+	</array>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Material Capture</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Material Capture</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_materiallab._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Capture material albedo candidates for local PBR map derivation.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Pair with Material Lab on your Mac to transfer material bundles.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Import a material photo for local PBR map derivation.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>PBR Capture</string>
+			<key>UTTypeIdentifier</key>
+			<string>io.materiallab.pbrcapture</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>pbrcapture</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.materiallab.pbrcapture+json</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

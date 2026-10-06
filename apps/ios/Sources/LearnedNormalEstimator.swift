@@ -72,6 +72,16 @@ struct GuideNormals: Sendable {
     let provenance: GuideNormalsProvenance
 }
 
+/// Learned-inference progress for the UI: passes done, total, and an estimate of the time left.
+struct LearnedProgress: Sendable, Equatable {
+    var pass: Int
+    var passes: Int
+    var remaining: TimeInterval?
+    /// A quick single-tile estimate, shown while the full-quality field is computed.
+    var coarse: Bool
+    var fraction: Double { passes == 0 ? 0 : Double(pass) / Double(passes) }
+}
+
 /// A finished learned normal field (the core's `PBRLabGuideTiler` after every pass), kept so the 512² live preview,
 /// the export and every recipe edit reuse one inference. The tiling contract itself lives in the core, so the CLI,
 /// the Mac app and this app feed identical guide normals for identical model output.
@@ -270,10 +280,10 @@ final class LearnedNormalEstimator: @unchecked Sendable {
     }
 
     /// Learned normals for a square, straight sRGB RGBA8 image of `size`²; `wrap` (the recipe's tile option) makes
-    /// the field periodic. `shouldContinue` is polled between passes; `progress` receives pass progress in [0, 1]
-    /// on a cache miss.
-    func field(rgba: [UInt8], size: Int, wrap: Bool = true, shouldContinue: () -> Bool = { true },
-               progress: (Double) -> Void = { _ in }) throws -> LearnedNormalField {
+    /// the field periodic. `shouldContinue` is polled between passes; `progress` receives passes and time left on a
+    /// cache miss. `coarse` only labels progress: a quick estimate is simply a field of a `tile`² image.
+    func field(rgba: [UInt8], size: Int, wrap: Bool = true, coarse: Bool = false, shouldContinue: () -> Bool = { true },
+               progress: (LearnedProgress) -> Void = { _ in }) throws -> LearnedNormalField {
         guard let info = locateModel() else { throw LearnedNormalError.notInstalled }
         let key = SHA256.hash(data: rgba).map { String(format: "%02x", $0) }.joined() +
             "|\(size)|\(wrap)|" + info.identity
@@ -282,8 +292,10 @@ final class LearnedNormalEstimator: @unchecked Sendable {
         defer { inferenceLock.unlock() }
         if let hit = cached(key) { return hit }
         guard shouldContinue() else { throw CaptureError.cancelled }
-        progress(0)
+        progress(LearnedProgress(pass: 0, passes: 0, remaining: nil, coarse: coarse))
         let model = try loadModel(info)
+        // Timed after loading: the estimate covers tiling + inference.
+        let started = Date()
         guard let tiler = rgba.withUnsafeBufferPointer({
             PBRLabGuideTilerCreate($0.baseAddress, size * 4, UInt32(size), wrap ? 1 : 0)
         }) else { throw LearnedNormalError.unexpectedOutput("could not prepare the estimator input") }
@@ -320,13 +332,15 @@ final class LearnedNormalEstimator: @unchecked Sendable {
                 }
                 guard added != 0 else { throw LearnedNormalError.unexpectedOutput("could not add a prediction") }
             }
-            progress(Double(pass + 1) / Double(passes))
+            let done = Int(pass) + 1, total = Int(passes)
+            let perPass = Date().timeIntervalSince(started) / Double(done)
+            progress(LearnedProgress(pass: done, passes: total, remaining: perPass * Double(total - done), coarse: coarse))
         }
         guard spread > 1e-4 else { throw LearnedNormalError.unexpectedOutput("a constant normal field") }
         lock.lock()
         cache.removeAll { $0.key == key }
         cache.insert((key, result), at: 0)
-        if cache.count > 2 { cache.removeLast(cache.count - 2) }
+        if cache.count > 3 { cache.removeLast(cache.count - 3) }
         lock.unlock()
         return result
     }

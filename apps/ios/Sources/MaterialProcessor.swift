@@ -440,7 +440,7 @@ enum MaterialProcessor {
                 // Inference owns the first 35% of the progress bar; the estimator cache makes repeats free.
                 learnedField = try estimator.field(rgba: rgba, size: resolution, wrap: recipe.tileWrap || repair != nil,
                                                    shouldContinue: { control?.isCancelled != true },
-                                                   progress: { control?.report($0 * 0.35, absolute: true) })
+                                                   progress: { control?.report($0.fraction * 0.35, absolute: true) })
                 control?.setPhaseOffset(0.35)
             }
             guideNormals = learnedField?.guide(size: resolution)

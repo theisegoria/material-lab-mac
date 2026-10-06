@@ -234,6 +234,18 @@ struct LearnedGeometryRows: View {
 
     private var available: Bool { store.learnedModel != nil }
 
+    /// "Quick estimate", then "Refining · pass 18 of 50 · ~6 s" once a pass time is known.
+    private func progressText(_ progress: LearnedProgress) -> String {
+        guard progress.passes > 0 else { return "Loading model" }
+        if progress.coarse { return "Quick estimate" }
+        var text = store.showsQuickLearnedEstimate ? "Refining" : "Estimating"
+        text += " · pass \(progress.pass) of \(progress.passes)"
+        if let remaining = progress.remaining, progress.pass >= 2, remaining >= 0.5 {
+            text += " · ~\(Int(remaining.rounded())) s"
+        }
+        return text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             RecipeSlider(title: "Learned geometry", symbol: "sparkles",
@@ -243,10 +255,10 @@ struct LearnedGeometryRows: View {
                 .accessibilityIdentifier("learned-geometry")
             if let progress = store.learnedProgress, store.recipe.guideNormalWeight > 0 {
                 HStack(spacing: 10) {
-                    ProgressView(value: progress)
+                    ProgressView(value: progress.fraction)
                         .progressViewStyle(.linear)
                         .tint(.accentColor)
-                    Text(progress <= 0 ? "Loading model" : String(format: "Estimating %.0f%%", progress * 100))
+                    Text(progressText(progress))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText())
@@ -254,8 +266,8 @@ struct LearnedGeometryRows: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Estimating learned geometry")
-                .accessibilityValue(String(format: "%.0f percent", progress * 100))
+                .accessibilityLabel(progress.coarse ? "Making a quick learned estimate" : "Estimating learned geometry")
+                .accessibilityValue(String(format: "%.0f percent", progress.fraction * 100))
             } else if !available && store.learnedModelChecked {
                 Text("Import the MoGe-2 normal model (.mlpackage) to enable learned geometry.")
                     .font(.footnote)

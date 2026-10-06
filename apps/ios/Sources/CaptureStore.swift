@@ -43,9 +43,14 @@ final class CaptureStore {
     private(set) var learnedModel: LearnedModelInfo?
     private(set) var learnedModelChecked = false
     private(set) var isImportingModel = false
-    /// Tile progress while learned normals are inferred for the current source and crop; nil when idle.
-    private(set) var learnedProgress: Double?
-    /// Learned normals for `learnedGeometry`, reused by every preview and recipe edit.
+    /// Pass progress while learned normals are inferred for the current source and crop; nil when idle.
+    private(set) var learnedProgress: LearnedProgress?
+    /// Set while `learnedField` is the quick single-tile estimate and the full field is still being computed.
+    private var learnedIsQuickEstimate = false
+    /// True when the preview's learned geometry is the quick estimate.
+    var showsQuickLearnedEstimate: Bool { learnedIsQuickEstimate && currentLearnedField() != nil }
+    /// Learned normals for `learnedGeometry`, reused by every preview and recipe edit (possibly the quick estimate,
+    /// which full derivations never use: its working size only matches the export's at 512²).
     private var learnedField: LearnedNormalField?
     private var learnedGeometry: String?
     private var learnedTask: Task<Void, Never>?
@@ -186,6 +191,7 @@ final class CaptureStore {
         learnedProgress = nil
         learnedField = nil
         learnedGeometry = nil
+        learnedIsQuickEstimate = false
         source = nil
         derived = nil
         livePreview = nil
@@ -297,13 +303,22 @@ final class CaptureStore {
         previewTask?.cancel()
         previewControl?.cancel()
         isUpdatingPreview = false
+        // 2K and 4K derivations (learned 4K takes ~20 s) keep running if the user leaves the app.
+        let background = Box<ContinuedDerivation>()
         let control = DerivationControl { [weak self] value in
+            background.value?.update(value)
             Task { @MainActor in
                 guard let self, self.isDeriving else { return }
                 self.deriveProgress = max(self.deriveProgress, value)
             }
         }
         derivationControl = control
+        if resolution >= 2048 {
+            let name = trimmedLabel.isEmpty ? "material" : "“\(trimmedLabel)”"
+            background.value = ContinuedDerivation.begin(
+                title: "Deriving \(name)", subtitle: "\(resolution) × \(resolution) PBR maps",
+                onExpire: { control.cancel() })
+        }
         isDeriving = true
         deriveProgress = 0
         errorMessage = nil
@@ -331,6 +346,7 @@ final class CaptureStore {
             if let field = result.learnedField, geometry == geometryKey {
                 learnedField = field
                 learnedGeometry = geometry
+                learnedIsQuickEstimate = false
             }
             if revision == inputRevision {
                 derived = result
@@ -343,6 +359,7 @@ final class CaptureStore {
         } catch {
             errorMessage = error.localizedDescription
         }
+        background.value?.finish(success: derived != nil && derivedRevision == revision)
         isDeriving = false
         derivationControl = nil
         if derived == nil { scheduleLivePreview(after: .zero) }
@@ -359,7 +376,8 @@ final class CaptureStore {
     }
 
     /// Infers learned normals for the current crop at the export resolution's working size, off the main actor.
-    /// The estimator caches by working-image hash, so a later full derivation at this resolution reuses it.
+    /// Above 512² a quick single-tile estimate (a 518² crop: one or two passes) reaches the preview first, then the
+    /// full field replaces it. The estimator caches by working-image hash, so a later full derivation reuses it.
     private func startLearnedInference() {
         guard let source, crop.isValid, learnedModel != nil, let geometry = geometryKey,
               learnedTaskGeometry != geometry else { return }
@@ -368,27 +386,40 @@ final class CaptureStore {
         let control = DerivationControl()
         learnedControl = control
         learnedTaskGeometry = geometry
-        learnedProgress = 0
+        learnedProgress = LearnedProgress(pass: 0, passes: 0, remaining: nil, coarse: false)
         let image = source.selectedImage(for: crop)
         let quad = crop
         let resolution = resolution
+        let quick = resolution > LearnedNormalEstimator.tile
         let wrap = recipe.tileWrap
         let estimator = estimator
-        let report: @Sendable (Double) -> Void = { [weak self] value in
+        let report: @Sendable (LearnedProgress) -> Void = { [weak self] value in
             Task { @MainActor in
                 guard let self, self.learnedTaskGeometry == geometry else { return }
                 self.learnedProgress = value
             }
         }
-        learnedTask = Task { [weak self] in
-            let result: Result<LearnedNormalField, Error> = await Task.detached(priority: .userInitiated) {
+        func infer(size: Int, coarse: Bool) async -> Result<LearnedNormalField, Error> {
+            await Task.detached(priority: .userInitiated) {
                 Result {
-                    let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
-                    return try estimator.field(rgba: rgba, size: resolution, wrap: wrap,
-                                               shouldContinue: { !control.isCancelled },
-                                               progress: report)
+                    let rgba = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: size)
+                    return try estimator.field(rgba: rgba, size: size, wrap: wrap, coarse: coarse,
+                                               shouldContinue: { !control.isCancelled }, progress: report)
                 }
             }.value
+        }
+        learnedTask = Task { [weak self] in
+            if quick, case .success(let field) = await infer(size: LearnedNormalEstimator.tile, coarse: true) {
+                guard let self, self.learnedTaskGeometry == geometry else { return }
+                // Show the quick estimate unless a full field for this crop already arrived (e.g. from derive()).
+                if self.currentLearnedField() == nil {
+                    self.learnedField = field
+                    self.learnedGeometry = geometry
+                    self.learnedIsQuickEstimate = true
+                    self.scheduleLivePreview(after: .zero)
+                }
+            }
+            let result = await infer(size: resolution, coarse: false)
             guard let self, self.learnedTaskGeometry == geometry else { return }
             self.learnedTaskGeometry = nil
             self.learnedProgress = nil
@@ -396,6 +427,7 @@ final class CaptureStore {
             case .success(let field):
                 self.learnedField = field
                 self.learnedGeometry = geometry
+                self.learnedIsQuickEstimate = false
                 self.scheduleLivePreview(after: .zero)
             case .failure(CaptureError.cancelled):
                 break
@@ -434,6 +466,7 @@ final class CaptureStore {
         learnedModel = model
         learnedField = nil
         learnedGeometry = nil
+        learnedIsQuickEstimate = false
         learnedControl?.cancel()
         learnedTask?.cancel()
         learnedTaskGeometry = nil
@@ -596,5 +629,15 @@ final class CapturePersistence: Sendable {
 
     func clear() {
         try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+/// A late-bound reference shared with a `@Sendable` progress closure.
+private final class Box<Value: AnyObject>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+    var value: Value? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
     }
 }

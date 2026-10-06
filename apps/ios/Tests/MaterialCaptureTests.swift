@@ -296,6 +296,40 @@ final class MaterialCaptureTests: XCTestCase {
     }
 
     @MainActor
+    func testLearnedPreviewShowsQuickEstimateBeforeFullFieldAndExportUsesFullField() async throws {
+        try XCTSkipIf(LearnedNormalEstimator.shared.locateModel() == nil, "MoGe2Normals model is not bundled in this build")
+        LearnedNormalEstimator.shared.clearCache()
+        let store = CaptureStore()
+        await store.refreshLearnedModel()
+        let received = await store.receive(origin: .files, data: try XCTUnwrap(syntheticBricks(size: 1024).pngData()))
+        XCTAssertTrue(received, store.errorMessage ?? "Import failed")
+        store.semanticLabel = "quick bricks"
+        store.resolution = 1024
+        var recipe = MaterialRecipe(preset: .stone)
+        recipe.guideNormalWeight = 1
+        store.recipe = recipe
+        var sawQuickPreview = false, sawCoarseProgress = false, sawFullPasses = false
+        let deadline = Date().addingTimeInterval(120)
+        repeat {
+            try await Task.sleep(for: .milliseconds(20))
+            if store.showsQuickLearnedEstimate { sawQuickPreview = true }
+            if let progress = store.learnedProgress {
+                if progress.coarse { sawCoarseProgress = true }
+                if !progress.coarse && progress.passes > 2 { sawFullPasses = true }
+            }
+        } while (store.learnedProgress != nil || store.showsQuickLearnedEstimate || store.isUpdatingPreview)
+            && Date() < deadline
+        XCTAssertNil(store.errorMessage)
+        XCTAssertTrue(sawCoarseProgress, "A quick single-tile estimate runs first")
+        XCTAssertTrue(sawQuickPreview, "The preview shows the quick estimate while the full field is computed")
+        XCTAssertTrue(sawFullPasses, "The full field runs every pass of the 1024² tiling")
+        XCTAssertFalse(store.showsQuickLearnedEstimate, "The full field replaces the quick estimate")
+        XCTAssertEqual(store.livePreview?.guideNormals?.workResolution, 1024)
+        await store.derive()
+        XCTAssertEqual(store.derived?.guideNormals?.workResolution, 1024, "Exports never carry the quick estimate")
+    }
+
+    @MainActor
     func testDerivationReportsProgressAndCanBeCancelled() async throws {
         let image = checkerboard(size: 512)
         let quad = PerspectiveQuad.centeredSquare(for: image.size)
@@ -491,7 +525,7 @@ final class MaterialCaptureTests: XCTestCase {
         let quad = PerspectiveQuad.centeredSquare(for: source.size)
         let rgba = try PerspectiveCropper.correctedRGBA8(source.image, quad: quad, pixels: 256)
         var progress: [Double] = []
-        let field = try estimator.field(rgba: rgba, size: 256, progress: { progress.append($0) })
+        let field = try estimator.field(rgba: rgba, size: 256, progress: { progress.append($0.fraction) })
         XCTAssertEqual(field.work, 518)
         XCTAssertEqual(field.tiles, 9)
         XCTAssertEqual(progress.last, 1)
