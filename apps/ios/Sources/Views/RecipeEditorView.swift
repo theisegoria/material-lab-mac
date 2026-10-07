@@ -62,6 +62,8 @@ struct RecipeEditorView: View {
                     Text("Switching the prior resets relief and surface values to that material's defaults. Save a recipe to reuse it on other captures.")
                 }
 
+                AuthoredMapsSection(store: store)
+
                 Section {
                     RecipeSlider(title: "Height", symbol: "mountain.2", value: $store.recipe.heightStrength,
                                  range: MaterialRecipe.heightStrengthRange, step: 0.01)

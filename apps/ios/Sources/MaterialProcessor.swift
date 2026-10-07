@@ -407,6 +407,8 @@ struct DerivedMaterial: @unchecked Sendable {
     var relief: ReliefDiagnostics? = nil
     /// Hashes of the albedo before and after repair, when repair ran.
     var repairDigests: RepairDigests? = nil
+    /// Artist-made inputs used by this derivation.
+    var authored = AuthoredMaps()
 }
 
 /// Where a derivation gets learned guide normals when `recipe.guideNormalWeight > 0`.
@@ -452,10 +454,10 @@ enum MaterialProcessor {
 
     static func derive(image: UIImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
                        control: DerivationControl? = nil, preview: Bool = false,
-                       guide: GuideSource? = nil) throws -> DerivedMaterial {
+                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps()) throws -> DerivedMaterial {
         guard let cgImage = image.cgImage else { throw CaptureError.invalidImage }
         return try derive(image: cgImage, quad: quad, resolution: resolution, recipe: recipe,
-                          control: control, preview: preview, guide: guide)
+                          control: control, preview: preview, guide: guide, authored: authored)
     }
 
     /// Call off the main actor. A `preview` derivation skips PNG encoding and is never exported.
@@ -464,7 +466,10 @@ enum MaterialProcessor {
     /// for exportable derivations).
     static func derive(image: CGImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
                        control: DerivationControl? = nil, preview: Bool = false,
-                       guide: GuideSource? = nil) throws -> DerivedMaterial {
+                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps()) throws -> DerivedMaterial {
+        // An authored metalness map fills the ORM blue channel, which exists only with assigned metalness.
+        var recipe = recipe
+        if authored.maps[.metalness] != nil, recipe.assignedMetalness == nil { recipe.assignedMetalness = 0 }
         let correctedRGBA = try PerspectiveCropper.correctedRGBA8(image, quad: quad, pixels: resolution)
         let corrected = try makeImage(Data(correctedRGBA), width: resolution, height: resolution,
                                       format: PBRLabPixelFormatRGBA8SRGB, rowBytes: resolution * 4)
@@ -480,7 +485,7 @@ enum MaterialProcessor {
         if control?.isCancelled == true { throw CaptureError.cancelled }
         var learnedField: LearnedNormalField?
         var guideNormals: GuideNormals?
-        if recipe.guideNormalWeight > 0, let guide {
+        if recipe.guideNormalWeight > 0, !authored.hasGeometry, let guide {
             switch guide {
             case .field(let field): learnedField = field
             case .estimate(let estimator):
@@ -493,6 +498,7 @@ enum MaterialProcessor {
             guideNormals = learnedField?.guide(size: resolution)
         }
         if control?.isCancelled == true { throw CaptureError.cancelled }
+        let authoredPixels = try authored.decoded(size: resolution)
         var cRecipe = recipe.cValue
         if guideNormals == nil { cRecipe.guide_normal_weight = 0 }
         if repair != nil {
@@ -525,6 +531,16 @@ enum MaterialProcessor {
                 input.height = UInt32(resolution)
                 input.guide_normal_rgba8 = nil
                 input.guide_normal_row_bytes = 0
+                input.height_override_r16 = UnsafePointer(authoredPixels.height?.baseAddress)
+                input.height_override_row_bytes = authoredPixels.height == nil ? 0 : resolution * 2
+                input.authored_normal_rgba8 = UnsafePointer(authoredPixels.normal?.baseAddress)
+                input.authored_normal_row_bytes = authoredPixels.normal == nil ? 0 : resolution * 4
+                input.authored_roughness_r8 = UnsafePointer(authoredPixels.roughness?.baseAddress)
+                input.authored_roughness_row_bytes = authoredPixels.roughness == nil ? 0 : resolution
+                input.authored_ao_r8 = UnsafePointer(authoredPixels.ao?.baseAddress)
+                input.authored_ao_row_bytes = authoredPixels.ao == nil ? 0 : resolution
+                input.authored_metalness_r8 = UnsafePointer(authoredPixels.metalness?.baseAddress)
+                input.authored_metalness_row_bytes = authoredPixels.metalness == nil ? 0 : resolution
                 let result: OpaquePointer? = { () -> OpaquePointer? in
                     guard let guideNormals else {
                         return PBRLabDerive(&input, &cRecipe, callback, context, &error, error.count)
@@ -586,7 +602,8 @@ enum MaterialProcessor {
                                guideNormals: guideNormals?.provenance, learnedField: learnedField, repair: repair,
                                relief: relief,
                                repairDigests: repair == nil || preview ? nil
-                                   : RepairDigests(sourceRGBA8: Self.sha256(correctedRGBA), repairedRGBA8: Self.sha256(rgba)))
+                                   : RepairDigests(sourceRGBA8: Self.sha256(correctedRGBA), repairedRGBA8: Self.sha256(rgba)),
+                               authored: authored)
     }
 
     static func sha256(_ bytes: [UInt8]) -> String {

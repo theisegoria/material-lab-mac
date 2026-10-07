@@ -372,6 +372,61 @@ final class MaterialCaptureTests: XCTestCase {
     }
 
     @MainActor
+    func testAuthoredMapsReplaceEstimatesPersistAndExport() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "authored-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CaptureStore(libraryDirectory: root)
+        let received = await store.receive(origin: .files, data: try XCTUnwrap(syntheticBricks(size: 256).pngData()))
+        XCTAssertTrue(received, store.errorMessage ?? "Import failed")
+        store.semanticLabel = "Painted tiles"
+        store.resolution = 512
+        store.setHandMadeAlbedo(true)
+        func gray(_ value: (Int, Int) -> UInt8) -> Data {
+            let size = 64
+            var pixels = [UInt8](repeating: 0, count: size * size)
+            for y in 0..<size { for x in 0..<size { pixels[y * size + x] = value(x, y) } }
+            let context = CGContext(data: &pixels, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size,
+                                    space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+            return UIImage(cgImage: context.makeImage()!).pngData()!
+        }
+        XCTAssertTrue(store.setAuthoredMap(.roughness, data: gray { _, _ in 51 }, name: "rough.png"))
+        XCTAssertTrue(store.setAuthoredMap(.metalness, data: gray { x, _ in x < 32 ? 255 : 0 }, name: "metal.png"))
+        XCTAssertFalse(store.setAuthoredMap(.ao, data: Data("not an image".utf8), name: "x.txt"))
+        XCTAssertNotNil(store.recipe.assignedMetalness, "A metalness map turns on assigned metalness")
+        await store.derive()
+        let derived = try XCTUnwrap(store.derived, store.errorMessage ?? "Derivation failed")
+        // The authored roughness replaces the estimate exactly (PNG-decoded check of one pixel).
+        let rough = try XCTUnwrap(UIImage(data: try XCTUnwrap(derived.maps[.roughness]?.png))?.cgImage)
+        let pixel = try XCTUnwrap(rough.dataProvider?.data as Data?)
+        XCTAssertEqual(pixel[0], 51)
+
+        let savedTargets = ExportTargetPreference.load()
+        defer { ExportTargetPreference.save(savedTargets) }
+        store.exportTargets = ["unity"]
+        let folder = try await store.makeMaterialExport()
+        let manifestData = try Data(contentsOf: folder.appending(path: "painted-tiles.pbrmaterial/manifest.json"))
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let maps = try XCTUnwrap(manifest["maps"] as? [String: [String: Any]])
+        XCTAssertEqual(maps["albedo"]?["provenance"] as? String, "authored_albedo")
+        XCTAssertEqual(maps["roughness"]?["provenance"] as? String, "authored_roughness_map")
+        XCTAssertEqual((manifest["source"] as? [String: Any])?["source_kind"] as? String, "authored_albedo")
+        XCTAssertEqual(Set((manifest["authored_inputs"] as? [String: Any])?.keys ?? [:].keys), ["roughness", "metalness"])
+        if let host = ProcessInfo.processInfo.environment["EXPORT_DIR"], !host.isEmpty {
+            let destination = URL(fileURLWithPath: host).appending(path: "authored-" + folder.lastPathComponent)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: folder, to: destination)
+        }
+
+        // The authored maps are saved with the capture and come back on reopen.
+        try await Task.sleep(for: .seconds(1.2))
+        let reopened = CaptureStore(libraryDirectory: root)
+        await reopened.restore()
+        XCTAssertTrue(reopened.authored.handMadeAlbedo)
+        XCTAssertEqual(Set(reopened.authored.maps.keys), [.roughness, .metalness])
+        XCTAssertEqual(reopened.authored.maps[.roughness]?.name, "rough.png")
+    }
+
+    @MainActor
     func testDerivationReportsProgressAndCanBeCancelled() async throws {
         let image = checkerboard(size: 512)
         let quad = PerspectiveQuad.centeredSquare(for: image.size)

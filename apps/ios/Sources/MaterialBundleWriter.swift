@@ -46,7 +46,8 @@ enum MaterialBundleWriter {
             maps[kind.exportedName] = [
                 "file": file, "sha256": sha256(map.png), "width": map.width, "height": map.height,
                 "pixel_format": map.pixelFormat,
-                "provenance": provenance(kind, recipe: recipe, learned: learned, repaired: repaired)
+                "provenance": provenance(kind, recipe: recipe, learned: learned, repaired: repaired,
+                                         authored: material.authored)
             ] as [String: Any]
         }
 
@@ -85,6 +86,7 @@ enum MaterialBundleWriter {
                 "color_space": "sRGB",
                 "origin": identity.origin.rawValue,
                 "capture_mode": identity.captureMode,
+                "source_kind": material.authored.handMadeAlbedo ? "authored_albedo" : "photograph",
                 "working_image": [
                     "width": material.resolution, "height": material.resolution,
                     "crop": "perspective_corrected_quad",
@@ -110,6 +112,11 @@ enum MaterialBundleWriter {
             "estimation_notice": "Geometry and reflectance maps are estimates, not measured surface properties.",
             "runtime_admitted": false
         ]
+        if !material.authored.maps.isEmpty {
+            manifest["authored_inputs"] = Dictionary(uniqueKeysWithValues: material.authored.maps.map { role, map in
+                (role.rawValue, ["file": map.name, "sha256": map.sha256])
+            })
+        }
         if learned, let guide = material.guideNormals {
             manifest["guide_normals"] = [
                 "estimator": guide.estimator, "contract": guide.contract, "weights_sha256": guide.weightsSHA256,
@@ -148,8 +155,21 @@ enum MaterialBundleWriter {
         }
     }
 
-    private static func provenance(_ kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool, repaired: Bool) -> String {
+    private static func provenance(_ kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool, repaired: Bool,
+                                   authored: AuthoredMaps) -> String {
+        let maps = authored.maps
         switch kind {
+        case .albedo where !repaired && authored.handMadeAlbedo: return "authored_albedo"
+        case .normal where maps[.normal] != nil: return "authored_normal_map"
+        case .roughness where maps[.roughness] != nil: return "authored_roughness_map"
+        case .ao where maps[.ao] != nil: return "authored_ao_map"
+        case .orm where maps[.metalness] != nil || maps[.roughness] != nil || maps[.ao] != nil:
+            return "authored_and_estimated_channels"
+        case .height where maps[.height] != nil: return "authored_height_override"
+        case .height where maps[.normal] != nil: return "integrated_from_authored_normal_map"
+        default: break
+        }
+        return switch kind {
         case .albedo: repaired ? "repaired_tileable_albedo_derived_from_source" : "source_color_resampled_srgb"
         case .roughness: "artist_prior_with_estimated_variation"
         case .orm: "estimated_ao_roughness_plus_artist_assigned_metalness"

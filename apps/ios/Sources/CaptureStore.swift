@@ -152,6 +152,7 @@ final class CaptureStore {
 
     private func install(_ image: SourceImage, crop: PerspectiveQuad, label: String, category: String) {
         source = image
+        authored = AuthoredMaps()
         livePreview = nil
         semanticLabel = label
         self.category = category
@@ -193,6 +194,7 @@ final class CaptureStore {
         learnedGeometry = nil
         learnedIsQuickEstimate = false
         source = nil
+        authored = AuthoredMaps()
         derived = nil
         livePreview = nil
         semanticLabel = ""
@@ -278,14 +280,17 @@ final class CaptureStore {
         let recipe = recipe
         let revision = inputRevision
         // Until learned normals exist for this crop the preview stays analytic; inference runs alongside.
-        let guide: GuideSource? = recipe.guideNormalWeight > 0 ? currentLearnedField().map(GuideSource.field) : nil
-        if recipe.guideNormalWeight > 0 && guide == nil { startLearnedInference() }
+        let authored = authored
+        let wantsLearned = recipe.guideNormalWeight > 0 && !authored.hasGeometry
+        let guide: GuideSource? = wantsLearned ? currentLearnedField().map(GuideSource.field) : nil
+        if wantsLearned && guide == nil { startLearnedInference() }
         previewTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self else { return }
             let result = await Task.detached(priority: .userInitiated) {
                 try? MaterialProcessor.derive(image: image, quad: quad, resolution: MaterialProcessor.previewResolution,
-                                              recipe: recipe, control: control, preview: true, guide: guide)
+                                              recipe: recipe, control: control, preview: true, guide: guide,
+                                              authored: authored)
             }.value
             guard !Task.isCancelled else { return }
             if let result, revision == self.inputRevision {
@@ -331,6 +336,7 @@ final class CaptureStore {
         let resolution = resolution
         let revision = inputRevision
         let geometry = geometryKey
+        let authored = authored
         var guide: GuideSource?
         if recipe.guideNormalWeight > 0 {
             // Reuse the preview's inference only when it ran at this resolution's working size (the tiling contract).
@@ -344,7 +350,7 @@ final class CaptureStore {
         do {
             let result = try await Task.detached(priority: .userInitiated) {
                 try MaterialProcessor.derive(image: image, quad: quad, resolution: resolution,
-                                             recipe: recipe, control: control, guide: guide)
+                                             recipe: recipe, control: control, guide: guide, authored: authored)
             }.value
             if let field = result.learnedField, geometry == geometryKey {
                 learnedField = field
@@ -497,6 +503,41 @@ final class CaptureStore {
         }.value
     }
 
+    /// Artist-made inputs for this capture: a hand-made albedo and maps that replace the derived ones.
+    private(set) var authored = AuthoredMaps()
+
+    /// Marks the source as a hand-made albedo: it is used whole (a centered square, no perspective correction).
+    func setHandMadeAlbedo(_ on: Bool) {
+        guard authored.handMadeAlbedo != on else { return }
+        authored.handMadeAlbedo = on
+        if on, let source { crop = .centeredSquare(for: source.size); cropWasAutoDetected = false }
+        pixelInputsChanged()
+    }
+
+    func setNormalMapDirectX(_ on: Bool) {
+        guard authored.normalDirectX != on else { return }
+        authored.normalDirectX = on
+        if authored.maps[.normal] != nil { pixelInputsChanged() }
+    }
+
+    /// Adds (or replaces) an authored map from image data; returns false when the data is not an image.
+    @discardableResult
+    func setAuthoredMap(_ role: AuthoredMaps.Role, data: Data, name: String) -> Bool {
+        guard AuthoredMaps.isDecodable(data) else {
+            errorMessage = "That file is not an image this iPhone can read."
+            return false
+        }
+        authored.maps[role] = AuthoredMaps.Map(data: data, name: name)
+        if role == .metalness, recipe.assignedMetalness == nil { recipe.assignedMetalness = 0 }
+        pixelInputsChanged()
+        return true
+    }
+
+    func removeAuthoredMap(_ role: AuthoredMaps.Role) {
+        guard authored.maps.removeValue(forKey: role) != nil else { return }
+        pixelInputsChanged()
+    }
+
     /// Engine and interchange formats written beside the .pbrmaterial bundle (remembered across launches).
     var exportTargets: Set<String> = ExportTargetPreference.load() {
         didSet { ExportTargetPreference.save(exportTargets) }
@@ -551,6 +592,7 @@ final class CaptureStore {
         category = restored.state.category
         resolution = Self.resolutions.contains(restored.state.resolution) ? restored.state.resolution : 2048
         recipe = restored.state.recipe
+        authored = restored.state.authored
         let restoredCrop = restored.state.crop.isValid ? restored.state.crop : .centeredSquare(for: restored.source.size)
         if crop == restoredCrop { pixelInputsChanged() } else { crop = restoredCrop }
     }
@@ -560,7 +602,8 @@ final class CaptureStore {
         let library = library
         saveTask?.cancel()
         let state = CapturePersistence.State(source: source, crop: crop, semanticLabel: semanticLabel,
-                                             category: category, resolution: resolution, recipe: recipe)
+                                             category: category, resolution: resolution, recipe: recipe,
+                                             authored: authored)
         saveTask = Task {
             if !immediately { try? await Task.sleep(for: .milliseconds(600)) }
             guard !Task.isCancelled else { return }
@@ -589,9 +632,21 @@ final class CapturePersistence: Sendable {
         var category: String
         var resolution: Int
         var recipe: MaterialRecipe
+        /// Authored-map metadata (absent in captures saved before authored maps existed).
+        var authoredHandMade: Bool?
+        var authoredNormalDirectX: Bool?
+        var authoredNames: [String: String]?
+        /// The authored maps themselves, saved as separate files beside the state and loaded with it.
+        var authored = AuthoredMaps()
+
+        private enum CodingKeys: String, CodingKey {
+            case id, origin, capturedAt, constantColorRequested, centerConfidence, confidenceWidth, confidenceHeight
+            case crop, semanticLabel, category, resolution, recipe
+            case authoredHandMade, authoredNormalDirectX, authoredNames
+        }
 
         init(source: SourceImage, crop: PerspectiveQuad, semanticLabel: String, category: String,
-             resolution: Int, recipe: MaterialRecipe) {
+             resolution: Int, recipe: MaterialRecipe, authored: AuthoredMaps = AuthoredMaps()) {
             id = source.id
             origin = source.origin
             capturedAt = source.capturedAt
@@ -604,6 +659,10 @@ final class CapturePersistence: Sendable {
             self.category = category
             self.resolution = resolution
             self.recipe = recipe
+            self.authored = authored
+            authoredHandMade = authored.handMadeAlbedo
+            authoredNormalDirectX = authored.normalDirectX
+            authoredNames = Dictionary(uniqueKeysWithValues: authored.maps.map { ($0.key.rawValue, $0.value.name) })
         }
     }
 
@@ -614,6 +673,7 @@ final class CapturePersistence: Sendable {
     private var fallbackURL: URL { directory.appending(path: "fallback.image") }
     private var confidenceURL: URL { directory.appending(path: "confidence.r8") }
     private var stateURL: URL { directory.appending(path: "state.json") }
+    private func authoredURL(_ role: AuthoredMaps.Role) -> URL { directory.appending(path: "authored-\(role.rawValue).image") }
 
     func saveSource(_ source: SourceImage) {
         do {
@@ -641,13 +701,20 @@ final class CapturePersistence: Sendable {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(state) else { return }
         try? data.write(to: stateURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        for role in AuthoredMaps.Role.allCases {
+            if let map = state.authored.maps[role] {
+                try? map.data.write(to: authoredURL(role), options: [.atomic, .completeFileProtectionUnlessOpen])
+            } else {
+                try? FileManager.default.removeItem(at: authoredURL(role))
+            }
+        }
     }
 
     func load() -> (source: SourceImage, state: State)? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let stateData = try? Data(contentsOf: stateURL),
-              let state = try? decoder.decode(State.self, from: stateData),
+              var state = try? decoder.decode(State.self, from: stateData),
               let primary = try? Data(contentsOf: primaryURL) else { return nil }
         let fallback = try? Data(contentsOf: fallbackURL)
         var confidence: ConfidenceMap?
@@ -662,6 +729,12 @@ final class CapturePersistence: Sendable {
                                             capturedAt: state.capturedAt, id: state.id) else {
             clear()
             return nil
+        }
+        state.authored.handMadeAlbedo = state.authoredHandMade ?? false
+        state.authored.normalDirectX = state.authoredNormalDirectX ?? false
+        for (key, name) in state.authoredNames ?? [:] {
+            guard let role = AuthoredMaps.Role(rawValue: key), let data = try? Data(contentsOf: authoredURL(role)) else { continue }
+            state.authored.maps[role] = AuthoredMaps.Map(data: data, name: name)
         }
         return (source, state)
     }
