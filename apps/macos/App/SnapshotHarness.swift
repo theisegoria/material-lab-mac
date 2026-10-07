@@ -37,6 +37,14 @@ enum SnapshotHarness {
             if let library = LibraryPreset.named(environment["MATERIAL_LAB_SNAPSHOT_LIBRARY_PRESET"]) {
                 store.chooseLibraryPreset(library)
             }
+            // A folder with normal.png, roughness.png, ao.png and/or metalness.png: attached as authored maps.
+            if let folder = environment["MATERIAL_LAB_SNAPSHOT_AUTHORED_DIR"] {
+                store.recipe.authoredAlbedo = true
+                for slot in AuthoredSlot.allCases {
+                    let url = URL(fileURLWithPath: folder).appendingPathComponent("\(slot.rawValue).png")
+                    if FileManager.default.fileExists(atPath: url.path) { slot.set(url, in: &store.recipe) }
+                }
+            }
         }
         await waitForDerivation(store)
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }

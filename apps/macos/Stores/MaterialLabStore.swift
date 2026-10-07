@@ -81,6 +81,8 @@ final class MaterialLabStore {
     var showBundleImporter = false
     var showReliefImporter = false
     var showHeightImporter = false
+    /// The authored-map slot the shared image importer fills (nil when it is closed).
+    var authoredImporter: AuthoredSlot?
     var alert: MaterialAlert?
     var lastExportURL: URL?
     /// Engine and interchange formats written beside every exported bundle (remembered across launches).
@@ -301,8 +303,7 @@ final class MaterialLabStore {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         var stored = recipe
-        stored.reliefMaskURL = nil
-        stored.heightOverrideURL = nil
+        stored.takeSideInputs(from: MaterialRecipe())
         savedRecipes.removeAll { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }
         savedRecipes.insert(SavedRecipe(name: trimmed, recipe: stored), at: 0)
         persistSavedRecipes()
@@ -312,8 +313,7 @@ final class MaterialLabStore {
     /// Applies a saved recipe to the selected source, keeping that source's relief mask and height override.
     func applySavedRecipe(_ saved: SavedRecipe) {
         var next = saved.recipe
-        next.reliefMaskURL = recipe.reliefMaskURL
-        next.heightOverrideURL = recipe.heightOverrideURL
+        next.takeSideInputs(from: recipe)
         resetUndoCoalescing()
         recipe = next
         undoManager?.setActionName("Apply “\(saved.name)”")
@@ -352,8 +352,7 @@ final class MaterialLabStore {
 
     func choosePreset(_ preset: MaterialPreset) {
         var next = MaterialEngine.defaultRecipe(for: preset)
-        next.reliefMaskURL = recipe.reliefMaskURL
-        next.heightOverrideURL = recipe.heightOverrideURL
+        next.takeSideInputs(from: recipe)
         next.normalYDown = recipe.normalYDown
         next.guideNormalWeight = recipe.guideNormalWeight
         recipe = next
@@ -374,8 +373,7 @@ final class MaterialLabStore {
         next.albedoEqualize = max(recipe.albedoEqualize, r.albedo_equalize)
         next.assignedMetalnessEnabled = r.assigned_metalness_enabled != 0
         next.assignedMetalness = r.assigned_metalness
-        next.reliefMaskURL = recipe.reliefMaskURL
-        next.heightOverrideURL = recipe.heightOverrideURL
+        next.takeSideInputs(from: recipe)
         next.normalYDown = recipe.normalYDown
         next.guideNormalWeight = recipe.guideNormalWeight
         next.tileWrap = recipe.tileWrap

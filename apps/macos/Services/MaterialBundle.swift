@@ -367,7 +367,7 @@ enum MaterialBundle {
                 "height": map.height,
                 "pixel_format": map.format == .rgba8SRGB ? "rgba8_srgb_png" : (map.format == .r16Linear ? "r16_unorm_png" : "rgba8_linear_png"),
                 "provenance": provenance(for: kind, recipe: material.recipe, learned: material.guide != nil,
-                                         repaired: material.repair != nil)
+                                         repaired: material.repair != nil, authored: material.authoredInputs)
             ]
         }
         let recipe = material.recipe
@@ -383,6 +383,7 @@ enum MaterialBundle {
                 "sha256": material.sourceSHA256,
                 "color_space": "sRGB",
                 "origin": material.source.origin.rawValue,
+                "source_kind": material.recipe.authoredAlbedo ? "authored_albedo" : "photograph",
                 "input_dimensions": [material.working.sourceWidth, material.working.sourceHeight],
                 "working_image": [
                     "width": material.working.size,
@@ -442,6 +443,9 @@ enum MaterialBundle {
             if let digest = material.heightOverrideSHA256 { recipeManifest["height_override_sha256"] = digest }
         }
         if let preset = recipe.materialPreset { recipeManifest["material_preset"] = preset }
+        if !material.authoredInputs.isEmpty {
+            cleanManifest["authored_inputs"] = material.authoredInputs.mapValues { ["file": $0.file, "sha256": $0.sha256] }
+        }
         cleanManifest["recipe"] = recipeManifest
         if let guide = material.guide, recipe.guideNormalWeight > 0 {
             cleanManifest["guide_normals"] = [
@@ -525,8 +529,19 @@ enum MaterialBundle {
     }
 
     private static func provenance(for kind: MaterialMapKind, recipe: MaterialRecipe, learned: Bool,
-                                   repaired: Bool) -> String {
+                                   repaired: Bool, authored: [String: AuthoredInput] = [:]) -> String {
         switch kind {
+        case .albedo where !repaired && recipe.authoredAlbedo: return "authored_albedo"
+        case .normal where authored["normal"] != nil: return "authored_normal_map"
+        case .roughness where authored["roughness"] != nil: return "authored_roughness_map"
+        case .ao where authored["ao"] != nil: return "authored_ao_map"
+        case .orm where authored["metalness"] != nil || authored["roughness"] != nil || authored["ao"] != nil:
+            return "authored_and_estimated_channels"
+        case .height where recipe.heightOverrideURL == nil && authored["normal"] != nil:
+            return "integrated_from_authored_normal_map"
+        default: break
+        }
+        return switch kind {
         case .albedo: repaired ? "repaired_tileable_albedo_derived_from_source" : "source_color_resampled_srgb"
         case .roughness: "artist_prior_with_estimated_variation"
         case .orm: recipe.assignedMetalnessEnabled

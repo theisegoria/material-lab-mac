@@ -73,14 +73,39 @@ struct RecipeInspector: View {
                     clear: { store.recipe.reliefMaskURL = nil },
                     help: "Grayscale mask: black flattens inferred relief, white keeps it."
                 )
+            }
+
+            Section {
+                Toggle("Hand-made albedo", isOn: $store.recipe.authoredAlbedo)
+                    .help("The source is painted or drawn, not photographed. It is recorded as authored; leave Remove baked lighting and Repair albedo off to keep it untouched.")
                 AttachmentRow(
-                    title: "Authored height",
+                    title: "Height map",
                     systemImage: "mountain.2",
                     url: store.recipe.heightOverrideURL,
                     choose: { store.showHeightImporter = true },
                     clear: { store.recipe.heightOverrideURL = nil },
                     help: "A 16-bit grayscale height map replaces the estimate."
                 )
+                ForEach(AuthoredSlot.allCases) { slot in
+                    AttachmentRow(
+                        title: slot.title,
+                        systemImage: slot.symbol,
+                        url: slot.url(in: store.recipe),
+                        choose: { store.authoredImporter = slot },
+                        clear: { slot.set(nil, in: &store.recipe) },
+                        help: slot.help
+                    )
+                    if slot == .normal, store.recipe.normalMapURL != nil {
+                        Toggle("DirectX normal map (green down)", isOn: $store.recipe.normalMapDirectX)
+                            .controlSize(.small)
+                    }
+                }
+            } header: {
+                Text("Your maps")
+            } footer: {
+                Text("Bring your own artwork: anything you add replaces the estimate, and the bundle records it as authored.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Surface") {

@@ -92,6 +92,30 @@ struct MaterialRecipe: Equatable, Sendable {
     /// The material-library preset (LibraryPreset) this recipe started from; later edits keep the name, as in the
     /// CLI. Recorded as recipe.material_preset in bundles.
     var materialPreset: String? = nil
+    /// The source is a hand-made albedo (painted or drawn); recorded as authored in bundles.
+    var authoredAlbedo = false
+    /// Artist-made maps that replace the derived ones (per source, like the relief mask and height override).
+    var normalMapURL: URL? = nil
+    var normalMapDirectX = false
+    var roughnessMapURL: URL? = nil
+    var aoMapURL: URL? = nil
+    var metalnessMapURL: URL? = nil
+
+    /// Authored height or normals supply the geometry, so learned inference is skipped.
+    var hasAuthoredGeometry: Bool { heightOverrideURL != nil || normalMapURL != nil }
+
+    /// Copies the per-source side inputs (masks, overrides and authored maps) from another recipe.
+    mutating func takeSideInputs(from other: MaterialRecipe) {
+        reliefMaskURL = other.reliefMaskURL
+        heightOverrideURL = other.heightOverrideURL
+        authoredAlbedo = other.authoredAlbedo
+        normalMapURL = other.normalMapURL
+        normalMapDirectX = other.normalMapDirectX
+        roughnessMapURL = other.roughnessMapURL
+        aoMapURL = other.aoMapURL
+        metalnessMapURL = other.metalnessMapURL
+        if metalnessMapURL != nil { assignedMetalnessEnabled = true }
+    }
 
     /// Parameter ranges accepted by the 1.1.0 core.
     enum Range {
@@ -126,6 +150,7 @@ extension MaterialRecipe: Codable {
         case assignedMetalnessEnabled, assignedMetalness, bentNormalEnabled, normalStrength, normalYDown
         case aoStrength, albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
         case reliefMaskPath, heightOverridePath, materialPreset
+        case authoredAlbedo, normalMapPath, normalMapDirectX, roughnessMapPath, aoMapPath, metalnessMapPath
     }
 
     init(from decoder: Decoder) throws {
@@ -159,6 +184,12 @@ extension MaterialRecipe: Codable {
         reliefMaskURL = existing(.reliefMaskPath)
         heightOverrideURL = existing(.heightOverridePath)
         materialPreset = LibraryPreset.named(value(.materialPreset, String?.none))?.id
+        authoredAlbedo = value(.authoredAlbedo, authoredAlbedo)
+        normalMapURL = existing(.normalMapPath)
+        normalMapDirectX = value(.normalMapDirectX, normalMapDirectX)
+        roughnessMapURL = existing(.roughnessMapPath)
+        aoMapURL = existing(.aoMapPath)
+        metalnessMapURL = existing(.metalnessMapPath)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -184,6 +215,12 @@ extension MaterialRecipe: Codable {
         try c.encodeIfPresent(reliefMaskURL?.path, forKey: .reliefMaskPath)
         try c.encodeIfPresent(heightOverrideURL?.path, forKey: .heightOverridePath)
         try c.encodeIfPresent(materialPreset, forKey: .materialPreset)
+        try c.encode(authoredAlbedo, forKey: .authoredAlbedo)
+        try c.encodeIfPresent(normalMapURL?.path, forKey: .normalMapPath)
+        try c.encode(normalMapDirectX, forKey: .normalMapDirectX)
+        try c.encodeIfPresent(roughnessMapURL?.path, forKey: .roughnessMapPath)
+        try c.encodeIfPresent(aoMapURL?.path, forKey: .aoMapPath)
+        try c.encodeIfPresent(metalnessMapURL?.path, forKey: .metalnessMapPath)
     }
 }
 
@@ -360,6 +397,60 @@ struct WorkingImageInfo: Sendable {
     var wasCropped: Bool { sourceWidth != sourceHeight }
 }
 
+/// Artist-made maps a source can carry in place of derived ones.
+enum AuthoredSlot: String, CaseIterable, Identifiable {
+    case normal, roughness, ao, metalness
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .normal: "Normal map"
+        case .roughness: "Roughness map"
+        case .ao: "Occlusion map"
+        case .metalness: "Metalness map"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .normal: "cube.transparent"
+        case .roughness: "circle.dotted"
+        case .ao: "circle.lefthalf.filled"
+        case .metalness: "gearshape"
+        }
+    }
+    var help: String {
+        switch self {
+        case .normal: "Your tangent-space normal map replaces the estimate and also drives height, AO and the masks."
+        case .roughness: "Your grayscale roughness map (white is rough) replaces the estimate."
+        case .ao: "Your grayscale ambient occlusion map (white is open) replaces the estimate."
+        case .metalness: "Your grayscale metalness map (white is metal) fills the ORM map's metalness."
+        }
+    }
+    func url(in recipe: MaterialRecipe) -> URL? {
+        switch self {
+        case .normal: recipe.normalMapURL
+        case .roughness: recipe.roughnessMapURL
+        case .ao: recipe.aoMapURL
+        case .metalness: recipe.metalnessMapURL
+        }
+    }
+    func set(_ url: URL?, in recipe: inout MaterialRecipe) {
+        switch self {
+        case .normal: recipe.normalMapURL = url
+        case .roughness: recipe.roughnessMapURL = url
+        case .ao: recipe.aoMapURL = url
+        case .metalness:
+            recipe.metalnessMapURL = url
+            if url != nil { recipe.assignedMetalnessEnabled = true }
+        }
+    }
+}
+
+/// An artist-made input recorded in the manifest's authored_inputs.
+struct AuthoredInput: Sendable, Equatable {
+    let file: String
+    let sha256: String
+}
+
 struct DerivedMaterial: @unchecked Sendable {
     let source: MaterialSource
     let recipe: MaterialRecipe
@@ -381,4 +472,6 @@ struct DerivedMaterial: @unchecked Sendable {
     let duration: TimeInterval
     /// Present when the albedo was repaired before derivation (algorithm 1.4.0).
     var repair: AlbedoRepairResult? = nil
+    /// Authored maps that replaced derived ones, by role (normal, roughness, ao, metalness, height).
+    var authoredInputs: [String: AuthoredInput] = [:]
 }

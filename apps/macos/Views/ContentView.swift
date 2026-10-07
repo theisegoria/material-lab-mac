@@ -53,6 +53,12 @@ struct ContentView: View {
         .fileImporter(isPresented: $store.showReliefImporter, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result { store.recipe.reliefMaskURL = url }
         }
+        .fileImporter(isPresented: Binding(get: { store.authoredImporter != nil },
+                                           set: { if !$0 { store.authoredImporter = nil } }),
+                      allowedContentTypes: [.image]) { result in
+            if case .success(let url) = result, let slot = store.authoredImporter { slot.set(url, in: &store.recipe) }
+            store.authoredImporter = nil
+        }
         .fileImporter(isPresented: $store.showHeightImporter, allowedContentTypes: [.png, .tiff, .image]) { result in
             if case .success(let url) = result { store.recipe.heightOverrideURL = url }
         }

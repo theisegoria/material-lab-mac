@@ -142,6 +142,9 @@ enum MaterialEngine {
         learnedCoarse: Bool = false
     ) throws -> DerivedMaterial {
         let started = Date()
+        // An authored metalness map fills the ORM blue channel, which exists only with assigned metalness.
+        var recipe = recipe
+        if recipe.metalnessMapURL != nil { recipe.assignedMetalnessEnabled = true }
         let working = try workingImage(for: source.url)
         guard control.shouldContinue else { throw MaterialEngineError.cancelled }
 
@@ -157,6 +160,28 @@ enum MaterialEngine {
             heightSHA = entry.sha256
             return entry.payload
         }
+        // Artist-made maps, decoded as data (no colour management) at the working size.
+        var authoredInputs: [String: AuthoredInput] = [:]
+        if let url = recipe.heightOverrideURL, let heightSHA {
+            authoredInputs["height"] = AuthoredInput(file: url.lastPathComponent, sha256: heightSHA)
+        }
+        func authored(_ url: URL?, role: String, rgba: Bool) throws -> Data? {
+            guard let url else { return nil }
+            let entry = try authoredMap(for: url, role: role, rgba: rgba)
+            authoredInputs[role] = AuthoredInput(file: url.lastPathComponent, sha256: entry.sha256)
+            return entry.payload
+        }
+        var authoredNormal = try authored(recipe.normalMapURL, role: "normal", rgba: true)
+        if recipe.normalMapDirectX, var flipped = authoredNormal {
+            flipped.withUnsafeMutableBytes { raw in
+                let p = raw.bindMemory(to: UInt8.self)
+                for i in stride(from: 1, to: p.count, by: 4) { p[i] = 255 &- p[i] }
+            }
+            authoredNormal = flipped
+        }
+        let authoredRoughness = try authored(recipe.roughnessMapURL, role: "roughness", rgba: false)
+        let authoredAO = try authored(recipe.aoMapURL, role: "ao", rgba: false)
+        let authoredMetal = try authored(recipe.metalnessMapURL, role: "metalness", rgba: false)
         guard control.shouldContinue else { throw MaterialEngineError.cancelled }
 
         // Explicit albedo repair (1.4.0) runs first, exactly as the CLI does: the repaired albedo is the
@@ -175,7 +200,7 @@ enum MaterialEngine {
 
         // Learned guide normals are cached per (pixels, model, compute units): recipe edits reuse them.
         var guide: GuideNormals?
-        if recipe.guideNormalWeight > 0 {
+        if recipe.guideNormalWeight > 0 && !recipe.hasAuthoredGeometry {
             do {
                 defer { control.reportLearned(nil) }
                 guide = try LearnedNormalEstimator.shared.guideNormals(
@@ -219,7 +244,13 @@ enum MaterialEngine {
         let maskBytes = relief ?? Data()
         let heightBytes = heightOverride ?? Data()
         let guideBytes = guide?.rgba8 ?? Data()
+        let normalBytes = authoredNormal ?? Data(), roughnessBytes = authoredRoughness ?? Data()
+        let aoBytes = authoredAO ?? Data(), metalBytes = authoredMetal ?? Data()
         let nativeResult = pixels.withUnsafeBytes { sourceRaw in
+          normalBytes.withUnsafeBytes { normalRaw in
+          roughnessBytes.withUnsafeBytes { roughnessRaw in
+          aoBytes.withUnsafeBytes { aoRaw in
+          metalBytes.withUnsafeBytes { metalRaw in
             maskBytes.withUnsafeBytes { maskRaw in
                 heightBytes.withUnsafeBytes { heightRaw in
                   guideBytes.withUnsafeBytes { guideRaw in
@@ -235,6 +266,17 @@ enum MaterialEngine {
                     input.guide_normal_rgba8 = guideBytes.isEmpty ? nil :
                         guideRaw.bindMemory(to: UInt8.self).baseAddress
                     input.guide_normal_row_bytes = guideBytes.isEmpty ? 0 : targetSize * 4
+                    func pointer(_ data: Data, _ raw: UnsafeRawBufferPointer) -> UnsafePointer<UInt8>? {
+                        data.isEmpty ? nil : UnsafePointer(raw.bindMemory(to: UInt8.self).baseAddress)
+                    }
+                    input.authored_normal_rgba8 = pointer(normalBytes, normalRaw)
+                    input.authored_normal_row_bytes = normalBytes.isEmpty ? 0 : targetSize * 4
+                    input.authored_roughness_r8 = pointer(roughnessBytes, roughnessRaw)
+                    input.authored_roughness_row_bytes = roughnessBytes.isEmpty ? 0 : targetSize
+                    input.authored_ao_r8 = pointer(aoBytes, aoRaw)
+                    input.authored_ao_row_bytes = aoBytes.isEmpty ? 0 : targetSize
+                    input.authored_metalness_r8 = pointer(metalBytes, metalRaw)
+                    input.authored_metalness_row_bytes = metalBytes.isEmpty ? 0 : targetSize
                     input.width = UInt32(targetSize)
                     input.height = UInt32(targetSize)
                     return error.withUnsafeMutableBufferPointer { errorBuffer in
@@ -247,6 +289,10 @@ enum MaterialEngine {
                   }
                 }
             }
+          }
+          }
+          }
+          }
         }
         guard let nativeResult else {
             if !control.shouldContinue { throw MaterialEngineError.cancelled }
@@ -314,11 +360,15 @@ enum MaterialEngine {
         if recipe.normalYDown {
             warnings.append("Normals are encoded DirectX-style (−Y, green down).")
         }
+        if !authoredInputs.isEmpty {
+            let roles = authoredInputs.keys.sorted().joined(separator: ", ")
+            warnings.append("Authored maps replace the estimate for: \(roles).")
+        }
         let workingPreview = rgbaImage(
             working.payload, width: targetSize, height: targetSize,
             rowBytes: targetSize * 4, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
         )
-        return DerivedMaterial(
+        var material = DerivedMaterial(
             source: source, recipe: recipe,
             sourceSHA256: working.sha256,
             reliefMaskSHA256: reliefSHA,
@@ -343,6 +393,47 @@ enum MaterialEngine {
             duration: Date().timeIntervalSince(started),
             repair: repair
         )
+        material.authoredInputs = authoredInputs
+        return material
+    }
+
+    /// An authored map decoded as data (no colour management: device RGB or gray), center-cropped to a square and
+    /// resampled to the working size: RGBA8 for normals, R8 for roughness, occlusion and metalness.
+    private static func authoredMap(for url: URL, role: String, rgba: Bool) throws -> WorkingImageCache.Entry {
+        let key = WorkingImageCache.key(for: url, role: "authored-\(role)")
+        if let cached = WorkingImageCache.shared.lookup(key) { return cached }
+        let bytes = try Data(contentsOf: url)
+        guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+        else { throw MaterialEngineError.unreadableImage(url) }
+        let side = min(image.width, image.height)
+        guard side > 0 else { throw MaterialEngineError.unreadableImage(url) }
+        let channels = rgba ? 4 : 1
+        let space = rgba ? CGColorSpaceCreateDeviceRGB() : CGColorSpaceCreateDeviceGray()
+        let info = rgba ? CGImageAlphaInfo.noneSkipLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                        : CGImageAlphaInfo.none.rawValue
+        guard let context = CGContext(data: nil, width: targetSize, height: targetSize, bitsPerComponent: 8,
+                                      bytesPerRow: targetSize * channels, space: space, bitmapInfo: info)
+        else { throw MaterialEngineError.invalidBuffer }
+        context.interpolationQuality = .high
+        context.setBlendMode(.copy)
+        let scale = CGFloat(targetSize) / CGFloat(side)
+        context.draw(image, in: CGRect(x: -CGFloat(image.width - side) * scale / 2, y: -CGFloat(image.height - side) * scale / 2,
+                                       width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale))
+        guard let pointer = context.data else { throw MaterialEngineError.invalidBuffer }
+        var payload = Data(bytes: pointer, count: targetSize * targetSize * channels)
+        if rgba {
+            payload.withUnsafeMutableBytes { raw in
+                let p = raw.bindMemory(to: UInt8.self)
+                for i in stride(from: 3, to: p.count, by: 4) { p[i] = 255 }
+            }
+        }
+        let entry = WorkingImageCache.Entry(
+            key: key ?? UUID().uuidString, sha256: sha256Hex(bytes), payload: payload,
+            info: WorkingImageInfo(sourceWidth: image.width, sourceHeight: image.height, size: targetSize)
+        )
+        if key != nil { WorkingImageCache.shared.store(entry) }
+        return entry
     }
 
     /// PBRLabConditionAlbedo: delighting plus the requested albedo repair, at the working size.
