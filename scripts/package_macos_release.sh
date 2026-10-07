@@ -21,7 +21,11 @@ app="$build/Build/Products/Release/MaterialLab.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${version//./}" "$app/Contents/Info.plist"
 cp "$repo_root/LICENSE" "$repo_root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/"
 
-codesign --force --deep --options runtime --timestamp --sign "$identity" "$app"
+# Sign inside out: the Quick Look extension keeps its sandbox entitlement (--deep would drop it).
+codesign --force --options runtime --timestamp --sign "$identity" \
+  --entitlements "$repo_root/apps/macos/QuickLookThumbnail/QuickLookThumbnail.entitlements" \
+  "$app/Contents/PlugIns/QuickLookThumbnail.appex"
+codesign --force --options runtime --timestamp --sign "$identity" "$app"
 codesign --verify --deep --strict --verbose=2 "$app"
 
 staging="$dist/staging"

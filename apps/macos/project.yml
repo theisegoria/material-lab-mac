@@ -59,6 +59,8 @@ targets:
         compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
     dependencies:
       - sdk: libz.tbd
+      - target: QuickLookThumbnail
+        embed: true
     # The optional MoGe-2 learned-normal model (git-ignored; see docs/LEARNED_NORMALS.md) is compiled into
     # Contents/Resources/Models when present, as on iOS; builds without it still succeed.
     postCompileScripts:
@@ -88,3 +90,16 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
     scheme:
       environmentVariables: {}
+  QuickLookThumbnail:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: QuickLookThumbnail
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.desktop.thumbnail
+        PRODUCT_NAME: QuickLookThumbnail
+        INFOPLIST_FILE: QuickLookThumbnail/Info.plist
+        CODE_SIGN_ENTITLEMENTS: QuickLookThumbnail/QuickLookThumbnail.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES

@@ -18,7 +18,9 @@
 		3909686981BF3FC49A29DA6C /* CameraInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A592B49E87949F8BA5097B /* CameraInboxView.swift */; };
 		446102869D89F7413CD7883C /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */; };
 		475CBDECEA169B2E2932EBF2 /* ExportTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F0C74ED5D3904198A685BA /* ExportTargets.swift */; };
+		4C93C43554B0B609DFA5B09E /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6758FAD6D3C2154DF25800D3 /* ThumbnailProvider.swift */; };
 		4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */; };
+		4F631B50B1047E283B6B70B6 /* QuickLookThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D89B498975A3DB7C5AC96C9A /* QuickLookThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		53231A0BDAB9AC7C75F9F659 /* IntentEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */; };
 		53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */; };
 		5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */; };
@@ -48,6 +50,30 @@
 		FF4DA80ECD747267C51A8BD4 /* PreviewEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		D6B9AEC23E60B4EB1CEE11AF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 80ED4ED55B270A27361A1E72 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 01C9E5B674533C0E245C4E69;
+			remoteInfo = QuickLookThumbnail;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		48EC7ED09987713903EF5280 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4F631B50B1047E283B6B70B6 /* QuickLookThumbnail.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		0521A1EC094921E84D9DF5DA /* WelcomeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeSheet.swift; sourceTree = "<group>"; };
 		0F84A55BBFFB4DC4F624D8C3 /* Export.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Export.mm; path = ../../core/src/tools/Export.mm; sourceTree = "<group>"; };
@@ -70,6 +96,7 @@
 		60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
 		624746825B3FECEFAC38539B /* MaterialIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialIntents.swift; sourceTree = "<group>"; };
 		63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibrary.swift; sourceTree = "<group>"; };
+		6758FAD6D3C2154DF25800D3 /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		72ECE96D123BC4D49738E240 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
 		7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MaterialPresets.cpp; path = ../../core/src/MaterialPresets.cpp; sourceTree = "<group>"; };
 		8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLinkService.swift; sourceTree = "<group>"; };
@@ -84,8 +111,11 @@
 		CF607F4F493784D4D315BCAF /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabStore.swift; sourceTree = "<group>"; };
 		D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeInspector.swift; sourceTree = "<group>"; };
+		D89B498975A3DB7C5AC96C9A /* QuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuickLookThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAA1BA77F4C1CACF17DEDDB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMetadataEditor.swift; sourceTree = "<group>"; };
 		E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundle.swift; sourceTree = "<group>"; };
+		EA5058D46F890FFB587F7556 /* QuickLookThumbnail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookThumbnail.entitlements; sourceTree = "<group>"; };
 		EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentEntities.swift; sourceTree = "<group>"; };
 		EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedNormalEstimator.swift; sourceTree = "<group>"; };
 		FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
@@ -139,8 +169,19 @@
 			isa = PBXGroup;
 			children = (
 				367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */,
+				D89B498975A3DB7C5AC96C9A /* QuickLookThumbnail.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		58D9901342199D6CFE34AE48 /* QuickLookThumbnail */ = {
+			isa = PBXGroup;
+			children = (
+				DAA1BA77F4C1CACF17DEDDB3 /* Info.plist */,
+				EA5058D46F890FFB587F7556 /* QuickLookThumbnail.entitlements */,
+				6758FAD6D3C2154DF25800D3 /* ThumbnailProvider.swift */,
+			);
+			path = QuickLookThumbnail;
 			sourceTree = "<group>";
 		};
 		59C4610F8C86350A48C5775C /* Core */ = {
@@ -217,6 +258,7 @@
 				1A8595B8B81A18F7AD38E9AD /* App */,
 				59C4610F8C86350A48C5775C /* Core */,
 				629E27D7C2C8BEAD6B9AE734 /* Models */,
+				58D9901342199D6CFE34AE48 /* QuickLookThumbnail */,
 				C0F6ED992F2EA07F6A021998 /* Resources */,
 				162E96B1A07125DA55BBD8C0 /* Services */,
 				3D60F9F11DBDC8CD85491876 /* Shared */,
@@ -251,6 +293,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		01C9E5B674533C0E245C4E69 /* QuickLookThumbnail */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B7C1287F461C3CCF9B3E55C /* Build configuration list for PBXNativeTarget "QuickLookThumbnail" */;
+			buildPhases = (
+				40CE549CD4246C7F4554B9A5 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QuickLookThumbnail;
+			packageProductDependencies = (
+			);
+			productName = QuickLookThumbnail;
+			productReference = D89B498975A3DB7C5AC96C9A /* QuickLookThumbnail.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		41E7F90348517CD96410C9C4 /* MaterialLab */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 40C7E634E297BAC34CD56B74 /* Build configuration list for PBXNativeTarget "MaterialLab" */;
@@ -259,10 +318,12 @@
 				34B0F84E048F899C55EB7B95 /* Bundle learned normal model (optional) */,
 				4FB517B8BB923324BC827E20 /* Resources */,
 				CEA09F3579ABB85328C8015B /* Frameworks */,
+				48EC7ED09987713903EF5280 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BFDD54DB2BF4A20D5F42508B /* PBXTargetDependency */,
 			);
 			name = MaterialLab;
 			packageProductDependencies = (
@@ -280,6 +341,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					01C9E5B674533C0E245C4E69 = {
+						DevelopmentTeam = "";
+					};
 					41E7F90348517CD96410C9C4 = {
 						DevelopmentTeam = "";
 					};
@@ -300,6 +364,7 @@
 			projectRoot = "";
 			targets = (
 				41E7F90348517CD96410C9C4 /* MaterialLab */,
+				01C9E5B674533C0E245C4E69 /* QuickLookThumbnail */,
 			);
 		};
 /* End PBXProject section */
@@ -382,9 +447,44 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		40CE549CD4246C7F4554B9A5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4C93C43554B0B609DFA5B09E /* ThumbnailProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		BFDD54DB2BF4A20D5F42508B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 01C9E5B674533C0E245C4E69 /* QuickLookThumbnail */;
+			targetProxy = D6B9AEC23E60B4EB1CEE11AF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		05864F9D52B1014B2115BF89 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = QuickLookThumbnail/QuickLookThumbnail.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = QuickLookThumbnail/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.materiallab.desktop.thumbnail;
+				PRODUCT_NAME = QuickLookThumbnail;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 		3EDFA01EE9529487696C70DA /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -541,6 +641,25 @@
 			};
 			name = Release;
 		};
+		E000B5A411394C6D4FE199F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = QuickLookThumbnail/QuickLookThumbnail.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = QuickLookThumbnail/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.materiallab.desktop.thumbnail;
+				PRODUCT_NAME = QuickLookThumbnail;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		FC1D727BBABA17F7141F1930 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -562,6 +681,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0B7C1287F461C3CCF9B3E55C /* Build configuration list for PBXNativeTarget "QuickLookThumbnail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E000B5A411394C6D4FE199F2 /* Debug */,
+				05864F9D52B1014B2115BF89 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		40C7E634E297BAC34CD56B74 /* Build configuration list for PBXNativeTarget "MaterialLab" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
