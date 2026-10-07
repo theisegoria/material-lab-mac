@@ -484,6 +484,26 @@ final class MaterialLabStore {
 
     // MARK: - Export
 
+    /// Saves the selected map alone as a PNG (data maps untagged-linear, albedo sRGB, height 16-bit).
+    func exportSelectedMap() {
+        guard let material = currentMaterial, let map = material.maps[selectedMap], selectedMap.isExported else {
+            NSSound.beep()
+            return
+        }
+        let panel = NSSavePanel()
+        panel.title = "Save \(selectedMap.title) Map"
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(MaterialBundle.exportSlug(material.source.semanticLabel))_\(selectedMap.exportedName).png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try? FileManager.default.removeItem(at: url)
+            try MaterialBundle.writePNG(map, to: url)
+            status = "Saved \(url.lastPathComponent)."
+        } catch {
+            alert = MaterialAlert(title: "Save Failed", message: error.localizedDescription)
+        }
+    }
+
     /// Opens the export sheet (formats to write beside the bundle).
     func requestExport() {
         if let blocker = exportBlocker {

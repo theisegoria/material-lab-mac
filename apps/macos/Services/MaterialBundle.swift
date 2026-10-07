@@ -490,7 +490,7 @@ enum MaterialBundle {
         return final
     }
 
-    private static func writePNG(_ map: MaterialMapData, to url: URL) throws {
+    static func writePNG(_ map: MaterialMapData, to url: URL) throws {
         let provider = CGDataProvider(data: map.bytes as CFData)
         let colorSpace: CGColorSpace?
         let bitmap: CGBitmapInfo

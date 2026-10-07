@@ -42,6 +42,9 @@ struct MaterialLabApp: App {
                 Button("Export Material…") { store.requestExport() }
                     .keyboardShortcut("e")
                     .disabled(!store.canExport)
+                Button("Save Map as PNG…") { store.exportSelectedMap() }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .disabled(store.currentMaterial == nil)
             }
             CommandMenu("Material") {
                 Button("Derive Maps") { store.deriveSelected() }
