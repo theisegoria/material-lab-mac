@@ -3,11 +3,22 @@ import SwiftUI
 struct RecipeInspector: View {
     @Bindable var store: MaterialLabStore
     let source: MaterialSource
+    /// Basic shows the controls most materials need; Advanced shows every parameter.
+    @AppStorage("materialLab.inspectorAdvanced") private var advanced = false
+
+    private var base: MaterialRecipe { store.baselineRecipe }
 
     var body: some View {
         Form {
             Section {
                 header
+                Picker("Controls", selection: $advanced) {
+                    Text("Basic").tag(false)
+                    Text("Advanced").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help("Basic shows the controls most materials need; Advanced shows every parameter.")
                 LabeledContent("Material") {
                     Menu {
                         ForEach(LibraryPreset.byCategory, id: \.category) { group in
@@ -32,6 +43,7 @@ struct RecipeInspector: View {
                     .menuStyle(.button)
                     .fixedSize()
                     .accessibilityIdentifier("material-preset-menu")
+                    .popoverTip(MaterialMenuTip(), arrowEdge: .leading)
                     .help("Start from a tuned material: brick, concrete, wood, metal and more")
                 }
                 Picker("Relief prior", selection: Binding(
@@ -51,20 +63,23 @@ struct RecipeInspector: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Relief") {
+            Section {
                 ParameterRow(title: "Height strength", value: $store.recipe.heightStrength,
-                             range: MaterialRecipe.Range.heightStrength, digits: 2,
+                             range: MaterialRecipe.Range.heightStrength, digits: 2, baseline: base.heightStrength,
                              help: "Amplitude of the estimated relief.")
                 Picker("Bright details", selection: $store.recipe.heightPolarity) {
                     Text("Raised").tag(Int32(1))
                     Text("Recessed").tag(Int32(-1))
                 }
                 .pickerStyle(.segmented)
-                ParameterRow(title: "Normal strength", value: $store.recipe.normalStrength,
-                             range: MaterialRecipe.Range.normalStrength, digits: 2,
-                             sliderRange: 0...4,
-                             help: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16.")
+                if advanced {
+                    ParameterRow(title: "Normal strength", value: $store.recipe.normalStrength,
+                                 range: MaterialRecipe.Range.normalStrength, digits: 2, baseline: base.normalStrength,
+                                 sliderRange: 0...4,
+                                 help: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16.")
+                }
                 LearnedGeometryRow(store: store, learned: store.learned)
+                if advanced {
                 AttachmentRow(
                     title: "Relief mask",
                     systemImage: "circle.lefthalf.striped.horizontal",
@@ -73,6 +88,10 @@ struct RecipeInspector: View {
                     clear: { store.recipe.reliefMaskURL = nil },
                     help: "Grayscale mask: black flattens inferred relief, white keeps it."
                 )
+                }
+            } header: {
+                SectionHeader(title: "Relief", modified: modified(\.heightStrength, \.normalStrength) ||
+                              store.recipe.heightPolarity != base.heightPolarity)
             }
 
             Section {
@@ -108,38 +127,50 @@ struct RecipeInspector: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Surface") {
+            Section {
                 ParameterRow(title: "Roughness", value: $store.recipe.roughnessBase,
-                             range: MaterialRecipe.Range.roughness, digits: 2,
+                             range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessBase,
                              help: "Perceptual roughness prior: 0 glossy, 1 matte.")
-                ParameterRow(title: "Roughness variation", value: $store.recipe.roughnessVariation,
-                             range: MaterialRecipe.Range.roughness, digits: 2,
-                             help: "Restrained height-driven variation.")
+                if advanced {
+                    ParameterRow(title: "Roughness variation", value: $store.recipe.roughnessVariation,
+                                 range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessVariation,
+                                 help: "Restrained height-driven variation.")
+                }
                 ParameterRow(title: "Remove baked lighting", value: $store.recipe.albedoEqualize,
-                             range: MaterialRecipe.Range.albedoEqualize, digits: 2,
+                             range: MaterialRecipe.Range.albedoEqualize, digits: 2, baseline: base.albedoEqualize,
                              help: "Flattens low-frequency shading in the albedo (delighting).")
                 Toggle("Assign metalness", isOn: $store.recipe.assignedMetalnessEnabled.animation())
                 if store.recipe.assignedMetalnessEnabled {
                     ParameterRow(title: "Metalness", value: $store.recipe.assignedMetalness,
-                                 range: MaterialRecipe.Range.metalness, digits: 2,
+                                 range: MaterialRecipe.Range.metalness, digits: 2, baseline: base.assignedMetalness,
                                  help: "An artist decision, never inferred from color.")
                 }
+            } header: {
+                SectionHeader(title: "Surface", modified: modified(\.roughnessBase, \.roughnessVariation, \.albedoEqualize,
+                                                                   \.assignedMetalness) ||
+                              store.recipe.assignedMetalnessEnabled != base.assignedMetalnessEnabled)
             }
 
-            Section("Lighting & Tiling") {
-                ParameterRow(title: "AO radius", value: $store.recipe.aoRadiusPixels,
-                             range: MaterialRecipe.Range.aoRadius, digits: 0, unit: "px",
-                             help: "Horizon search radius in source pixels.")
-                ParameterRow(title: "AO depth", value: $store.recipe.aoStrength,
-                             range: MaterialRecipe.Range.aoStrength, digits: 2,
-                             help: "Relief exaggeration seen by the occlusion search; 0 disables AO.")
-                Toggle("Bent normal map", isOn: $store.recipe.bentNormalEnabled)
-                Toggle("Wrap filters at edges", isOn: $store.recipe.tileWrap)
-                    .help(store.recipe.albedoRepair == .off
-                          ? "Treat the image as tiling when filtering and sampling occlusion."
-                          : "Always on while Repair albedo is on: a repaired albedo tiles.")
-                    .disabled(store.recipe.albedoRepair != .off)
+            Section {
+                if advanced {
+                    ParameterRow(title: "AO radius", value: $store.recipe.aoRadiusPixels,
+                                 range: MaterialRecipe.Range.aoRadius, digits: 0, baseline: base.aoRadiusPixels, unit: "px",
+                                 help: "Horizon search radius in source pixels.")
+                    ParameterRow(title: "AO depth", value: $store.recipe.aoStrength,
+                                 range: MaterialRecipe.Range.aoStrength, digits: 2, baseline: base.aoStrength,
+                                 help: "Relief exaggeration seen by the occlusion search; 0 disables AO.")
+                    Toggle("Bent normal map", isOn: $store.recipe.bentNormalEnabled)
+                    Toggle("Wrap filters at edges", isOn: $store.recipe.tileWrap)
+                        .help(store.recipe.albedoRepair == .off
+                              ? "Treat the image as tiling when filtering and sampling occlusion."
+                              : "Always on while Repair albedo is on: a repaired albedo tiles.")
+                        .disabled(store.recipe.albedoRepair != .off)
+                }
                 TileableRows(store: store)
+            } header: {
+                SectionHeader(title: "Lighting & Tiling", modified: modified(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) ||
+                              store.recipe.albedoRepair != base.albedoRepair ||
+                              store.recipe.bentNormalEnabled != base.bentNormalEnabled)
             }
 
             Section {
@@ -170,6 +201,11 @@ struct RecipeInspector: View {
         .accessibilityLabel("Material recipe inspector")
     }
 
+    /// Whether any of these values differs from the baseline (the material or prior defaults).
+    private func modified(_ keys: KeyPath<MaterialRecipe, Float>...) -> Bool {
+        keys.contains { abs(store.recipe[keyPath: $0] - base[keyPath: $0]) > 1e-4 }
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             SourceThumbnail(url: source.url, side: 44, cornerRadius: 9)
@@ -195,12 +231,31 @@ struct RecipeInspector: View {
     }
 }
 
-/// Slider plus an editable numeric field; values are clamped to the core's accepted range.
+/// A section title with a dot when any value in it differs from the material's defaults.
+private struct SectionHeader: View {
+    let title: String
+    let modified: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+            if modified {
+                Circle().fill(.tint).frame(width: 6, height: 6)
+                    .accessibilityLabel("Modified")
+                    .help("Changed from the material's defaults")
+            }
+        }
+    }
+}
+
+/// Slider plus an editable numeric field; values are clamped to the core's accepted range. With a baseline, a dot
+/// marks a changed value and double-clicking the name resets it.
 private struct ParameterRow: View {
     let title: String
     @Binding var value: Float
     let range: ClosedRange<Float>
     var digits: Int = 2
+    var baseline: Float? = nil
     var sliderRange: ClosedRange<Float>? = nil
     var unit: String? = nil
     var help: String? = nil
@@ -208,7 +263,16 @@ private struct ParameterRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text(title)
+                HStack(spacing: 5) {
+                    Text(title)
+                    if isModified {
+                        Circle().fill(.tint).frame(width: 5, height: 5)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { if let baseline { value = baseline } }
+                .accessibilityAction(named: "Reset to default") { if let baseline { value = baseline } }
                 Spacer()
                 TextField(
                     title,
@@ -241,8 +305,10 @@ private struct ParameterRow: View {
             .accessibilityLabel(title)
             .accessibilityValue(value.formatted(.number.precision(.fractionLength(digits))))
         }
-        .help(help ?? title)
+        .help((help ?? title) + (baseline == nil ? "" : " Double-click the name to reset."))
     }
+
+    private var isModified: Bool { baseline.map { abs($0 - value) > 1e-4 } ?? false }
 
     private var slider: ClosedRange<Float> { sliderRange ?? range }
 }

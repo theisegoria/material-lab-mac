@@ -62,6 +62,7 @@ struct MaterialWorkspace: View {
             .buttonStyle(.glassProminent)
             .disabled(!store.canExport)
             .help(store.exportBlocker ?? "Export the bundle and engine formats (⌘E)")
+            .popoverTip(ExportTip(), arrowEdge: .top)
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItem(placement: .primaryAction) {

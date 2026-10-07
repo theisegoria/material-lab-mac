@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TipKit
 
 final class MaterialLabAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -21,13 +22,18 @@ struct MaterialLabApp: App {
                 .frame(minWidth: 1080, minHeight: 700)
                 .task {
                     store.bootstrap()
-                    if SnapshotHarness.isActive { await SnapshotHarness.run(store: store) }
+                    if SnapshotHarness.isActive { await SnapshotHarness.run(store: store); return }
+                    try? Tips.configure([.displayFrequency(.immediate)])
+                    if !WelcomeSheet.hasBeenShown { store.showWelcome = true }
                 }
         }
         .defaultSize(width: 1440, height: 900)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Material Lab") { MaterialLabAbout.show() }
+            }
+            CommandGroup(replacing: .help) {
+                Button("Welcome to Material Lab") { store.showWelcome = true }
             }
             CommandGroup(replacing: .newItem) {
                 Button("Import Images…") { store.showSourceImporter = true }

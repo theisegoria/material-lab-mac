@@ -7,8 +7,10 @@ import ImageIO
 /// ones. Stored as the original image data (saved beside the capture), decoded as data at each derivation size.
 struct AuthoredMaps: Sendable, Equatable {
     enum Role: String, CaseIterable, Identifiable, Codable, Sendable {
-        case height, normal, roughness, ao, metalness
+        case height, normal, roughness, ao, metalness, reliefMask
         var id: String { rawValue }
+        /// The relief mask steers the estimate instead of replacing a map; it is recorded in the recipe.
+        var replacesMap: Bool { self != .reliefMask }
         var title: String {
             switch self {
             case .height: "Height map"
@@ -16,6 +18,7 @@ struct AuthoredMaps: Sendable, Equatable {
             case .roughness: "Roughness map"
             case .ao: "Occlusion map"
             case .metalness: "Metalness map"
+            case .reliefMask: "Relief mask"
             }
         }
         var symbol: String {
@@ -25,6 +28,7 @@ struct AuthoredMaps: Sendable, Equatable {
             case .roughness: "circle.dotted"
             case .ao: "circle.lefthalf.filled"
             case .metalness: "gearshape"
+            case .reliefMask: "circle.lefthalf.striped.horizontal"
             }
         }
         var explanation: String {
@@ -34,6 +38,7 @@ struct AuthoredMaps: Sendable, Equatable {
             case .roughness: "Grayscale roughness: white is rough."
             case .ao: "Grayscale ambient occlusion: white is open."
             case .metalness: "Grayscale metalness: white is metal."
+            case .reliefMask: "Grayscale mask: black flattens the estimated relief, white keeps it."
             }
         }
     }
@@ -66,7 +71,8 @@ struct AuthoredMaps: Sendable, Equatable {
         var ao: UnsafeMutableBufferPointer<UInt8>?
         var metalness: UnsafeMutableBufferPointer<UInt8>?
         var height: UnsafeMutableBufferPointer<UInt8>?   // R16 little-endian
-        deinit { [normal, roughness, ao, metalness, height].forEach { $0?.deallocate() } }
+        var reliefMask: UnsafeMutableBufferPointer<UInt8>?
+        deinit { [normal, roughness, ao, metalness, height, reliefMask].forEach { $0?.deallocate() } }
     }
 
     /// Decodes every map without colour management, center-cropped to a square and resampled to `size`².
@@ -82,6 +88,7 @@ struct AuthoredMaps: Sendable, Equatable {
             case .ao: result.ao = try Self.decode(map.data, size: size, channels: 1, sixteen: false)
             case .metalness: result.metalness = try Self.decode(map.data, size: size, channels: 1, sixteen: false)
             case .height: result.height = try Self.decode(map.data, size: size, channels: 1, sixteen: true)
+            case .reliefMask: result.reliefMask = try Self.decode(map.data, size: size, channels: 1, sixteen: false)
             }
         }
         return result

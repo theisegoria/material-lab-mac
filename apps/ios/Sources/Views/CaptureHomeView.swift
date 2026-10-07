@@ -117,6 +117,7 @@ private struct CameraCaptureView: View {
     @State private var isCapturing = false
     @State private var shutterCount = 0
     @State private var exposure: ExposureReading?
+    @AppStorage("materialCapture.coachSeen") private var coachSeen = false
     @Namespace private var glass
 
     var body: some View {
@@ -146,6 +147,11 @@ private struct CameraCaptureView: View {
                         .padding(.bottom, 20)
                 }
                 .padding(.horizontal, 20)
+                if isReady && !coachSeen {
+                    CaptureCoach { withAnimation(.snappy) { coachSeen = true } }
+                        .padding(24)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                }
                 if store.isImporting {
                     ProgressView("Preparing photo…")
                         .padding(20)
@@ -521,5 +527,44 @@ private struct GuidanceHint: View {
             .contentTransition(.opacity)
             .animation(.easeInOut(duration: 0.25), value: message)
             .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// First-launch tips for a good material photo.
+private struct CaptureCoach: View {
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Three tips for a great material")
+                .font(.title3.weight(.semibold))
+            tip("square.dashed", "Fill the frame", "Get close so the surface fills the guide; the corners can be adjusted later.")
+            tip("sun.max.trianglebadge.exclamationmark", "Avoid glare", "Soft, even light works best. Turn away from bright reflections.")
+            tip("camera.metering.center.weighted", "Shoot straight on", "Hold the phone parallel to the surface; the level turns green.")
+            Button {
+                dismiss()
+            } label: {
+                Text("Got It").frame(maxWidth: .infinity, minHeight: 30)
+            }
+            .buttonStyle(.glassProminent)
+            .accessibilityIdentifier("capture-coach-done")
+        }
+        .padding(22)
+        .glassEffect(.regular, in: .rect(cornerRadius: 28))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func tip(_ symbol: String, _ title: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .frame(width: 34)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(text).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -73,6 +73,10 @@ enum MaterialBundleWriter {
             "guide_normal_weight": tidy(learned ? recipe.guideNormalWeight : 0)
         ]
         if let preset = recipe.materialPreset { recipeManifest["material_preset"] = preset }
+        if let mask = material.authored.maps[.reliefMask] {
+            recipeManifest["relief_mask"] = mask.name
+            recipeManifest["relief_mask_sha256"] = mask.sha256
+        }
         var manifest: [String: Any] = [
             "schema_version": 1,
             "bundle_kind": "pbr-material-bundle",
@@ -113,9 +117,12 @@ enum MaterialBundleWriter {
             "runtime_admitted": false
         ]
         if !material.authored.maps.isEmpty {
-            manifest["authored_inputs"] = Dictionary(uniqueKeysWithValues: material.authored.maps.map { role, map in
-                (role.rawValue, ["file": map.name, "sha256": map.sha256])
-            })
+            let replacing = material.authored.maps.filter { $0.key.replacesMap }
+            if !replacing.isEmpty {
+                manifest["authored_inputs"] = Dictionary(uniqueKeysWithValues: replacing.map { role, map in
+                    (role.rawValue, ["file": map.name, "sha256": map.sha256])
+                })
+            }
         }
         if learned, let guide = material.guideNormals {
             manifest["guide_normals"] = [

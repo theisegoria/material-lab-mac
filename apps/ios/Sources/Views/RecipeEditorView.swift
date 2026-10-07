@@ -66,7 +66,7 @@ struct RecipeEditorView: View {
 
                 Section {
                     RecipeSlider(title: "Height", symbol: "mountain.2", value: $store.recipe.heightStrength,
-                                 range: MaterialRecipe.heightStrengthRange, step: 0.01)
+                                 range: MaterialRecipe.heightStrengthRange, step: 0.01, baseline: store.baselineRecipe.heightStrength)
                     Picker(selection: $store.recipe.heightPolarity) {
                         Text("Raised").tag(Int32(1))
                         Text("Inset").tag(Int32(-1))
@@ -75,7 +75,7 @@ struct RecipeEditorView: View {
                     }
                     RecipeSlider(title: "Normal strength", symbol: "cube.transparent",
                                  value: $store.recipe.normalStrength,
-                                 range: MaterialRecipe.normalStrengthRange, step: 0.1, format: "%.1f×")
+                                 range: MaterialRecipe.normalStrengthRange, step: 0.1, format: "%.1f×", baseline: store.baselineRecipe.normalStrength)
                     Toggle(isOn: $store.recipe.bentNormal) {
                         Label("Bent normal map", systemImage: "arrow.turn.up.right")
                     }
@@ -92,10 +92,10 @@ struct RecipeEditorView: View {
 
                 Section("Surface") {
                     RecipeSlider(title: "Roughness", symbol: "circle.dotted", value: $store.recipe.roughnessBase,
-                                 range: 0...1, step: 0.01)
+                                 range: 0...1, step: 0.01, baseline: store.baselineRecipe.roughnessBase)
                     RecipeSlider(title: "Roughness variation", symbol: "waveform.path",
                                  value: $store.recipe.roughnessVariation,
-                                 range: MaterialRecipe.roughnessVariationRange, step: 0.01)
+                                 range: MaterialRecipe.roughnessVariationRange, step: 0.01, baseline: store.baselineRecipe.roughnessVariation)
                     Toggle(isOn: Binding(get: { store.recipe.assignedMetalness != nil },
                                          set: { store.recipe.assignedMetalness = $0 ? 1 : nil })) {
                         Label("Assign metalness (ORM)", systemImage: "square.stack.3d.up")
@@ -111,13 +111,13 @@ struct RecipeEditorView: View {
                 Section {
                     RecipeSlider(title: "Remove lighting", symbol: "sun.max.trianglebadge.exclamationmark",
                                  value: $store.recipe.albedoEqualize,
-                                 range: MaterialRecipe.albedoEqualizeRange, step: 0.01, format: "%.0f%%", percent: true)
+                                 range: MaterialRecipe.albedoEqualizeRange, step: 0.01, format: "%.0f%%", percent: true, baseline: store.baselineRecipe.albedoEqualize)
                     RecipeSlider(title: "AO strength", symbol: "circle.lefthalf.filled",
                                  value: $store.recipe.aoStrength,
-                                 range: MaterialRecipe.aoStrengthRange, step: 0.05, format: "%.2f×")
+                                 range: MaterialRecipe.aoStrengthRange, step: 0.05, format: "%.2f×", baseline: store.baselineRecipe.aoStrength)
                     RecipeSlider(title: "AO radius", symbol: "circle.dashed",
                                  value: $store.recipe.aoRadiusPixels,
-                                 range: MaterialRecipe.aoRadiusRange, step: 1, format: "%.0f px")
+                                 range: MaterialRecipe.aoRadiusRange, step: 1, format: "%.0f px", baseline: store.baselineRecipe.aoRadiusPixels)
                     VStack(alignment: .leading, spacing: 6) {
                         Picker(selection: $store.recipe.albedoRepair) {
                             ForEach(AlbedoRepair.allCases) { Text($0.title).tag($0) }
@@ -138,7 +138,7 @@ struct RecipeEditorView: View {
                         RecipeSlider(title: store.recipe.albedoRepair == .off ? "Make tileable" : "Repair band",
                                      symbol: "square.grid.3x3",
                                      value: $store.recipe.seamlessBlend,
-                                     range: MaterialRecipe.seamlessBlendRange, step: 0.01, format: "%.0f%%", percent: true)
+                                     range: MaterialRecipe.seamlessBlendRange, step: 0.01, format: "%.0f%%", percent: true, baseline: store.baselineRecipe.seamlessBlend)
                             .accessibilityIdentifier("make-tileable")
                         Picker("Seam method", selection: $store.recipe.seamlessMode) {
                             ForEach(SeamlessMode.allCases) { Text($0.title).tag($0) }
@@ -197,10 +197,20 @@ struct RecipeEditorView: View {
             .navigationTitle("Recipe")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItemGroup(placement: .topBarLeading) {
+                    Button("Undo", systemImage: "arrow.uturn.backward") { store.undo() }
+                        .disabled(!store.canUndo)
+                        .accessibilityIdentifier("recipe-undo")
+                    Button("Redo", systemImage: "arrow.uturn.forward") { store.redo() }
+                        .disabled(!store.canRedo)
+                        .accessibilityIdentifier("recipe-redo")
+                }
+                ToolbarItem(placement: .principal) {
                     if store.isUpdatingPreview {
                         ProgressView().controlSize(.small)
                             .accessibilityLabel("Updating preview")
+                    } else {
+                        Text("Recipe").font(.headline)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -220,11 +230,18 @@ struct RecipeSlider: View {
     var step: Float = 0.01
     var format = "%.2f"
     var percent = false
+    /// The material's default: a dot marks a changed value and the context menu resets it.
+    var baseline: Float? = nil
+
+    private var isModified: Bool { baseline.map { abs($0 - value) > 1e-4 } ?? false }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Label(title, systemImage: symbol)
+                if isModified {
+                    Circle().fill(.tint).frame(width: 6, height: 6).accessibilityHidden(true)
+                }
                 Spacer()
                 Text(display)
                     .monospacedDigit()
@@ -235,6 +252,12 @@ struct RecipeSlider: View {
                 .accessibilityLabel(title)
                 .accessibilityValue(display)
         }
+        .contextMenu {
+            if let baseline, isModified {
+                Button("Reset to Default", systemImage: "arrow.counterclockwise") { value = baseline }
+            }
+        }
+        .accessibilityAction(named: "Reset to default") { if let baseline { value = baseline } }
     }
 
     private var display: String { String(format: format, percent ? value * 100 : value) }
@@ -263,7 +286,7 @@ struct LearnedGeometryRows: View {
         VStack(alignment: .leading, spacing: 8) {
             RecipeSlider(title: "Learned geometry", symbol: "sparkles",
                          value: $store.recipe.guideNormalWeight, range: 0...1, step: 0.05,
-                         format: "%.0f%%", percent: true)
+                         format: "%.0f%%", percent: true, baseline: store.baselineRecipe.guideNormalWeight)
                 .disabled(!available)
                 .accessibilityIdentifier("learned-geometry")
             if let progress = store.learnedProgress, store.recipe.guideNormalWeight > 0 {

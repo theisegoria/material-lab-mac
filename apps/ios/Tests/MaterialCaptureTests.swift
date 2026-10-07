@@ -427,6 +427,50 @@ final class MaterialCaptureTests: XCTestCase {
     }
 
     @MainActor
+    func testRecipeUndoRedoCoalescesDragsAndResetsPerCapture() async throws {
+        let store = CaptureStore()
+        _ = await store.receive(origin: .files, data: try XCTUnwrap(checkerboard(size: 128).pngData()))
+        XCTAssertFalse(store.canUndo)
+        let start = store.recipe
+        // A drag: many quick edits are one undo step.
+        for value in stride(from: Float(0.1), through: 0.4, by: 0.05) { store.recipe.heightStrength = value }
+        try await Task.sleep(for: .seconds(0.8))
+        store.recipe.roughnessBase = 0.2
+        store.undo()
+        XCTAssertEqual(store.recipe.roughnessBase, start.roughnessBase)
+        XCTAssertEqual(store.recipe.heightStrength, 0.4, accuracy: 1e-6)
+        store.undo()
+        XCTAssertEqual(store.recipe, start)
+        XCTAssertFalse(store.canUndo)
+        store.redo()
+        store.redo()
+        XCTAssertEqual(store.recipe.roughnessBase, 0.2)
+        XCTAssertFalse(store.canRedo)
+        // A new capture starts fresh.
+        _ = await store.receive(origin: .files, data: try XCTUnwrap(checkerboard(size: 128).pngData()))
+        XCTAssertFalse(store.canUndo)
+    }
+
+    func testRelitImageFollowsTheLight() throws {
+        let image = syntheticBricks(size: 256)
+        let source = try SourceImage(origin: .files, data: try XCTUnwrap(image.pngData()))
+        var recipe = MaterialRecipe(preset: .stone)
+        recipe.heightStrength = 0.4
+        let material = try MaterialProcessor.derive(image: source.image, quad: .centeredSquare(for: source.size),
+                                                    resolution: 256, recipe: recipe, preview: true)
+        func mean(_ image: CGImage) -> Double {
+            let data = image.dataProvider!.data! as Data
+            var sum = 0
+            for i in stride(from: 1, to: data.count, by: 4) { sum += Int(data[i]) }
+            return Double(sum) / Double(data.count / 4)
+        }
+        let overhead = try XCTUnwrap(MaterialProcessor.relitImage(material, azimuth: 0, elevation: .pi / 2))
+        let grazing = try XCTUnwrap(MaterialProcessor.relitImage(material, azimuth: 0, elevation: 0.1))
+        XCTAssertEqual(overhead.width, 256)
+        XCTAssertGreaterThan(mean(overhead), mean(grazing) + 20, "Overhead light is brighter than grazing light")
+    }
+
+    @MainActor
     func testDerivationReportsProgressAndCanBeCancelled() async throws {
         let image = checkerboard(size: 512)
         let quad = PerspectiveQuad.centeredSquare(for: image.size)

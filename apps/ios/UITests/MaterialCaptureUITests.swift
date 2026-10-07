@@ -230,6 +230,38 @@ final class MaterialCaptureUITests: XCTestCase {
         shot("export-3-files")
     }
 
+    /// Relit and 3D shape preview modes, and the Your maps section. Runs only when SCREENSHOT_DIR is supplied.
+    func testPreviewModeShots() throws {
+        guard let directory = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"], !directory.isEmpty else {
+            throw XCTSkip("Set SCREENSHOT_DIR to record preview mode screenshots")
+        }
+        func shot(_ name: String) {
+            let data = XCUIScreen.main.screenshot().pngRepresentation
+            try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
+        }
+        let app = launchFresh()
+        importFirstPhoto(app)
+        XCTAssertTrue(app.textFields["semantic-label"].waitForExistence(timeout: 20))
+        let modes = app.segmentedControls["preview-mode"]
+        modes.buttons["Relit"].tap()
+        sleep(3)
+        shot("preview-relit")
+        modes.buttons["3D"].tap()
+        sleep(3)
+        let shapeMenu = app.buttons["preview-shape"]
+        XCTAssertTrue(shapeMenu.waitForExistence(timeout: 10))
+        shapeMenu.tap()
+        app.buttons["Cube"].tap()
+        sleep(3)
+        shot("preview-cube")
+        app.buttons["open-recipe"].tap()
+        let yourMaps = app.buttons["authored-normal"]
+        var swipes = 0
+        while !(yourMaps.exists && yourMaps.isHittable) && swipes < 6 { app.swipeUp(velocity: .slow); swipes += 1 }
+        sleep(1)
+        shot("recipe-your-maps")
+    }
+
     /// Marketing screenshots. Runs only when MARKETING_DIR is supplied
     /// (`TEST_RUNNER_MARKETING_DIR=/path xcodebuild test -only-testing:MaterialCaptureUITests/testMarketingTour …`).
     /// Expects the hero texture as the most recent photo in the simulator library.

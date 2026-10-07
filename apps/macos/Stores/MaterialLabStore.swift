@@ -90,6 +90,7 @@ final class MaterialLabStore {
         didSet { ExportTargetPreference.save(exportTargets) }
     }
     var showExportSheet = false
+    var showWelcome = false
     var includeUnreviewedBatch = false
     /// Named recipes the user saved, newest first.
     private(set) var savedRecipes: [SavedRecipe] = []
@@ -361,6 +362,21 @@ final class MaterialLabStore {
     /// Applies a material-library preset (its prior plus tuned values), keeping side inputs, the normal
     /// convention, learned geometry, tiling and albedo-repair choices.
     func chooseLibraryPreset(_ library: LibraryPreset) {
+        recipe = libraryRecipe(library)
+    }
+
+    /// What the inspector compares against for "modified" marks and per-value reset: the chosen material's
+    /// recipe, or the relief prior's defaults, with this source's own choices kept.
+    var baselineRecipe: MaterialRecipe {
+        if let library = LibraryPreset.named(recipe.materialPreset) { return libraryRecipe(library) }
+        var base = MaterialEngine.defaultRecipe(for: recipe.preset)
+        base.takeSideInputs(from: recipe)
+        base.normalYDown = recipe.normalYDown
+        base.guideNormalWeight = recipe.guideNormalWeight
+        return base
+    }
+
+    private func libraryRecipe(_ library: LibraryPreset) -> MaterialRecipe {
         let r = library.recipe
         var next = MaterialEngine.defaultRecipe(for: MaterialPreset(cValue: r.preset))
         next.heightStrength = r.height_strength
@@ -382,7 +398,7 @@ final class MaterialLabStore {
         next.albedoRepair = recipe.albedoRepair
         next.bentNormalEnabled = recipe.bentNormalEnabled
         next.materialPreset = library.id
-        recipe = next
+        return next
     }
 
     func resetRecipe() {

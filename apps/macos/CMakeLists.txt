@@ -55,6 +55,7 @@ set(MATERIAL_LAB_SWIFT
     Views/Material3DPreview.swift
     Views/LearnedGeometrySettings.swift
     Views/ExportSheet.swift
+    Views/WelcomeSheet.swift
     ../shared/ExportTargets.swift
     ../shared/MaterialPresetLibrary.swift
 )
@@ -67,7 +68,7 @@ target_link_libraries(MaterialLab PRIVATE pbr_material_core pbr_material_export
     "-framework CoreGraphics" "-framework UniformTypeIdentifiers"
     "-framework Security" "-framework Network"
     "-framework RealityKit" "-framework Metal" "-framework ScreenCaptureKit"
-    "-framework CoreML" "-framework CoreVideo")
+    "-framework CoreML" "-framework CoreVideo" "-framework TipKit")
 set_target_properties(MaterialLab PROPERTIES
     Swift_LANGUAGE_VERSION 5
     MACOSX_BUNDLE_GUI_IDENTIFIER "io.materiallab.desktop"

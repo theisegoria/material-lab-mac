@@ -63,6 +63,7 @@ struct ContentView: View {
             if case .success(let url) = result { store.recipe.heightOverrideURL = url }
         }
         .sheet(isPresented: $store.showExportSheet) { ExportSheet(store: store) }
+        .sheet(isPresented: $store.showWelcome) { WelcomeSheet() }
         .sheet(item: $store.metadataEditorSource, onDismiss: {
             store.presentNextMetadataEditor()
         }) { source in

@@ -114,10 +114,19 @@ enum SnapshotHarness {
             if let source = store.selectedSource {
                 // The sidebar and inspector sit on vibrancy the fallback renderer cannot sample,
                 // so also render them standalone for inspection.
+                UserDefaults.standard.set(false, forKey: "materialLab.inspectorAdvanced")
                 await renderStandalone(
                     RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 1500),
                     appearance: appearance,
                     to: directory.appendingPathComponent("\(prefix)-inspector-\(appearanceName).png"))
+                UserDefaults.standard.set(true, forKey: "materialLab.inspectorAdvanced")
+                await renderStandalone(
+                    RecipeInspector(store: store, source: source), size: NSSize(width: 340, height: 1900),
+                    appearance: appearance,
+                    to: directory.appendingPathComponent("\(prefix)-inspector-advanced-\(appearanceName).png"))
+                UserDefaults.standard.set(false, forKey: "materialLab.inspectorAdvanced")
+                await renderStandalone(WelcomeSheet(), size: NSSize(width: 560, height: 470), appearance: appearance,
+                                       to: directory.appendingPathComponent("\(prefix)-welcome-\(appearanceName).png"))
                 await renderStandalone(
                     SourceSidebar(store: store), size: NSSize(width: 280, height: 700),
                     appearance: appearance,

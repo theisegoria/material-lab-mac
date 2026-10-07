@@ -22,7 +22,57 @@ final class CaptureStore {
         didSet { if resolution != oldValue { pixelInputsChanged(refreshPreview: false) } }
     }
     var recipe = MaterialRecipe(preset: .flat) {
-        didSet { if recipe != oldValue { pixelInputsChanged() } }
+        didSet {
+            guard recipe != oldValue else { return }
+            recordUndo(from: oldValue)
+            pixelInputsChanged()
+        }
+    }
+
+    // MARK: Undo
+
+    /// Recipe history for this capture. Edits within ~0.7 s (a slider drag) coalesce into one step.
+    private var undoStack: [MaterialRecipe] = []
+    private var redoStack: [MaterialRecipe] = []
+    private var lastEdit = Date.distantPast
+    private var applyingHistory = false
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
+
+    private func recordUndo(from previous: MaterialRecipe) {
+        guard !applyingHistory else { return }
+        let now = Date()
+        if now.timeIntervalSince(lastEdit) > 0.7 || undoStack.isEmpty {
+            undoStack.append(previous)
+            if undoStack.count > 100 { undoStack.removeFirst() }
+        }
+        lastEdit = now
+        redoStack.removeAll()
+    }
+
+    func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(recipe)
+        applyingHistory = true
+        recipe = previous
+        applyingHistory = false
+        lastEdit = .distantPast
+    }
+
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(recipe)
+        applyingHistory = true
+        recipe = next
+        applyingHistory = false
+        lastEdit = .distantPast
+    }
+
+    /// A new or reopened capture starts with an empty history.
+    private func resetHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        lastEdit = .distantPast
     }
 
     /// Full-resolution, exportable maps for the current inputs; nil once any pixel input changes.
@@ -153,6 +203,7 @@ final class CaptureStore {
     private func install(_ image: SourceImage, crop: PerspectiveQuad, label: String, category: String) {
         source = image
         authored = AuthoredMaps()
+        defer { resetHistory() }
         livePreview = nil
         semanticLabel = label
         self.category = category
@@ -226,6 +277,12 @@ final class CaptureStore {
     }
 
     func applySavedRecipe(_ saved: SavedRecipe) { recipe = saved.recipe }
+
+    /// The values the recipe sheet compares against: the chosen material's recipe, or the prior's defaults.
+    var baselineRecipe: MaterialRecipe {
+        if let library = LibraryPreset.named(recipe.materialPreset) { return recipe.applyingLibraryPreset(library) }
+        return recipe.applyingPreset(recipe.preset)
+    }
 
     /// Starts from a material-library preset, keeping export, tiling and learned-geometry choices.
     func applyLibraryPreset(_ preset: LibraryPreset) { recipe = recipe.applyingLibraryPreset(preset) }
@@ -593,6 +650,7 @@ final class CaptureStore {
         resolution = Self.resolutions.contains(restored.state.resolution) ? restored.state.resolution : 2048
         recipe = restored.state.recipe
         authored = restored.state.authored
+        resetHistory()
         let restoredCrop = restored.state.crop.isValid ? restored.state.crop : .centeredSquare(for: restored.source.size)
         if crop == restoredCrop { pixelInputsChanged() } else { crop = restoredCrop }
     }

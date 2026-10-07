@@ -16,13 +16,14 @@ struct PNGDocument: FileDocument {
 }
 
 enum PreviewMode: String, CaseIterable, Identifiable {
-    case map, tiled, lit, compare
+    case map, tiled, relit, lit, compare
     var id: String { rawValue }
     var title: String {
         switch self {
         case .map: "Map"
         case .tiled: "Tiled"
-        case .lit: "Lit"
+        case .relit: "Relit"
+        case .lit: "3D"
         case .compare: "Compare"
         }
     }
@@ -30,6 +31,7 @@ enum PreviewMode: String, CaseIterable, Identifiable {
         switch self {
         case .map: "square"
         case .tiled: "square.grid.3x3"
+        case .relit: "sun.max"
         case .lit: "circle.lefthalf.filled"
         case .compare: "square.split.2x1"
         }
@@ -611,6 +613,8 @@ struct MaterialPreviewPane: View {
                     .resizable(resizingMode: .tile)
                     .accessibilityLabel("\(map.kind.title) tiled three by three")
             }
+        case .relit:
+            RelitView(material: material)
         case .lit:
             MaterialSphereView(material: material)
                 .accessibilityLabel("Lit sphere preview. Drag to orbit.")

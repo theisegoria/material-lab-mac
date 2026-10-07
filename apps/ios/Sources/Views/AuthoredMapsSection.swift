@@ -26,9 +26,10 @@ struct AuthoredMapsSection: View {
                     }
                 } label: {
                     LabeledContent {
-                        Text(store.authored.maps[role]?.name ?? "Estimated")
+                        Text(store.authored.maps[role]?.name ?? (role.replacesMap ? "Estimated" : "None"))
                             .foregroundStyle(store.authored.maps[role] == nil ? .secondary : .primary)
                             .lineLimit(1)
+                            .fixedSize()
                     } label: {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {

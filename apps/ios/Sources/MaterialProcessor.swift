@@ -523,8 +523,8 @@ enum MaterialProcessor {
                 var input = PBRLabInput()
                 input.rgba8 = buffer.baseAddress
                 input.rgba_row_bytes = resolution * 4
-                input.relief_mask_r8 = nil
-                input.relief_mask_row_bytes = 0
+                input.relief_mask_r8 = UnsafePointer(authoredPixels.reliefMask?.baseAddress)
+                input.relief_mask_row_bytes = authoredPixels.reliefMask == nil ? 0 : resolution
                 input.height_override_r16 = nil
                 input.height_override_row_bytes = 0
                 input.width = UInt32(resolution)
@@ -700,6 +700,60 @@ enum MaterialProcessor {
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw CaptureError.derivationFailed("PNG export failed") }
         return output as Data
+    }
+
+    /// The albedo lit from (azimuth, elevation) through the normal and occlusion maps: the Mac's relit view.
+    static func relitImage(_ material: DerivedMaterial, azimuth: Float, elevation: Float) -> CGImage? {
+        guard let albedo = material.maps[.albedo], let normal = material.maps[.normal],
+              albedo.width == normal.width, albedo.height == normal.height,
+              let albedoData = albedo.previewImage.dataProvider?.data as Data?,
+              let normalData = normal.previewImage.dataProvider?.data as Data? else { return nil }
+        let aoMap = material.maps[.ao].flatMap { $0.width == albedo.width ? $0 : nil }
+        let aoData = aoMap?.previewImage.dataProvider?.data as Data?
+        let width = albedo.width, height = albedo.height
+        let albedoRow = albedo.previewImage.bytesPerRow, normalRow = normal.previewImage.bytesPerRow
+        let aoRow = aoMap?.previewImage.bytesPerRow ?? 0
+        let lx = cosf(elevation) * cosf(azimuth), ly = cosf(elevation) * sinf(azimuth), lz = sinf(elevation)
+        // +Y maps store "up" in green, so image-space y (down) is the negation.
+        let greenSign: Float = material.recipe.normalYDown ? 1 : -1
+        var toLinear = [Float](repeating: 0, count: 256)
+        for i in 0..<256 {
+            let c = Float(i) / 255
+            toLinear[i] = c <= 0.04045 ? c / 12.92 : powf((c + 0.055) / 1.055, 2.4)
+        }
+        var toSRGB = [UInt8](repeating: 0, count: 4096)
+        for i in 0..<4096 {
+            let l = Float(i) / 4095
+            let c = l <= 0.0031308 ? l * 12.92 : 1.055 * powf(l, 1 / 2.4) - 0.055
+            toSRGB[i] = UInt8(max(0, min(255, (c * 255).rounded())))
+        }
+        var output = [UInt8](repeating: 255, count: width * height * 4)
+        albedoData.withUnsafeBytes { a in
+            normalData.withUnsafeBytes { n in
+                (aoData ?? Data()).withUnsafeBytes { o in
+                    let a = a.bindMemory(to: UInt8.self), n = n.bindMemory(to: UInt8.self), o = o.bindMemory(to: UInt8.self)
+                    for y in 0..<height {
+                        for x in 0..<width {
+                            let ai = y * albedoRow + x * 4, ni = y * normalRow + x * 4
+                            var nx = Float(n[ni]) / 127.5 - 1
+                            var ny = greenSign * (Float(n[ni + 1]) / 127.5 - 1)
+                            var nz = Float(n[ni + 2]) / 127.5 - 1
+                            let length = max(1e-4, (nx * nx + ny * ny + nz * nz).squareRoot())
+                            nx /= length; ny /= length; nz /= length
+                            let diffuse = max(0, nx * lx + ny * ly + nz * lz)
+                            let occlusion = o.isEmpty ? 1 : Float(o[y * aoRow + x * 4]) / 255
+                            let light = 0.14 * occlusion + 0.95 * diffuse
+                            let out = (y * width + x) * 4
+                            for c in 0..<3 {
+                                output[out + c] = toSRGB[Int(min(1, toLinear[Int(a[ai + c])] * light) * 4095)]
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return try? makeImage(Data(output), width: width, height: height, format: PBRLabPixelFormatRGBA8SRGB,
+                              rowBytes: width * 4)
     }
 
     /// The normal map as a +Y (OpenGL/glTF, RealityKit) renderer expects it; DirectX output is green-flipped back.

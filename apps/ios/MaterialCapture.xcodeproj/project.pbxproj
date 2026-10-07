@@ -34,6 +34,7 @@
 		C4C4C31588C71E6B0DA03B7B /* MaterialBundleWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDF7E6D4F5385FA8C1E3A6A3 /* MaterialBundleWriter.swift */; };
 		C67851AB7C86004627FB1855 /* ExportTargetsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D6FA7091F17AD255DCB26B7 /* ExportTargetsSheet.swift */; };
 		CA78AFBF6846FC75F590B990 /* CropEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F791FB494E077A9E17AA82A /* CropEditorView.swift */; };
+		CD44A109BC45895DAF0CB3EE /* RelitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AE9DF7E6746C3DAC2C2A161 /* RelitView.swift */; };
 		D128572144CE65455BACEE2A /* MaterialProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */; };
 		D4205EFDFB5ECCB20E94FA8B /* CaptureHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */; };
 		D643FDC182DC4DD21FFBD448 /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C305E0F1AE6153D1BCD0009C /* MaterialPresetLibrary.swift */; };
@@ -77,6 +78,7 @@
 		3BA4705114E89C4F767F416E /* MaterialCaptureUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MaterialCaptureUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		452A596EB164DCE14C051001 /* AuthoredMaps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthoredMaps.swift; sourceTree = "<group>"; };
 		4729EC0562C1777EAA5CAFAC /* MaterialCapture-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MaterialCapture-Bridging-Header.h"; sourceTree = "<group>"; };
+		4AE9DF7E6746C3DAC2C2A161 /* RelitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelitView.swift; sourceTree = "<group>"; };
 		519A027C3D145DF71CF7626D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		51A8573F8A5F7205045D1540 /* MacLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLinkView.swift; sourceTree = "<group>"; };
 		53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureHomeView.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 				D765096232A3E053B322829A /* MaterialReviewView.swift */,
 				7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */,
 				26169906969BC485E1B6991A /* RecipeEditorView.swift */,
+				4AE9DF7E6746C3DAC2C2A161 /* RelitView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -471,6 +474,7 @@
 				328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */,
 				6C35067BA70DC82A8DAF4D57 /* RecipeEditorView.swift in Sources */,
 				329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */,
+				CD44A109BC45895DAF0CB3EE /* RelitView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

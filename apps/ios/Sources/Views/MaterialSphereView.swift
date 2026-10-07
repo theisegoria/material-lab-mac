@@ -2,11 +2,41 @@ import Metal
 import RealityKit
 import SwiftUI
 
-/// A physically based sphere lit by the default environment plus a key light. Drag to orbit.
+/// Preview geometry, as on the Mac: a sphere, a cube or a flat tile.
+enum PreviewShape: String, CaseIterable, Identifiable {
+    case sphere, cube, plane
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var symbol: String {
+        switch self {
+        case .sphere: "circle"
+        case .cube: "cube"
+        case .plane: "square"
+        }
+    }
+    var mesh: MeshResource {
+        switch self {
+        case .sphere: .generateSphere(radius: 0.1)
+        case .cube: .generateBox(size: 0.14, cornerRadius: 0.004)
+        case .plane: .generatePlane(width: 0.2, depth: 0.2)
+        }
+    }
+    /// UV repeats that keep texels roughly square on each mesh.
+    var textureScale: SIMD2<Float> {
+        switch self {
+        case .sphere: [4, 2]
+        case .cube: [1, 1]
+        case .plane: [2, 2]
+        }
+    }
+}
+
+/// A physically based sphere, cube or tile lit by the default environment plus a key light. Drag to orbit.
 struct MaterialSphereView: View {
     let material: DerivedMaterial
     @State private var pbr: PhysicallyBasedMaterial?
     @State private var failed = false
+    @State private var shape: PreviewShape = .sphere
 
     var body: some View {
         ZStack {
@@ -23,12 +53,37 @@ struct MaterialSphereView: View {
                 content.add(key)
                 content.cameraTarget = sphere
             } update: { content in
-                guard let pbr,
+                guard var pbr,
                       let sphere = content.entities.first(where: { $0.name == "material-sphere" }) as? ModelEntity
                 else { return }
-                sphere.model?.materials = [pbr]
+                pbr.textureCoordinateTransform.scale = shape.textureScale
+                sphere.model = ModelComponent(mesh: shape.mesh, materials: [pbr])
+                // Tilt the flat tile toward the camera so it reads as a surface, not an edge.
+                switch shape {
+                case .plane: sphere.orientation = simd_quatf(angle: .pi / 2.6, axis: [1, 0, 0])
+                case .cube:
+                    // Three faces in view, so the cube reads as a solid.
+                    sphere.orientation = simd_quatf(angle: .pi / 7, axis: [1, 0, 0]) * simd_quatf(angle: .pi / 4, axis: [0, 1, 0])
+                case .sphere: sphere.orientation = simd_quatf()
+                }
             }
             .realityViewCameraControls(.orbit)
+            .overlay(alignment: .bottomTrailing) {
+                Menu {
+                    Picker("Shape", selection: $shape) {
+                        ForEach(PreviewShape.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    }
+                } label: {
+                    Image(systemName: shape.symbol)
+                        .font(.body.weight(.semibold))
+                        .frame(width: 40, height: 40)
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .accessibilityLabel("Preview shape")
+                .accessibilityIdentifier("preview-shape")
+                .accessibilityValue(shape.title)
+                .padding(12)
+            }
             if failed {
                 Label("Lit preview unavailable", systemImage: "exclamationmark.triangle")
                     .font(.footnote)
