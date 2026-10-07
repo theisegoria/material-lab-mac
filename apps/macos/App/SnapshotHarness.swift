@@ -53,6 +53,21 @@ enum SnapshotHarness {
                   r.roughnessBase, r.assignedMetalnessEnabled, r.albedoRepair.rawValue)
         }
         await waitForDerivation(store)
+        if let batchPath = environment["MATERIAL_LAB_SNAPSHOT_BATCH_DIR"] {
+            // A second (unreadable) source makes one item fail, so the queue shows both outcomes.
+            let broken = URL(fileURLWithPath: batchPath).appendingPathComponent("not-an-image.png")
+            try? FileManager.default.createDirectory(atPath: batchPath, withIntermediateDirectories: true)
+            try? Data("x".utf8).write(to: broken)
+            store.sources.append(MaterialSource(id: "snapshot:broken", url: broken, semanticLabel: "broken photo",
+                                                category: "masonry", origin: .imported, reviewStatus: "reviewed",
+                                                originalEnvelopeURL: nil))
+            store.exportTargets = ["glb"]
+            store.startBatch(into: URL(fileURLWithPath: batchPath))
+            for _ in 0..<600 where store.isBatching { try? await Task.sleep(for: .milliseconds(100)) }
+            print("batch:", store.batchItems.map { "\($0.source.semanticLabel)=\($0.state)" }.joined(separator: ", "))
+            await renderStandalone(BatchQueueView(store: store), size: NSSize(width: 720, height: 300), appearance: .aqua,
+                                   to: directory.appendingPathComponent("batch-queue-light.png"))
+        }
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_PRESET_CHECK"] != nil { await presetCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_COARSE_CHECK"] != nil { await coarseCheck(store: store) }

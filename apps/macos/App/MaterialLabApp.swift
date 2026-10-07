@@ -28,6 +28,11 @@ struct MaterialLabApp: App {
                 }
         }
         .defaultSize(width: 1440, height: 900)
+
+        Window("Batch Queue", id: "batch-queue") {
+            BatchQueueView(store: store)
+        }
+        .defaultSize(width: 720, height: 420)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Material Lab") { MaterialLabAbout.show() }

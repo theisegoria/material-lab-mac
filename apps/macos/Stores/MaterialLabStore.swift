@@ -573,18 +573,66 @@ final class MaterialLabStore {
         }
     }
 
+    // MARK: - Batch queue
+
+    /// One source in the batch queue, with its status and output.
+    struct BatchItem: Identifiable, Sendable {
+        enum State: Sendable, Equatable { case queued, running, done, failed(String), cancelled }
+        let source: MaterialSource
+        var state: State = .queued
+        var bundle: URL?
+        var duration: TimeInterval?
+        var id: String { source.id }
+    }
+
+    private(set) var batchItems: [BatchItem] = []
+    @ObservationIgnored private var batchDestination: URL?
+    @ObservationIgnored private var batchRecipe = MaterialRecipe()
+    @ObservationIgnored private var batchFormats: [ExportTarget] = []
+    /// Set when a batch starts so the window opens the Batch Queue.
+    var batchQueueRequest = 0
+
+    var batchFailedCount: Int { batchItems.filter { if case .failed = $0.state { true } else { false } }.count }
+    var batchDoneCount: Int { batchItems.filter { $0.state == .done }.count }
+
     func batchDeriveVisible() {
         guard !isBatching, !isExporting, !eligibleBatchSources.isEmpty,
               let destination = chooseDestination() else { return }
-        let targets = eligibleBatchSources
-        let formats = ExportTarget.named(exportTargets)
-        let chosenRecipe = recipe
+        startBatch(into: destination)
+    }
+
+    /// Queues every eligible source with the current recipe and export formats into `destination`.
+    func startBatch(into destination: URL) {
+        guard !isBatching, !eligibleBatchSources.isEmpty else { return }
+        batchDestination = destination
+        batchRecipe = recipe
+        batchFormats = ExportTarget.named(exportTargets)
+        batchItems = eligibleBatchSources.map { BatchItem(source: $0) }
+        batchQueueRequest += 1
+        runBatch(batchItems.indices.map { $0 })
+    }
+
+    /// Re-runs the failed and cancelled items with the batch's recipe and destination.
+    func retryFailedBatchItems() {
+        guard !isBatching else { return }
+        let indices = batchItems.indices.filter {
+            switch batchItems[$0].state { case .failed, .cancelled: true; default: false }
+        }
+        guard !indices.isEmpty else { return }
+        runBatch(indices)
+    }
+
+    private func runBatch(_ indices: [Int]) {
+        guard let destination = batchDestination else { return }
+        let chosenRecipe = batchRecipe, formats = batchFormats
+        let work = indices.map { ($0, batchItems[$0].source) }
+        for index in indices { batchItems[index].state = .queued }
         debounceTask?.cancel()
         deriveControl?.cancel()
         isBatching = true
         batchProgress = 0
-        status = "Starting batch of \(targets.count) source images…"
-        let total = Float(max(1, targets.count))
+        status = "Starting batch of \(work.count) source images…"
+        let total = Float(max(1, work.count))
         let counter = BatchCounter()
         let control = DerivationControl { [weak self] value in
             let completed = Float(counter.value)
@@ -592,23 +640,63 @@ final class MaterialLabStore {
         }
         batchControl = control
         Task.detached(priority: .userInitiated) { [weak self] in
-            var failures: [String] = []
-            var finished = 0
-            for source in targets {
-                if !control.shouldContinue { break }
+            for (index, source) in work {
+                if !control.shouldContinue {
+                    await self?.updateBatchItem(index, state: .cancelled)
+                    continue
+                }
+                await self?.updateBatchItem(index, state: .running)
+                let started = Date()
                 do {
                     let result = try MaterialEngine.derive(source: source, recipe: chosenRecipe, control: control)
                     let bundle = try MaterialBundle.export(result, into: destination)
                     for format in formats { try format.export(bundle: bundle) }
-                    finished += 1
+                    await self?.updateBatchItem(index, state: .done, bundle: bundle, duration: Date().timeIntervalSince(started))
                 } catch {
-                    if !control.shouldContinue { break }
-                    failures.append("\(source.displayName): \(error.localizedDescription)")
+                    let state: BatchItem.State = control.shouldContinue ? .failed(error.localizedDescription) : .cancelled
+                    await self?.updateBatchItem(index, state: state)
                 }
                 counter.increment()
-                await self?.reportBatch(done: counter.value, of: targets.count)
+                await self?.reportBatch(done: counter.value, of: work.count)
             }
-            await self?.finishBatch(exported: finished, failures: failures, completed: control.shouldContinue)
+            await self?.finishBatch(completed: control.shouldContinue)
+        }
+    }
+
+    private func updateBatchItem(_ index: Int, state: BatchItem.State, bundle: URL? = nil, duration: TimeInterval? = nil) {
+        guard batchItems.indices.contains(index) else { return }
+        batchItems[index].state = state
+        if let bundle { batchItems[index].bundle = bundle }
+        if let duration { batchItems[index].duration = duration }
+    }
+
+    /// Writes a JSON report of the batch (as the CLI's --report): per item status, bundle and time.
+    func saveBatchReport() {
+        let panel = NSSavePanel()
+        panel.title = "Save Batch Report"
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "material-lab-batch-report.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let items: [[String: Any]] = batchItems.map { item in
+            var entry: [String: Any] = ["source": item.source.url.path, "label": item.source.semanticLabel]
+            switch item.state {
+            case .done: entry["status"] = "ok"
+            case .failed(let message): entry["status"] = "failed"; entry["error"] = message
+            case .cancelled: entry["status"] = "cancelled"
+            case .queued, .running: entry["status"] = "pending"
+            }
+            if let bundle = item.bundle { entry["bundle"] = bundle.path }
+            if let duration = item.duration { entry["seconds"] = (duration * 100).rounded() / 100 }
+            return entry
+        }
+        let report: [String: Any] = ["exporter": "Material Lab", "items": items,
+                                     "formats": batchFormats.map(\.id), "succeeded": batchDoneCount,
+                                     "failed": batchFailedCount]
+        do {
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url)
+            status = "Saved \(url.lastPathComponent)."
+        } catch {
+            alert = MaterialAlert(title: "Save Failed", message: error.localizedDescription)
         }
     }
 
@@ -617,16 +705,12 @@ final class MaterialLabStore {
         status = "Batch \(done) of \(total)"
     }
 
-    private func finishBatch(exported: Int, failures: [String], completed: Bool) {
+    private func finishBatch(completed: Bool) {
         isBatching = false
         batchControl = nil
         status = completed
-            ? "Batch complete: \(exported) exported, \(failures.count) failed."
-            : "Batch cancelled after \(exported) exports."
-        if !failures.isEmpty {
-            alert = MaterialAlert(title: "Some Sources Failed",
-                                  message: failures.prefix(5).joined(separator: "\n"))
-        }
+            ? "Batch complete: \(batchDoneCount) exported, \(batchFailedCount) failed."
+            : "Batch cancelled after \(batchDoneCount) exports."
     }
 
     // MARK: - Import

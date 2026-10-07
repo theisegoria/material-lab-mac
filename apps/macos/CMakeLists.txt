@@ -56,6 +56,7 @@ set(MATERIAL_LAB_SWIFT
     Views/LearnedGeometrySettings.swift
     Views/ExportSheet.swift
     Views/WelcomeSheet.swift
+    Views/BatchQueueView.swift
     ../shared/ExportTargets.swift
     ../shared/MaterialPresetLibrary.swift
     ../shared/PreviewEnvironment.swift

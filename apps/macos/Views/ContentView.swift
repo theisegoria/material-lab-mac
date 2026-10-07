@@ -5,6 +5,7 @@ struct ContentView: View {
     @Bindable var store: MaterialLabStore
     @State private var dropTargeted = false
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
@@ -64,6 +65,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $store.showExportSheet) { ExportSheet(store: store) }
         .sheet(isPresented: $store.showWelcome) { WelcomeSheet() }
+        .onChange(of: store.batchQueueRequest) { openWindow(id: "batch-queue") }
         .sheet(item: $store.metadataEditorSource, onDismiss: {
             store.presentNextMetadataEditor()
         }) { source in
