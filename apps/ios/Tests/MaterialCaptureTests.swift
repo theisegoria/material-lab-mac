@@ -1,5 +1,6 @@
 import ImageIO
 import UniformTypeIdentifiers
+import AppIntents
 import XCTest
 @testable import MaterialCapture
 
@@ -468,6 +469,22 @@ final class MaterialCaptureTests: XCTestCase {
         let grazing = try XCTUnwrap(MaterialProcessor.relitImage(material, azimuth: 0, elevation: 0.1))
         XCTAssertEqual(overhead.width, 256)
         XCTAssertGreaterThan(mean(overhead), mean(grazing) + 20, "Overhead light is brighter than grazing light")
+    }
+
+    func testDeriveMaterialIntentWritesBundleAndFormats() async throws {
+        var intent = DeriveMaterialIntent()
+        intent.photo = IntentFile(data: try XCTUnwrap(syntheticBricks(size: 512).pngData()), filename: "bricks.png")
+        intent.material = LibraryPreset.named("red-brick").map(MaterialPresetEntity.init)
+        intent.formats = ExportTarget.named(["glb", "unreal"]).map(ExportFormatEntity.init)
+        intent.name = "Shortcut bricks"
+        intent.resolution = 512
+        let files = try await intent.perform().value ?? []
+        let names = files.map(\.filename).sorted()
+        XCTAssertEqual(names, ["shortcut-bricks-unreal", "shortcut-bricks.glb", "shortcut-bricks.pbrmaterial"])
+        let bundle = try XCTUnwrap(files.first { $0.filename.hasSuffix(".pbrmaterial") }?.fileURL)
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: bundle.appending(path: "manifest.json"))) as? [String: Any])
+        XCTAssertEqual((manifest["recipe"] as? [String: Any])?["material_preset"] as? String, "red-brick")
     }
 
     @MainActor

@@ -1,3 +1,4 @@
+import AppIntents
 import AppKit
 import ScreenCaptureKit
 import SwiftUI
@@ -53,6 +54,20 @@ enum SnapshotHarness {
                   r.roughnessBase, r.assignedMetalnessEnabled, r.albedoRepair.rawValue)
         }
         await waitForDerivation(store)
+        if let photoPath = environment["MATERIAL_LAB_SNAPSHOT_INTENT_PHOTO"] {
+            var intent = DeriveMaterialIntent()
+            intent.photo = IntentFile(fileURL: URL(fileURLWithPath: photoPath))
+            intent.material = LibraryPreset.named("cobblestone").map(MaterialPresetEntity.init)
+            intent.formats = ExportTarget.named(["glb", "usdz"]).map(ExportFormatEntity.init)
+            intent.name = "Intent cobbles"
+            do {
+                let result = try await intent.perform()
+                print("intent:", (result.value ?? []).map(\.filename).joined(separator: ", "),
+                      (result.value ?? []).first?.fileURL?.deletingLastPathComponent().path ?? "-")
+            } catch { print("intent failed:", error.localizedDescription) }
+            NSApp.terminate(nil)
+            return
+        }
         if let batchPath = environment["MATERIAL_LAB_SNAPSHOT_BATCH_DIR"] {
             // A second (unreadable) source makes one item fail, so the queue shows both outcomes.
             let broken = URL(fileURLWithPath: batchPath).appendingPathComponent("not-an-image.png")

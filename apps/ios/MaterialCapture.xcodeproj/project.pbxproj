@@ -11,8 +11,10 @@
 		018D90B147C35ED5D22A825E /* MaterialCaptureApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0CCC9DCA0DDE34CD2FC5EAA /* MaterialCaptureApp.swift */; };
 		04C33F97DEFDAEC924CE7D71 /* AuthoredMaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452A596EB164DCE14C051001 /* AuthoredMaps.swift */; };
 		09A555B0F9F00ACDF5BDF7F7 /* Export.mm in Sources */ = {isa = PBXBuildFile; fileRef = D8F9E6C54DD962BC2E5511AA /* Export.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
+		0B852323449B9BD488E0065A /* IntentEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C9C3DE3865D5CB0F5EBC46 /* IntentEntities.swift */; };
 		0EA5072CD72F4EAF1992577B /* ContinuedDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */; };
 		11D96EC161961751BF8D93F1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BF352744C7DECF3AB1BF3A /* CameraController.swift */; };
+		19B6EB116AEE13E57E8497D3 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */; };
 		2B1F4396BB33D1F513544EDA /* MaterialReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765096232A3E053B322829A /* MaterialReviewView.swift */; };
 		328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F148DAAD36AD6741A16372 /* PerspectiveCrop.swift */; };
 		329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF290546E6549B3910B141 /* RectangleDetector.swift */; };
@@ -83,6 +85,7 @@
 		51A8573F8A5F7205045D1540 /* MacLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLinkView.swift; sourceTree = "<group>"; };
 		53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureHomeView.swift; sourceTree = "<group>"; };
 		64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScanner.swift; sourceTree = "<group>"; };
+		68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialIntents.swift; sourceTree = "<group>"; };
 		7029F50A6835EBD510C37453 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
 		70BF352744C7DECF3AB1BF3A /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		76A9CA3C3478BEE39BEF4BDE /* MaterialCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MaterialCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -93,6 +96,7 @@
 		8BBF290546E6549B3910B141 /* RectangleDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RectangleDetector.swift; sourceTree = "<group>"; };
 		932926F292D6069645EE0B61 /* AuthoredMapsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthoredMapsSection.swift; sourceTree = "<group>"; };
 		9455A917D38B250CC2D7872D /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		99C9C3DE3865D5CB0F5EBC46 /* IntentEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentEntities.swift; sourceTree = "<group>"; };
 		9D6FA7091F17AD255DCB26B7 /* ExportTargetsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTargetsSheet.swift; sourceTree = "<group>"; };
 		A5B7597FECC7F4770F51D167 /* Common.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Common.mm; path = ../../core/src/tools/Common.mm; sourceTree = "<group>"; };
 		A7F845479198E15E706BC7D5 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -211,6 +215,7 @@
 				EA1C7C052AA759593FCD5189 /* MaterialBundle.swift */,
 				BDF7E6D4F5385FA8C1E3A6A3 /* MaterialBundleWriter.swift */,
 				F0CCC9DCA0DDE34CD2FC5EAA /* MaterialCaptureApp.swift */,
+				68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */,
 				EC12B0E010941BBABB12D03A /* MaterialLink.swift */,
 				27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */,
 				64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */,
@@ -248,6 +253,7 @@
 			isa = PBXGroup;
 			children = (
 				185DD6F9558B8B17CBFA12EC /* ExportTargets.swift */,
+				99C9C3DE3865D5CB0F5EBC46 /* IntentEntities.swift */,
 				1921D821D866362E08300599 /* MaterialPresetLibrary.swift */,
 				D65ED6328D5C5682F5153314 /* PreviewEnvironment.swift */,
 			);
@@ -432,12 +438,14 @@
 				F9B0D5E73D388C6F5EF72D06 /* ExportAPI.mm in Sources */,
 				A5512AB50A2E1C9D71D26F8D /* ExportTargets.swift in Sources */,
 				C67851AB7C86004627FB1855 /* ExportTargetsSheet.swift in Sources */,
+				0B852323449B9BD488E0065A /* IntentEntities.swift in Sources */,
 				BC70DF399371763442140032 /* LearnedNormalEstimator.swift in Sources */,
 				0161B89001B13F4DFF20D988 /* LibraryView.swift in Sources */,
 				AF9E8138045F2214A9BADA02 /* MacLinkView.swift in Sources */,
 				F64824B9FFDE1720758CFA3F /* MaterialBundle.swift in Sources */,
 				C4C4C31588C71E6B0DA03B7B /* MaterialBundleWriter.swift in Sources */,
 				018D90B147C35ED5D22A825E /* MaterialCaptureApp.swift in Sources */,
+				19B6EB116AEE13E57E8497D3 /* MaterialIntents.swift in Sources */,
 				81F680D72AF40F56E9013AE1 /* MaterialLink.swift in Sources */,
 				9449017682FBA12091108C7A /* MaterialPresetLibrary.swift in Sources */,
 				87ECB5226B813669841FA415 /* MaterialPresetPicker.swift in Sources */,

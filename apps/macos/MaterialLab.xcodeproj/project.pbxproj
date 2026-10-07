@@ -19,9 +19,11 @@
 		446102869D89F7413CD7883C /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */; };
 		475CBDECEA169B2E2932EBF2 /* ExportTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F0C74ED5D3904198A685BA /* ExportTargets.swift */; };
 		4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */; };
+		53231A0BDAB9AC7C75F9F659 /* IntentEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */; };
 		53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */; };
 		5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */; };
 		6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */; };
+		659C861E4676D4EDE26E37C2 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624746825B3FECEFAC38539B /* MaterialIntents.swift */; };
 		68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */; };
 		70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
 		96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A271E5FC88FE7679F2223DA /* MapPreview.swift */; };
@@ -63,6 +65,7 @@
 		4F4A89CAB798A1A1EDBB6458 /* SnapshotHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHarness.swift; sourceTree = "<group>"; };
 		55F0C74ED5D3904198A685BA /* ExportTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTargets.swift; sourceTree = "<group>"; };
 		60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
+		624746825B3FECEFAC38539B /* MaterialIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialIntents.swift; sourceTree = "<group>"; };
 		63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibrary.swift; sourceTree = "<group>"; };
 		72ECE96D123BC4D49738E240 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
 		7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MaterialPresets.cpp; path = ../../core/src/MaterialPresets.cpp; sourceTree = "<group>"; };
@@ -79,6 +82,7 @@
 		D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeInspector.swift; sourceTree = "<group>"; };
 		DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMetadataEditor.swift; sourceTree = "<group>"; };
 		E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundle.swift; sourceTree = "<group>"; };
+		EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentEntities.swift; sourceTree = "<group>"; };
 		EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedNormalEstimator.swift; sourceTree = "<group>"; };
 		FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
 		FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
@@ -112,6 +116,7 @@
 		1A8595B8B81A18F7AD38E9AD /* App */ = {
 			isa = PBXGroup;
 			children = (
+				624746825B3FECEFAC38539B /* MaterialIntents.swift */,
 				2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */,
 				4F4A89CAB798A1A1EDBB6458 /* SnapshotHarness.swift */,
 			);
@@ -176,6 +181,7 @@
 			isa = PBXGroup;
 			children = (
 				55F0C74ED5D3904198A685BA /* ExportTargets.swift */,
+				EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */,
 				C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */,
 				4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */,
 			);
@@ -338,6 +344,7 @@
 				E5875DB1FE2DD84759A39788 /* ExportAPI.mm in Sources */,
 				E5DC10C183D97F8D368AC653 /* ExportSheet.swift in Sources */,
 				475CBDECEA169B2E2932EBF2 /* ExportTargets.swift in Sources */,
+				53231A0BDAB9AC7C75F9F659 /* IntentEntities.swift in Sources */,
 				377AEB2E8E85B9AE4D30FB75 /* LearnedGeometrySettings.swift in Sources */,
 				302ACAF2C41B2388D548BFAE /* LearnedModelStore.swift in Sources */,
 				4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */,
@@ -348,6 +355,7 @@
 				6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */,
 				53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */,
 				F4A458B384258F3CAB6CB081 /* MaterialEngine.swift in Sources */,
+				659C861E4676D4EDE26E37C2 /* MaterialIntents.swift in Sources */,
 				68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */,
 				5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */,
 				ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */,

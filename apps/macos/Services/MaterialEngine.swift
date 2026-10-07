@@ -880,3 +880,23 @@ final class ThumbnailCache: @unchecked Sendable {
         return image
     }
 }
+
+extension MaterialRecipe {
+    /// A material-library preset's recipe on its relief prior (with the library's own values only).
+    static func library(_ library: LibraryPreset) -> MaterialRecipe {
+        let r = library.recipe
+        var next = MaterialEngine.defaultRecipe(for: MaterialPreset(cValue: r.preset))
+        next.heightStrength = r.height_strength
+        next.heightPolarity = r.height_polarity
+        next.roughnessBase = r.roughness_base
+        next.roughnessVariation = r.roughness_variation
+        next.aoRadiusPixels = r.ao_radius_pixels
+        next.aoStrength = r.ao_strength
+        next.normalStrength = r.normal_strength
+        next.albedoEqualize = r.albedo_equalize
+        next.assignedMetalnessEnabled = r.assigned_metalness_enabled != 0
+        next.assignedMetalness = r.assigned_metalness
+        next.materialPreset = library.id
+        return next
+    }
+}
