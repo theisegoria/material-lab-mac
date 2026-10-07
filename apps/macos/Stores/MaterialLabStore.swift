@@ -92,6 +92,12 @@ final class MaterialLabStore {
     }
     var showExportSheet = false
     var showWelcome = false
+    /// The recipe a source would derive with: the one being edited, its saved recipe, or the default.
+    func recipe(for source: MaterialSource) -> MaterialRecipe {
+        if source.id == selectedSourceID { return recipe }
+        return recipesBySource[source.id] ?? MaterialEngine.defaultRecipe(for: .flat)
+    }
+
     /// A version of the maps kept for comparison against later edits (Compare › Pinned).
     private(set) var pinnedMaterial: DerivedMaterial?
 

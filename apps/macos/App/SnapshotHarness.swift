@@ -83,6 +83,10 @@ enum SnapshotHarness {
             await renderStandalone(BatchQueueView(store: store), size: NSSize(width: 720, height: 300), appearance: .aqua,
                                    to: directory.appendingPathComponent("batch-queue-light.png"))
         }
+        if environment["MATERIAL_LAB_SNAPSHOT_VIEWER"] != nil, let source = store.selectedSource {
+            await renderStandalone(SourceViewerWindow(store: store, sourceID: source.id), size: NSSize(width: 620, height: 700),
+                                   appearance: .aqua, to: directory.appendingPathComponent("source-viewer-light.png"), settle: 4)
+        }
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_PRESET_CHECK"] != nil { await presetCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_COARSE_CHECK"] != nil { await coarseCheck(store: store) }

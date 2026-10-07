@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SourceSidebar: View {
     @Bindable var store: MaterialLabStore
+    @Environment(\.openWindow) private var openWindow
 
     private var selection: Binding<SidebarDestination?> {
         Binding(
@@ -35,6 +36,7 @@ struct SourceSidebar: View {
                         SourceRow(source: source)
                             .tag(SidebarDestination.source(source.id))
                             .contextMenu {
+                                Button("Open in New Window") { openWindow(id: "source-viewer", value: source.id) }
                                 Button("Edit Labels…") { store.editMetadata(for: source) }
                                 Button("Show in Finder") {
                                     NSWorkspace.shared.activateFileViewerSelecting([source.url])

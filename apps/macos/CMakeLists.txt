@@ -57,6 +57,7 @@ set(MATERIAL_LAB_SWIFT
     Views/ExportSheet.swift
     Views/WelcomeSheet.swift
     Views/BatchQueueView.swift
+    Views/SourceViewerWindow.swift
     ../shared/ExportTargets.swift
     ../shared/MaterialPresetLibrary.swift
     ../shared/PreviewEnvironment.swift

@@ -29,6 +29,11 @@ struct MaterialLabApp: App {
         }
         .defaultSize(width: 1440, height: 900)
 
+        WindowGroup("Material", id: "source-viewer", for: String.self) { $sourceID in
+            if let sourceID { SourceViewerWindow(store: store, sourceID: sourceID) }
+        }
+        .defaultSize(width: 620, height: 700)
+
         Window("Batch Queue", id: "batch-queue") {
             BatchQueueView(store: store)
         }

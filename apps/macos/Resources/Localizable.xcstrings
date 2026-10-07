@@ -27,6 +27,22 @@
         }
       }
     },
+    "%@ map of %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ map of %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@の%1$@マップ"
+          }
+        }
+      }
+    },
     "%@ view": {
       "localizations": {
         "ja": {
@@ -772,6 +788,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "キャンセル済み"
+          }
+        }
+      }
+    },
+    "Cannot Derive": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成できません"
           }
         }
       }
@@ -2710,6 +2736,16 @@
         }
       }
     },
+    "Open in New Window": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいウインドウで開く"
+          }
+        }
+      }
+    },
     "Open the inbox folder in Finder": {
       "localizations": {
         "ja": {
@@ -4134,6 +4170,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ソースは撮影ではなく、描いたものです。作成者提供として記録されます。そのまま使うには「焼き込まれたライティングを除去」と「アルベドを修復」をオフにしてください。"
+          }
+        }
+      }
+    },
+    "This source is no longer in the library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このソースはライブラリにありません。"
           }
         }
       }
