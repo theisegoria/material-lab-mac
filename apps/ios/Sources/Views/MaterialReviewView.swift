@@ -1,3 +1,4 @@
+import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -563,6 +564,16 @@ struct MapChips: View {
 /// The hero preview: selected map, 3×3 tiling, a lit sphere, or before/after compare.
 struct MaterialPreviewPane: View {
     let store: CaptureStore
+    @State private var arPreviewURL: URL?
+
+    /// Writes a USDZ of the derived maps and opens it in Quick Look, which offers AR placement on device.
+    private func openInAR() async {
+        do {
+            arPreviewURL = try await store.makeARPreview()
+        } catch {
+            store.errorMessage = error.localizedDescription
+        }
+    }
     let selectedMap: MaterialMapKind
     @Binding var mode: PreviewMode
 
@@ -595,6 +606,7 @@ struct MaterialPreviewPane: View {
             .accessibilityIdentifier("preview-mode")
         }
         .padding(.top, 8)
+        .quickLookPreview($arPreviewURL)
     }
 
     @ViewBuilder
@@ -616,7 +628,8 @@ struct MaterialPreviewPane: View {
         case .relit:
             RelitView(material: material)
         case .lit:
-            MaterialSphereView(material: material)
+            MaterialSphereView(material: material,
+                               viewInAR: store.hasExportableMaps ? { Task { await openInAR() } } : nil)
                 .accessibilityLabel("Lit sphere preview. Drag to orbit.")
         case .compare:
             CompareView(before: material.correctedSource, after: map.previewImage, afterTitle: map.kind.shortTitle)

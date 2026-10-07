@@ -624,6 +624,24 @@ final class CaptureStore {
         }.value
     }
 
+    /// A USDZ of the full-resolution maps for AR Quick Look (written to a temporary folder).
+    func makeARPreview() async throws -> URL {
+        guard let source, let derived, hasExportableMaps else {
+            throw CaptureError.derivationFailed("Derive at full resolution first")
+        }
+        let label = trimmedLabel.isEmpty ? "Material" : trimmedLabel
+        let identity = MaterialBundleWriter.Identity(label: label, category: "preview", origin: source.origin,
+                                                     captureMode: source.captureMode(for: crop))
+        let slug = Self.exportSlug(label)
+        return try await Task.detached(priority: .userInitiated) {
+            let fm = FileManager.default
+            let folder = fm.temporaryDirectory.appending(path: "ar-\(UUID().uuidString)", directoryHint: .isDirectory)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let bundle = try MaterialBundleWriter.write(derived, identity: identity, into: folder, name: slug)
+            return try ExportTarget.all.first { $0.id == "usdz" }!.export(bundle: bundle)
+        }.value
+    }
+
     /// Filesystem-safe name from the label ("Red brick #2" → "red-brick-2").
     static func exportSlug(_ label: String) -> String {
         let cleaned = label.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)

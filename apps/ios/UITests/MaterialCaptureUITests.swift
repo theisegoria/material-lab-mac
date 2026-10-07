@@ -283,6 +283,7 @@ final class MaterialCaptureUITests: XCTestCase {
             try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name)\(suffix).png"))
         }
         XCTAssertTrue(app.buttons["Photos"].waitForExistence(timeout: 20))
+        shot("00-capture", top: false)
         importFirstPhoto(app)
         let field = app.textFields["semantic-label"]
         XCTAssertTrue(field.waitForExistence(timeout: 20))
@@ -290,29 +291,24 @@ final class MaterialCaptureUITests: XCTestCase {
         field.typeText(label)
         app.toolbars.buttons["Done"].firstMatch.tap()
 
-        // Material prior: stone.
-        let prior = app.buttons["material-prior"]
-        if prior.waitForExistence(timeout: 5) {
-            if !prior.isHittable { app.scrollViews.firstMatch.swipeUp() }
-            prior.tap()
-            let stone = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Stone")).firstMatch
-            if stone.waitForExistence(timeout: 3) { stone.tap() }
-        }
-        // Learned geometry at full weight: expand the sheet and scroll to the slider.
+        // Material library: Red brick.
         app.buttons["open-recipe"].firstMatch.tap()
-        shot("04-recipe", settle: 3, top: false)
-        let learned = app.sliders.matching(NSPredicate(
-            format: "identifier == 'learned-geometry' OR label CONTAINS[c] 'Learned'")).firstMatch
-        for _ in 0..<8 where !(learned.exists && learned.isHittable) { app.swipeUp(velocity: .slow) }
-        if learned.exists, learned.isEnabled {
-            learned.adjust(toNormalizedSliderPosition: 1)
-        } else {
-            print("MARKETING: learned slider unavailable\n\(app.debugDescription)")
-        }
+        let material = app.buttons["material-preset"]
+        XCTAssertTrue(material.waitForExistence(timeout: 10))
+        material.tap()
+        let brick = app.buttons["material-preset-red-brick"]
+        XCTAssertTrue(brick.waitForExistence(timeout: 10))
+        shot("08-materials", settle: 2, top: false)
+        brick.tap()
+        shot("09-recipe", settle: 2, top: false)
+        let yourMaps = app.switches["hand-made-albedo"]
+        var swipes = 0
+        while !(yourMaps.exists && yourMaps.isHittable) && swipes < 8 { app.swipeUp(velocity: .slow); swipes += 1 }
+        app.swipeUp(velocity: .slow)
+        shot("10-your-maps", settle: 1, top: false)
         for _ in 0..<8 { app.swipeDown(velocity: .slow) }
         app.buttons["recipe-done"].tap()
-        // Learned inference plus the live preview.
-        shot("01-albedo", settle: 30)
+        shot("01-albedo", settle: 4)
 
         func chip(_ title: String) {
             let button = app.buttons[title]
@@ -324,15 +320,31 @@ final class MaterialCaptureUITests: XCTestCase {
         shot("03-height")
         chip("Albedo")
         let modes = app.segmentedControls["preview-mode"]
-        modes.buttons["Lit"].tap()
-        shot("05-lit", settle: 6)
+        modes.buttons["Relit"].tap()
+        shot("04-relit", settle: 3)
+        modes.buttons["3D"].tap()
+        shot("05-3d", settle: 6)
         modes.buttons["Tiled"].tap()
         shot("06-tiled")
         modes.buttons["Compare"].tap()
         shot("07-compare")
         modes.buttons["Map"].tap()
-        app.tabBars.buttons["Mac"].tap()
-        shot("08-mac", top: false)
+
+        // Derive at full resolution, then the export sheet.
+        let derive = app.buttons["derive-material"]
+        for _ in 0..<4 where !derive.isHittable { app.swipeUp() }
+        derive.tap()
+        let export = app.buttons["export-material"]
+        XCTAssertTrue(export.waitForExistence(timeout: 180))
+        for _ in 0..<4 where !export.isHittable { app.swipeUp() }
+        export.tap()
+        XCTAssertTrue(app.switches["export-target-glb"].waitForExistence(timeout: 10))
+        shot("11-export", settle: 2, top: false)
+        app.buttons["Cancel"].firstMatch.tap()
+        let macTab = app.tabBars.buttons["Mac"]
+        XCTAssertTrue(macTab.waitForExistence(timeout: 10))
+        macTab.tap()
+        shot("12-mac", top: false)
     }
 
     /// Library sheet screenshot (MARKETING_DIR). Imports the newest photo twice so the grid has two entries.

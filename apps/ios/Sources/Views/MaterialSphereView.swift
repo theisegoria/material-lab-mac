@@ -16,18 +16,14 @@ enum PreviewShape: String, CaseIterable, Identifiable {
     }
     var mesh: MeshResource {
         switch self {
-        case .sphere: .generateSphere(radius: 0.1)
-        case .cube: .generateBox(size: 0.14, cornerRadius: 0.004)
-        case .plane: .generatePlane(width: 0.2, depth: 0.2)
+        case .sphere: .generateSphere(radius: 0.21)
+        case .cube: .generateBox(size: 0.29, cornerRadius: 0.012)
+        case .plane: .generatePlane(width: 0.42, depth: 0.42)
         }
     }
-    /// UV repeats that keep texels roughly square on each mesh.
-    var textureScale: SIMD2<Float> {
-        switch self {
-        case .sphere: [4, 2]
-        case .cube: [1, 1]
-        case .plane: [2, 2]
-        }
+    /// UV repeats for `tiling` repeats across a face; the sphere's UVs span 2:1, so it doubles horizontally.
+    func textureScale(tiling: Float) -> SIMD2<Float> {
+        self == .sphere ? [tiling * 2, tiling] : [tiling, tiling]
     }
 }
 
@@ -37,26 +33,46 @@ struct MaterialSphereView: View {
     @State private var pbr: PhysicallyBasedMaterial?
     @State private var failed = false
     @State private var shape: PreviewShape = .sphere
+    @State private var environment: PreviewEnvironment = .studio
+    @State private var tiling: Float = 2
+    /// Opens the material in AR Quick Look; nil until full-resolution maps exist.
+    var viewInAR: (() -> Void)? = nil
 
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(white: 0.30), Color(white: 0.10)], startPoint: .top, endPoint: .bottom)
             RealityView { content in
                 content.camera = .virtual
-                let sphere = ModelEntity(mesh: .generateSphere(radius: 0.1),
+                let root = Entity()
+                root.name = "preview-root"
+                let sphere = ModelEntity(mesh: .generateSphere(radius: 0.21),
                                          materials: [SimpleMaterial(color: .gray, roughness: 0.6, isMetallic: false)])
                 sphere.name = "material-sphere"
-                content.add(sphere)
+                root.addChild(sphere)
+                if let light = PreviewEnvironment.studio.makeResource() {
+                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 0.4))
+                    sphere.components.set(ImageBasedLightReceiverComponent(imageBasedLight: root))
+                }
+                content.add(root)
                 let key = DirectionalLight()
                 key.light.intensity = 2800
                 key.look(at: .zero, from: [0.35, 0.45, 0.4], relativeTo: nil)
                 content.add(key)
                 content.cameraTarget = sphere
             } update: { content in
-                guard var pbr,
-                      let sphere = content.entities.first(where: { $0.name == "material-sphere" }) as? ModelEntity
+                guard var pbr, let root = content.entities.first(where: { $0.name == "preview-root" }),
+                      let sphere = root.children.first(where: { $0.name == "material-sphere" }) as? ModelEntity
                 else { return }
-                pbr.textureCoordinateTransform.scale = shape.textureScale
+                // A named marker child records the environment the root carries.
+                let marker = root.children.first { $0.name.hasPrefix("environment-") }
+                if marker?.name != "environment-\(environment.rawValue)", let light = environment.makeResource() {
+                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 0.4))
+                    marker?.removeFromParent()
+                    let next = Entity()
+                    next.name = "environment-\(environment.rawValue)"
+                    root.addChild(next)
+                }
+                pbr.textureCoordinateTransform.scale = shape.textureScale(tiling: tiling)
                 sphere.model = ModelComponent(mesh: shape.mesh, materials: [pbr])
                 // Tilt the flat tile toward the camera so it reads as a surface, not an edge.
                 switch shape {
@@ -68,10 +84,31 @@ struct MaterialSphereView: View {
                 }
             }
             .realityViewCameraControls(.orbit)
+            .overlay(alignment: .topTrailing) {
+                if let viewInAR {
+                    Button(action: viewInAR) {
+                        Label("AR", systemImage: "arkit")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .glassEffect(.regular.interactive(), in: .capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View in AR")
+                    .accessibilityIdentifier("view-in-ar")
+                    .padding(12)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 Menu {
                     Picker("Shape", selection: $shape) {
                         ForEach(PreviewShape.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    }
+                    Picker("Lighting", selection: $environment) {
+                        ForEach(PreviewEnvironment.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    }
+                    Picker("Tiling", selection: $tiling) {
+                        ForEach([1, 2, 3, 4, 6, 8] as [Float], id: \.self) { Text("\(Int($0))×").tag($0) }
                     }
                 } label: {
                     Image(systemName: shape.symbol)
@@ -142,3 +179,4 @@ struct MaterialSphereView: View {
         return pbr
     }
 }
+

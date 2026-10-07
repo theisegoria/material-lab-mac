@@ -1,0 +1,570 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		09288B0689BC3E4B89DFCFD9 /* RecipeInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */; };
+		14BCE9DC4DCB9160AE7D8B08 /* Material3DPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */; };
+		1F2AA18C6653842BCE01AA55 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */; };
+		28F95681C42B7D2918D06505 /* BatchQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */; };
+		302ACAF2C41B2388D548BFAE /* LearnedModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */; };
+		328DAAFE4AAA764E2F881B33 /* Export.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0F84A55BBFFB4DC4F624D8C3 /* Export.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
+		377AEB2E8E85B9AE4D30FB75 /* LearnedGeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */; };
+		3869000D0685AD5D07CB5F73 /* MaterialPresets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */; settings = {COMPILER_FLAGS = "-std=c++23"; }; };
+		3909686981BF3FC49A29DA6C /* CameraInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A592B49E87949F8BA5097B /* CameraInboxView.swift */; };
+		446102869D89F7413CD7883C /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */; };
+		475CBDECEA169B2E2932EBF2 /* ExportTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F0C74ED5D3904198A685BA /* ExportTargets.swift */; };
+		4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */; };
+		53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */; };
+		5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */; };
+		6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */; };
+		68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */; };
+		70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
+		96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A271E5FC88FE7679F2223DA /* MapPreview.swift */; };
+		AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */; };
+		ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */; };
+		AED01BA2FFED40B4D4E376FD /* SnapshotHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4A89CAB798A1A1EDBB6458 /* SnapshotHarness.swift */; };
+		B989527D7884F0BF3B5EA9BE /* MaterialModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8407276244378E56CC5A5B04 /* MaterialModels.swift */; };
+		B9C90F4748D1E4D248A66D62 /* PNGWriter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 72ECE96D123BC4D49738E240 /* PNGWriter.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O2"; }; };
+		C12228384A8E7F4E5F723864 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F73D3BDB4E4D8F486452DC /* PairingView.swift */; };
+		CA9D6616D33EAA2678DF79B5 /* LocalLinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */; };
+		CE10299CB6DBC377765A0549 /* SourceMetadataEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */; };
+		D545A219FE36BCD0B06B3CAC /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD46F61818DC500B7D63D65 /* libz.tbd */; };
+		D5C14405C39A559D709B6F9C /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */; };
+		E5875DB1FE2DD84759A39788 /* ExportAPI.mm in Sources */ = {isa = PBXBuildFile; fileRef = 2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
+		E5DC10C183D97F8D368AC653 /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */; };
+		E9AC9BC36181EAD505A3B17F /* SourceSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */; };
+		EB83E411DB8B05A06DD93673 /* WelcomeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0521A1EC094921E84D9DF5DA /* WelcomeSheet.swift */; };
+		F4A458B384258F3CAB6CB081 /* MaterialEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB5DA8C5074FBE94906175B /* MaterialEngine.swift */; };
+		FD69F1DD4C70ADEB1712D423 /* Common.mm in Sources */ = {isa = PBXBuildFile; fileRef = 3DAF581A370F7CFB20B154C5 /* Common.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
+		FF4DA80ECD747267C51A8BD4 /* PreviewEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0521A1EC094921E84D9DF5DA /* WelcomeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeSheet.swift; sourceTree = "<group>"; };
+		0F84A55BBFFB4DC4F624D8C3 /* Export.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Export.mm; path = ../../core/src/tools/Export.mm; sourceTree = "<group>"; };
+		14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialDetail.swift; sourceTree = "<group>"; };
+		19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLinkIdentity.swift; sourceTree = "<group>"; };
+		1A271E5FC88FE7679F2223DA /* MapPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPreview.swift; sourceTree = "<group>"; };
+		1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedGeometrySettings.swift; sourceTree = "<group>"; };
+		1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchQueueView.swift; sourceTree = "<group>"; };
+		2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabApp.swift; sourceTree = "<group>"; };
+		2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ExportAPI.mm; path = ../../core/src/tools/ExportAPI.mm; sourceTree = "<group>"; };
+		2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedModelStore.swift; sourceTree = "<group>"; };
+		367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaterialLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DAF581A370F7CFB20B154C5 /* Common.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Common.mm; path = ../../core/src/tools/Common.mm; sourceTree = "<group>"; };
+		3DD46F61818DC500B7D63D65 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
+		4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceSidebar.swift; sourceTree = "<group>"; };
+		4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewEnvironment.swift; sourceTree = "<group>"; };
+		4F4A89CAB798A1A1EDBB6458 /* SnapshotHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotHarness.swift; sourceTree = "<group>"; };
+		55F0C74ED5D3904198A685BA /* ExportTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTargets.swift; sourceTree = "<group>"; };
+		60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
+		63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibrary.swift; sourceTree = "<group>"; };
+		72ECE96D123BC4D49738E240 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
+		7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MaterialPresets.cpp; path = ../../core/src/MaterialPresets.cpp; sourceTree = "<group>"; };
+		8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLinkService.swift; sourceTree = "<group>"; };
+		8407276244378E56CC5A5B04 /* MaterialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialModels.swift; sourceTree = "<group>"; };
+		84A592B49E87949F8BA5097B /* CameraInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraInboxView.swift; sourceTree = "<group>"; };
+		9BB5DA8C5074FBE94906175B /* MaterialEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialEngine.swift; sourceTree = "<group>"; };
+		9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Material3DPreview.swift; sourceTree = "<group>"; };
+		B1F73D3BDB4E4D8F486452DC /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+		B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B83D28D802A85A06E51390CE /* MaterialLab-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MaterialLab-Bridging-Header.h"; sourceTree = "<group>"; };
+		C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialPresetLibrary.swift; sourceTree = "<group>"; };
+		D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabStore.swift; sourceTree = "<group>"; };
+		D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeInspector.swift; sourceTree = "<group>"; };
+		DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMetadataEditor.swift; sourceTree = "<group>"; };
+		E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundle.swift; sourceTree = "<group>"; };
+		EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedNormalEstimator.swift; sourceTree = "<group>"; };
+		FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
+		FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CEA09F3579ABB85328C8015B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D545A219FE36BCD0B06B3CAC /* libz.tbd in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		162E96B1A07125DA55BBD8C0 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */,
+				19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */,
+				8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */,
+				E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */,
+				9BB5DA8C5074FBE94906175B /* MaterialEngine.swift */,
+				63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		1A8595B8B81A18F7AD38E9AD /* App */ = {
+			isa = PBXGroup;
+			children = (
+				2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */,
+				4F4A89CAB798A1A1EDBB6458 /* SnapshotHarness.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		3D60F9F11DBDC8CD85491876 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A31AF24B331FB7C93F17946C /* shared */,
+			);
+			name = Shared;
+			sourceTree = "<group>";
+		};
+		52031A88D514B92925CF35A8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		59C4610F8C86350A48C5775C /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				3DAF581A370F7CFB20B154C5 /* Common.mm */,
+				0F84A55BBFFB4DC4F624D8C3 /* Export.mm */,
+				2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */,
+				7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */,
+				FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */,
+				72ECE96D123BC4D49738E240 /* PNGWriter.cpp */,
+			);
+			name = Core;
+			sourceTree = "<group>";
+		};
+		5AC85AF18E8E4CF55AD021CD /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				B83D28D802A85A06E51390CE /* MaterialLab-Bridging-Header.h */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		629E27D7C2C8BEAD6B9AE734 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				8407276244378E56CC5A5B04 /* MaterialModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		8043E6230BD98C03933EA64E /* Stores */ = {
+			isa = PBXGroup;
+			children = (
+				2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */,
+				D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */,
+			);
+			path = Stores;
+			sourceTree = "<group>";
+		};
+		A31AF24B331FB7C93F17946C /* shared */ = {
+			isa = PBXGroup;
+			children = (
+				55F0C74ED5D3904198A685BA /* ExportTargets.swift */,
+				C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */,
+				4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */,
+			);
+			name = shared;
+			path = ../shared;
+			sourceTree = "<group>";
+		};
+		C0F6ED992F2EA07F6A021998 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		D22E2CC3D1DBAD3CF25822DF /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3DD46F61818DC500B7D63D65 /* libz.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D68F7190CDCF78552AFA5A22 = {
+			isa = PBXGroup;
+			children = (
+				1A8595B8B81A18F7AD38E9AD /* App */,
+				59C4610F8C86350A48C5775C /* Core */,
+				629E27D7C2C8BEAD6B9AE734 /* Models */,
+				C0F6ED992F2EA07F6A021998 /* Resources */,
+				162E96B1A07125DA55BBD8C0 /* Services */,
+				3D60F9F11DBDC8CD85491876 /* Shared */,
+				8043E6230BD98C03933EA64E /* Stores */,
+				5AC85AF18E8E4CF55AD021CD /* Support */,
+				F15AF3F3A9B0D4D51227FE5F /* Views */,
+				D22E2CC3D1DBAD3CF25822DF /* Frameworks */,
+				52031A88D514B92925CF35A8 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F15AF3F3A9B0D4D51227FE5F /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */,
+				84A592B49E87949F8BA5097B /* CameraInboxView.swift */,
+				B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */,
+				60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */,
+				1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */,
+				1A271E5FC88FE7679F2223DA /* MapPreview.swift */,
+				9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */,
+				14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */,
+				B1F73D3BDB4E4D8F486452DC /* PairingView.swift */,
+				D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */,
+				DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */,
+				4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */,
+				0521A1EC094921E84D9DF5DA /* WelcomeSheet.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		41E7F90348517CD96410C9C4 /* MaterialLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 40C7E634E297BAC34CD56B74 /* Build configuration list for PBXNativeTarget "MaterialLab" */;
+			buildPhases = (
+				2CD106B7080EEDAC8B27C94D /* Sources */,
+				34B0F84E048F899C55EB7B95 /* Bundle learned normal model (optional) */,
+				4FB517B8BB923324BC827E20 /* Resources */,
+				CEA09F3579ABB85328C8015B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MaterialLab;
+			packageProductDependencies = (
+			);
+			productName = MaterialLab;
+			productReference = 367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		80ED4ED55B270A27361A1E72 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					41E7F90348517CD96410C9C4 = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = D0E8DCDC9F7139CF2AC438B7 /* Build configuration list for PBXProject "MaterialLab" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D68F7190CDCF78552AFA5A22;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				41E7F90348517CD96410C9C4 /* MaterialLab */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4FB517B8BB923324BC827E20 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				446102869D89F7413CD7883C /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		34B0F84E048F899C55EB7B95 /* Bundle learned normal model (optional) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle learned normal model (optional)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nsrc=\"$SRCROOT/../../third_party/moge/build/MoGe2Normals.mlpackage\"\ndst=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Models\"\nif [ ! -d \"$src\" ]; then\n  echo \"note: MoGe2Normals.mlpackage not found; building without the bundled learned-normal model\"\n  rm -rf \"$dst\"\n  exit 0\nfi\nif [ -f \"$dst/MoGe2Normals.mlmodelc/coremldata.bin\" ] && [ -z \"$(find \"$src\" -newer \"$dst/MoGe2Normals.mlmodelc/coremldata.bin\" -print -quit)\" ]; then\n  exit 0\nfi\nrm -rf \"$dst\"\nmkdir -p \"$dst\"\nxcrun coremlcompiler compile \"$src\" \"$dst\" --platform macos --deployment-target \"$MACOSX_DEPLOYMENT_TARGET\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		2CD106B7080EEDAC8B27C94D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				28F95681C42B7D2918D06505 /* BatchQueueView.swift in Sources */,
+				3909686981BF3FC49A29DA6C /* CameraInboxView.swift in Sources */,
+				FD69F1DD4C70ADEB1712D423 /* Common.mm in Sources */,
+				1F2AA18C6653842BCE01AA55 /* ContentView.swift in Sources */,
+				328DAAFE4AAA764E2F881B33 /* Export.mm in Sources */,
+				E5875DB1FE2DD84759A39788 /* ExportAPI.mm in Sources */,
+				E5DC10C183D97F8D368AC653 /* ExportSheet.swift in Sources */,
+				475CBDECEA169B2E2932EBF2 /* ExportTargets.swift in Sources */,
+				377AEB2E8E85B9AE4D30FB75 /* LearnedGeometrySettings.swift in Sources */,
+				302ACAF2C41B2388D548BFAE /* LearnedModelStore.swift in Sources */,
+				4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */,
+				AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */,
+				CA9D6616D33EAA2678DF79B5 /* LocalLinkService.swift in Sources */,
+				96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */,
+				14BCE9DC4DCB9160AE7D8B08 /* Material3DPreview.swift in Sources */,
+				6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */,
+				53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */,
+				F4A458B384258F3CAB6CB081 /* MaterialEngine.swift in Sources */,
+				68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */,
+				5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */,
+				ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */,
+				B989527D7884F0BF3B5EA9BE /* MaterialModels.swift in Sources */,
+				D5C14405C39A559D709B6F9C /* MaterialPresetLibrary.swift in Sources */,
+				3869000D0685AD5D07CB5F73 /* MaterialPresets.cpp in Sources */,
+				70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */,
+				B9C90F4748D1E4D248A66D62 /* PNGWriter.cpp in Sources */,
+				C12228384A8E7F4E5F723864 /* PairingView.swift in Sources */,
+				FF4DA80ECD747267C51A8BD4 /* PreviewEnvironment.swift in Sources */,
+				09288B0689BC3E4B89DFCFD9 /* RecipeInspector.swift in Sources */,
+				AED01BA2FFED40B4D4E376FD /* SnapshotHarness.swift in Sources */,
+				CE10299CB6DBC377765A0549 /* SourceMetadataEditor.swift in Sources */,
+				E9AC9BC36181EAD505A3B17F /* SourceSidebar.swift in Sources */,
+				EB83E411DB8B05A06DD93673 /* WelcomeSheet.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		3EDFA01EE9529487696C70DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../../core/include",
+				);
+				INFOPLIST_FILE = Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/MaterialLab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		3F44FBDED77D8154B01D9E83 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++23";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../../core/include",
+				);
+				INFOPLIST_FILE = Info.plist;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/MaterialLab-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5452EF7452808966214C22CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.materiallab.desktop;
+				PRODUCT_NAME = MaterialLab;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		FC1D727BBABA17F7141F1930 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.materiallab.desktop;
+				PRODUCT_NAME = MaterialLab;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		40C7E634E297BAC34CD56B74 /* Build configuration list for PBXNativeTarget "MaterialLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FC1D727BBABA17F7141F1930 /* Debug */,
+				5452EF7452808966214C22CE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0E8DCDC9F7139CF2AC438B7 /* Build configuration list for PBXProject "MaterialLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3EDFA01EE9529487696C70DA /* Debug */,
+				3F44FBDED77D8154B01D9E83 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 80ED4ED55B270A27361A1E72 /* Project object */;
+}

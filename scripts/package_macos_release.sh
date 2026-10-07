@@ -9,13 +9,14 @@ identity="${2:-Developer ID Application}"
 build="$repo_root/build/macos-release"
 dist="$repo_root/build/dist"
 model="$repo_root/third_party/moge/build/MoGe2Normals.mlpackage"
-model_args=()
-[[ -e "$model" ]] && model_args=(-DMATERIAL_LAB_BUNDLE_MODEL="$model")
+[[ -e "$model" ]] || echo "warning: no learned model at $model; the app will need one imported" >&2
 
 rm -rf "$build" "$dist" && mkdir -p "$dist"
-cmake -S "$repo_root/apps/macos" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release "${model_args[@]}"
-cmake --build "$build" --target MaterialLab
-app="$build/MaterialLab.app"
+(cd "$repo_root/apps/macos" && xcodegen generate -q)
+# The Xcode build compiles the model into Contents/Resources/Models when it exists.
+xcodebuild -project "$repo_root/apps/macos/MaterialLab.xcodeproj" -scheme MaterialLab -configuration Release \
+  -derivedDataPath "$build" CODE_SIGNING_ALLOWED=NO build
+app="$build/Build/Products/Release/MaterialLab.app"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${version//./}" "$app/Contents/Info.plist"
 cp "$repo_root/LICENSE" "$repo_root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/"

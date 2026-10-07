@@ -1,7 +1,7 @@
 name: MaterialCapture
 options:
   bundleIdPrefix: io.materiallab
-  createIntermediateGroups: true
+  createIntermediateGroups: false
   deploymentTarget:
     iOS: '27.0'
 settings:
@@ -27,20 +27,27 @@ targets:
       - path: Sources
       - path: Resources/Assets.xcassets
       - path: ../../core/src/PBRMaterialLab.cpp
+        group: Core
         # The derivation kernel is ~10x slower at -O0; optimize it in every configuration.
         compilerFlags: ['-std=c++23', '-O3']
       - path: ../../core/src/MaterialPresets.cpp
+        group: Core
         compilerFlags: ['-std=c++23']
       # The shared engine/interchange exporter (glTF, USDZ, MaterialX, Unreal, Unity...), as in the CLI.
       - path: ../../core/src/PNGWriter.cpp
+        group: Core
         compilerFlags: ['-std=c++23', '-O2']
       - path: ../../core/src/tools/Common.mm
+        group: Core
         compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
       - path: ../../core/src/tools/Export.mm
+        group: Core
         compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
       - path: ../../core/src/tools/ExportAPI.mm
+        group: Core
         compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
       - path: ../shared
+        group: Shared
     # The optional MoGe-2 learned-normal model (git-ignored, ~56 MB; see docs/LEARNED_NORMALS.md) is compiled into
     # the bundle when present. A script phase rather than a source reference: Xcode fails the build on a missing
     # .mlpackage even when XcodeGen marks the path optional, and builds without the model must still succeed.

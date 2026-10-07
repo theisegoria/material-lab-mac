@@ -1,0 +1,87 @@
+name: MaterialLab
+options:
+  bundleIdPrefix: io.materiallab
+  createIntermediateGroups: false
+  deploymentTarget:
+    macOS: '27.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    CLANG_CXX_LANGUAGE_STANDARD: c++23
+    CLANG_CXX_LIBRARY: libc++
+    MACOSX_DEPLOYMENT_TARGET: '27.0'
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    DEVELOPMENT_TEAM: ''
+    CODE_SIGN_IDENTITY: '-'
+    HEADER_SEARCH_PATHS:
+      - $(SRCROOT)/../../core/include
+    SWIFT_OBJC_BRIDGING_HEADER: Support/MaterialLab-Bridging-Header.h
+    INFOPLIST_FILE: Info.plist
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  MaterialLab:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Models
+      - path: Services
+      - path: Stores
+      - path: Views
+      - path: Support
+      - path: ../shared
+        group: Shared
+      - path: Resources/AppIcon.icns
+        buildPhase: resources
+      # The derivation core is compute-bound; optimize it in every configuration, as the CMake build does.
+      - path: ../../core/src/PBRMaterialLab.cpp
+        group: Core
+        compilerFlags: ['-std=c++23', '-O3']
+      - path: ../../core/src/MaterialPresets.cpp
+        group: Core
+        compilerFlags: ['-std=c++23']
+      # The shared engine/interchange exporter (glTF, USDZ, MaterialX, Unreal, Unity...), as in the CLI.
+      - path: ../../core/src/PNGWriter.cpp
+        group: Core
+        compilerFlags: ['-std=c++23', '-O2']
+      - path: ../../core/src/tools/Common.mm
+        group: Core
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      - path: ../../core/src/tools/Export.mm
+        group: Core
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      - path: ../../core/src/tools/ExportAPI.mm
+        group: Core
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+    dependencies:
+      - sdk: libz.tbd
+    # The optional MoGe-2 learned-normal model (git-ignored; see docs/LEARNED_NORMALS.md) is compiled into
+    # Contents/Resources/Models when present, as on iOS; builds without it still succeed.
+    postCompileScripts:
+      - name: Bundle learned normal model (optional)
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          src="$SRCROOT/../../third_party/moge/build/MoGe2Normals.mlpackage"
+          dst="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Models"
+          if [ ! -d "$src" ]; then
+            echo "note: MoGe2Normals.mlpackage not found; building without the bundled learned-normal model"
+            rm -rf "$dst"
+            exit 0
+          fi
+          if [ -f "$dst/MoGe2Normals.mlmodelc/coremldata.bin" ] && [ -z "$(find "$src" -newer "$dst/MoGe2Normals.mlmodelc/coremldata.bin" -print -quit)" ]; then
+            exit 0
+          fi
+          rm -rf "$dst"
+          mkdir -p "$dst"
+          xcrun coremlcompiler compile "$src" "$dst" --platform macos --deployment-target "$MACOSX_DEPLOYMENT_TARGET"
+    settings:
+      base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.desktop
+        PRODUCT_NAME: MaterialLab
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+    scheme:
+      environmentVariables: {}
