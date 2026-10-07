@@ -39,5 +39,5 @@ dmg="$dist/MaterialLab-$version-macOS.dmg"
 hdiutil create -volname "Material Lab $version" -srcfolder "$staging" -fs APFS -format UDZO -ov "$dmg" >/dev/null
 codesign --force --timestamp --sign "$identity" "$dmg"
 rm -rf "$staging"
-shasum -a 256 "$dmg" | tee "$dmg.sha256"
+(cd "$dist" && shasum -a 256 "$(basename "$dmg")" | tee "$(basename "$dmg").sha256")
 echo "$dmg"
