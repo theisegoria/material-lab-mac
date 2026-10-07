@@ -51,12 +51,12 @@ struct MaterialSphereView: View {
                 sphere.name = "material-sphere"
                 root.addChild(sphere)
                 if let light = PreviewEnvironment.studio.makeResource() {
-                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 0.4))
+                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 1.1))
                     sphere.components.set(ImageBasedLightReceiverComponent(imageBasedLight: root))
                 }
                 content.add(root)
                 let key = DirectionalLight()
-                key.light.intensity = 2800
+                key.light.intensity = 4200
                 key.look(at: .zero, from: [0.35, 0.45, 0.4], relativeTo: nil)
                 content.add(key)
                 content.cameraTarget = sphere
@@ -67,7 +67,7 @@ struct MaterialSphereView: View {
                 // A named marker child records the environment the root carries.
                 let marker = root.children.first { $0.name.hasPrefix("environment-") }
                 if marker?.name != "environment-\(environment.rawValue)", let light = environment.makeResource() {
-                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 0.4))
+                    root.components.set(ImageBasedLightComponent(source: .single(light), intensityExponent: 1.1))
                     marker?.removeFromParent()
                     let next = Entity()
                     next.name = "environment-\(environment.rawValue)"
@@ -75,6 +75,8 @@ struct MaterialSphereView: View {
                 }
                 pbr.textureCoordinateTransform.scale = shape.textureScale(tiling: tiling)
                 sphere.model = ModelComponent(mesh: shape.mesh, materials: [pbr])
+                // The orbit camera framed the model when the scene was made; enlarging it afterwards fills the view.
+                sphere.scale = SIMD3(repeating: 1.75)
                 // Tilt the flat tile toward the camera so it reads as a surface, not an edge.
                 switch shape {
                 case .plane: sphere.orientation = simd_quatf(angle: .pi / 2.6, axis: [1, 0, 0])

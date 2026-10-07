@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    " · metal %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · メタル %@"
+          }
+        }
+      }
+    },
     "%@": {
       "shouldTranslate": false
     },
@@ -45,12 +55,38 @@
       },
       "shouldTranslate": false
     },
+    "%@ · roughness %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ · roughness %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · ラフネス %@"
+          }
+        }
+      }
+    },
     "%@² ready": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "%@² 準備完了"
+          }
+        }
+      }
+    },
+    "%@² · Final": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@² · 最終"
           }
         }
       }
@@ -186,6 +222,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "AR"
+          }
+        }
+      }
+    },
+    "Add a material name before exporting.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出す前にマテリアル名を入力してください。"
           }
         }
       }
@@ -530,6 +576,26 @@
         }
       }
     },
+    "Camera access is disabled. Allow access in Settings or import a photo.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラへのアクセスがオフです。「設定」で許可するか、写真を読み込んでください。"
+          }
+        }
+      }
+    },
+    "Camera is starting. Try again shortly.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラを起動しています。少し待ってからもう一度お試しください。"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "ja": {
@@ -660,6 +726,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "証明書"
+          }
+        }
+      }
+    },
+    "Checks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェック"
           }
         }
       }
@@ -938,12 +1014,42 @@
         }
       }
     },
+    "Derivation failed: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成に失敗しました：%@"
+          }
+        }
+      }
+    },
     "Derivation progress": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "生成の進行状況"
+          }
+        }
+      }
+    },
+    "Derivation was cancelled.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成はキャンセルされました。"
+          }
+        }
+      }
+    },
+    "Derive": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成"
           }
         }
       }
@@ -994,6 +1100,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "先にフル解像度で生成してください"
+          }
+        }
+      }
+    },
+    "Deriving %@²": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@²を生成中"
           }
         }
       }
@@ -1118,6 +1234,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "レリーフ、表面、タイリングを編集"
+          }
+        }
+      }
+    },
+    "Estimated": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推定"
           }
         }
       }
@@ -1255,6 +1381,16 @@
         }
       }
     },
+    "Flash pair": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュペア"
+          }
+        }
+      }
+    },
     "Flat / painted": {
       "extractionState": "manual",
       "localizations": {
@@ -1324,6 +1460,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ゲームエンジン"
+          }
+        }
+      }
+    },
+    "Geometry guide": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ジオメトリガイド"
           }
         }
       }
@@ -1563,6 +1709,16 @@
         }
       }
     },
+    "Identity": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "識別情報"
+          }
+        }
+      }
+    },
     "Import": {
       "localizations": {
         "ja": {
@@ -1687,6 +1843,16 @@
         }
       }
     },
+    "LiDAR depth": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiDAR深度"
+          }
+        }
+      }
+    },
     "Library": {
       "localizations": {
         "ja": {
@@ -1753,6 +1919,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "中央に正方形のマテリアルガイドを表示したライブカメラ"
+          }
+        }
+      }
+    },
+    "Live · %lld²": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブ · %lld²"
           }
         }
       }
@@ -2048,12 +2224,32 @@
         }
       }
     },
+    "No processed photo was delivered. Try another capture.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理済みの写真が届きませんでした。もう一度撮影してください。"
+          }
+        }
+      }
+    },
     "No rectangular surface found. Drag the corners instead.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "長方形の面が見つかりません。四隅をドラッグしてください。"
+          }
+        }
+      }
+    },
+    "No usable camera is available. Import a photo instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用できるカメラがありません。代わりに写真を読み込んでください。"
           }
         }
       }
@@ -2904,6 +3100,16 @@
         }
       }
     },
+    "Saves depth with the photo to shape the surface. Constant Color and RAW are not used for depth photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真と一緒に深度を保存し、表面の形状に使います。深度付きの写真ではConstant ColorとRAWは使われません。"
+          }
+        }
+      }
+    },
     "Saves the PBR maps with glTF, USDZ, Unreal, Unity and other formats to Files": {
       "localizations": {
         "ja": {
@@ -3210,6 +3416,16 @@
         }
       }
     },
+    "Takes a photo without and then with the flash and keeps only the flash's light, removing shadows and uneven lighting from the albedo. Hold steady.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュなし、続いてフラッシュありで撮影し、フラッシュの光だけを残して、アルベドから影やムラのある照明を取り除きます。手ぶれしないように持ってください。"
+          }
+        }
+      }
+    },
     "Tangent-space normal map; also drives height, AO and the masks.": {
       "extractionState": "manual",
       "localizations": {
@@ -3265,6 +3481,56 @@
         }
       }
     },
+    "The crop corners do not form a usable square.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切り抜きの四隅が有効な正方形になっていません。"
+          }
+        }
+      }
+    },
+    "The flash barely reached the surface; move closer or use the normal photo.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュが表面にほとんど届いていません。近づくか、通常の写真を使ってください。"
+          }
+        }
+      }
+    },
+    "The flash pair could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュペアを読み込めませんでした。"
+          }
+        }
+      }
+    },
+    "The flash pair was not used, so the normal photo was kept. %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュペアは使われなかったため、通常の写真を保持しました。%@"
+          }
+        }
+      }
+    },
+    "The original photo could not be re-encoded without private metadata.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "個人情報を含むメタデータを除いた状態で元の写真を再エンコードできませんでした。"
+          }
+        }
+      }
+    },
     "The photo, crop and recipe are removed from this iPhone. Exported bundles are not affected.": {
       "localizations": {
         "ja": {
@@ -3281,6 +3547,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "上のプレビューは512²でライブ更新されます。フル解像度で生成すると書き出せるようになります。"
+          }
+        }
+      }
+    },
+    "The selected image could not be decoded.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択した画像を読み込めませんでした。"
+          }
+        }
+      }
+    },
+    "The two flash-pair photos could not be aligned; hold the phone steady.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラッシュペアの2枚の写真を位置合わせできませんでした。iPhoneを動かさないようにしてください。"
+          }
+        }
+      }
+    },
+    "This image is larger than the 120 MB import limit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この画像は読み込み上限の120 MBを超えています。"
+          }
+        }
+      }
+    },
+    "This material bundle exceeds the 64 MiB transfer limit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このマテリアルバンドルは転送上限の64 MiBを超えています。"
           }
         }
       }
@@ -3432,6 +3738,16 @@
         }
       }
     },
+    "Updating": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新中"
+          }
+        }
+      }
+    },
     "Updating preview": {
       "localizations": {
         "ja": {
@@ -3480,6 +3796,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "フラッシュで環境光を打ち消します。信頼度が低い場合は通常の撮影に切り替わります"
+          }
+        }
+      }
+    },
+    "Uses the depth this photo was captured with to shape the surface, blended with learned geometry when both are on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撮影時に記録した深度で表面の形状を作ります。学習ジオメトリもオンのときは両方を合成します。"
           }
         }
       }

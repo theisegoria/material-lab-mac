@@ -1,6 +1,7 @@
 import ImageIO
 import UniformTypeIdentifiers
 import AppIntents
+import AVFoundation
 import XCTest
 @testable import MaterialCapture
 
@@ -485,6 +486,183 @@ final class MaterialCaptureTests: XCTestCase {
         let manifest = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: bundle.appending(path: "manifest.json"))) as? [String: Any])
         XCTAssertEqual((manifest["recipe"] as? [String: Any])?["material_preset"] as? String, "red-brick")
+    }
+
+    /// A synthetic 256×192 depth map seen by a pinhole camera (fx = fy = 200): `depthAt(x, y)` in metres.
+    private func syntheticDepth(orientation: UInt32 = 1, holes: Bool = false,
+                                _ depthAt: (Float, Float) -> Float) -> DepthCapture {
+        let w = 256, h = 192
+        var depth = [Float](repeating: 0, count: w * h)
+        for y in 0..<h {
+            for x in 0..<w {
+                depth[y * w + x] = holes && (x + y) % 2 == 0 ? .nan : depthAt(Float(x) + 0.5, Float(y) + 0.5)
+            }
+        }
+        return DepthCapture(width: w, height: h, depth: depth, fx: 200, fy: 200, cx: 128, cy: 96,
+                            orientation: orientation, isAbsolute: true)
+    }
+
+    private func decodedNormals(_ result: DepthGuide.Result) -> [SIMD3<Float>] {
+        stride(from: 0, to: result.rgba8.count, by: 4).map {
+            SIMD3(Float(result.rgba8[$0]) / 127.5 - 1, Float(result.rgba8[$0 + 1]) / 127.5 - 1, Float(result.rgba8[$0 + 2]) / 127.5 - 1)
+        }
+    }
+
+    func testDepthGuideOfATiltedWallIsFlatInTangentSpace() throws {
+        // A wall 0.5 m away rotated 35° about the vertical axis: depth varies across x, yet in the wall's own tangent
+        // frame it is flat, so the guide must be +Z everywhere.
+        let tilt = Float(35) * .pi / 180
+        let capture = syntheticDepth { x, _ in
+            let rayX = (x - 128) / 200
+            return 0.5 / (1 - rayX * tanf(tilt))   // Plane z = 0.5 + x·tan(tilt), intersected with the pixel ray.
+        }
+        let result = try XCTUnwrap(DepthGuide.normals(capture, quad: .centeredSquare(for: CGSize(width: 256, height: 192)), size: 64))
+        let normals = decodedNormals(result)
+        let meanXY = normals.map { abs($0.x) + abs($0.y) }.reduce(0, +) / Float(normals.count)
+        XCTAssertLessThan(meanXY, 0.04, "A plane seen at an angle is flat in tangent space")
+        XCTAssertLessThan(result.planeResidual, 0.001)
+    }
+
+    func testDepthGuideReadsARidgeWithTheRightSigns() throws {
+        // A fronto-parallel wall at 0.5 m with a vertical ridge raised 1 cm towards the camera at the centre column.
+        let ridge: (Float, Float) -> Float = { x, _ in 0.5 - 0.01 * expf(-powf((x - 128) / 18, 2)) }
+        let square = PerspectiveQuad.centeredSquare(for: CGSize(width: 256, height: 192))
+        let flat = decodedNormals(try XCTUnwrap(DepthGuide.normals(syntheticDepth(ridge), quad: square, size: 64)))
+        let row = 32 * 64
+        XCTAssertLessThan(flat[row + 26].x, -0.05, "The left flank faces left")
+        XCTAssertGreaterThan(flat[row + 38].x, 0.05, "The right flank faces right")
+        XCTAssertLessThan(abs(flat[row + 26].y), 0.05)
+        // The same scene shot in portrait (EXIF 6): the sensor's columns run down the upright photo, so the ridge
+        // crosses the upright crop horizontally and its upper flank faces up (+Y, green-up).
+        let portrait = syntheticDepth(orientation: 6, ridge)
+        let uprightSquare = PerspectiveQuad.centeredSquare(for: CGSize(width: 192, height: 256))
+        let rotated = decodedNormals(try XCTUnwrap(DepthGuide.normals(portrait, quad: uprightSquare, size: 64)))
+        XCTAssertGreaterThan(rotated[26 * 64 + 32].y, 0.05, "The upper flank faces up")
+        XCTAssertLessThan(rotated[38 * 64 + 32].y, -0.05, "The lower flank faces down")
+        // A crop with no usable depth is refused.
+        XCTAssertNil(DepthGuide.normals(syntheticDepth { _, _ in .nan }, quad: square, size: 64))
+    }
+
+    /// A JPEG of `image` with an embedded DepthFloat32 map (as the LiDAR camera writes with embedsDepthDataInPhoto).
+    private func jpegWithDepth(_ image: UIImage, depthWidth: Int, depthHeight: Int,
+                               _ depthAt: (Int, Int) -> Float) throws -> Data {
+        var depth = [Float32](repeating: 0, count: depthWidth * depthHeight)
+        for y in 0..<depthHeight { for x in 0..<depthWidth { depth[y * depthWidth + x] = depthAt(x, y) } }
+        let description: [CFString: Any] = [
+            kCGImagePropertyWidth: depthWidth, kCGImagePropertyHeight: depthHeight,
+            kCGImagePropertyBytesPerRow: depthWidth * 4, kCGImagePropertyPixelFormat: kCVPixelFormatType_DepthFloat32]
+        let info: [CFString: Any] = [kCGImageAuxiliaryDataInfoData: Data(bytes: depth, count: depth.count * 4),
+                                     kCGImageAuxiliaryDataInfoDataDescription: description]
+        let depthData = try AVDepthData(fromDictionaryRepresentation: info)
+        var type: NSString?
+        let auxiliary = try XCTUnwrap(depthData.dictionaryRepresentation(forAuxiliaryDataType: &type))
+        let output = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try XCTUnwrap(image.cgImage), nil)
+        CGImageDestinationAddAuxiliaryDataInfo(destination, (type ?? kCGImageAuxiliaryDataTypeDepth as NSString) as CFString,
+                                               auxiliary as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return output as Data
+    }
+
+    @MainActor
+    func testEmbeddedPhotoDepthGuidesDerivationAndIsRecorded() async throws {
+        // A 512² photo with a 128² depth map: a wall 0.4 m away with a horizontal ridge raised 8 mm across the middle.
+        let data = try jpegWithDepth(syntheticBricks(size: 512), depthWidth: 128, depthHeight: 128) { _, y in
+            0.4 - 0.008 * expf(-powf((Float(y) - 64) / 10, 2))
+        }
+        let root = FileManager.default.temporaryDirectory.appending(path: "depth-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CaptureStore(libraryDirectory: root)
+        let received = await store.receive(origin: .files, data: data)
+        XCTAssertTrue(received, store.errorMessage ?? "Import failed")
+        XCTAssertTrue(store.sourceHasDepth, "Depth embedded in the photo is found on import")
+        store.semanticLabel = "Depth ridge"
+        store.resolution = 512
+        store.recipe = MaterialRecipe(preset: .stone)
+        store.setDepthGeometry(true)
+        XCTAssertEqual(store.recipe.guideNormalWeight, 1)
+        await store.derive()
+        let derived = try XCTUnwrap(store.derived, store.errorMessage ?? "Derivation failed")
+        XCTAssertEqual(derived.guideNormals?.estimator.hasSuffix("lidar-depth"), true)
+        let savedTargets = ExportTargetPreference.load()
+        defer { ExportTargetPreference.save(savedTargets) }
+        store.exportTargets = []
+        let folder = try await store.makeMaterialExport()
+        let manifestData = try Data(contentsOf: folder.appending(path: "depth-ridge.pbrmaterial/manifest.json"))
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let guide = try XCTUnwrap(manifest["guide_normals"] as? [String: Any])
+        XCTAssertTrue((guide["estimator"] as? String)?.contains("lidar-depth") == true)
+        if let host = ProcessInfo.processInfo.environment["EXPORT_DIR"], !host.isEmpty {
+            let destination = URL(fileURLWithPath: host).appending(path: "depth-" + folder.lastPathComponent)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: folder, to: destination)
+        }
+    }
+
+    /// Linear-light luminance of an sRGB image, at its own size.
+    private func linearLuma(_ image: CGImage) -> [Float] {
+        let w = image.width, h = image.height
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        let context = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        func lin(_ v: UInt8) -> Float { let c = Float(v) / 255; return c <= 0.04045 ? c / 12.92 : powf((c + 0.055) / 1.055, 2.4) }
+        return (0..<(w * h)).map { 0.2126 * lin(rgba[$0 * 4]) + 0.7152 * lin(rgba[$0 * 4 + 1]) + 0.0722 * lin(rgba[$0 * 4 + 2]) }
+    }
+
+    /// An sRGB image from linear luminance-scaled copies of `albedo` (per-pixel multiplier).
+    private func shaded(_ albedo: CGImage, _ multiplier: (Int, Int) -> Float) -> CGImage {
+        let w = albedo.width, h = albedo.height
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        let context = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.draw(albedo, in: CGRect(x: 0, y: 0, width: w, height: h))
+        func lin(_ v: UInt8) -> Float { let c = Float(v) / 255; return c <= 0.04045 ? c / 12.92 : powf((c + 0.055) / 1.055, 2.4) }
+        func enc(_ l: Float) -> UInt8 { let v = max(0, min(1, l)); return UInt8(((v <= 0.0031308 ? v * 12.92 : 1.055 * powf(v, 1 / 2.4) - 0.055) * 255).rounded()) }
+        for y in 0..<h { for x in 0..<w { let m = multiplier(x, y); for c in 0..<3 { let i = (y * w + x) * 4 + c; rgba[i] = enc(lin(rgba[i]) * m) } } }
+        return context.makeImage()!
+    }
+
+    func testFlashPairRecoversAlbedoUnderUnevenAmbientLight() throws {
+        let albedo = try XCTUnwrap(syntheticBricks(size: 256).cgImage)
+        // Ambient: a strong left-to-right gradient plus a cast shadow. Flash: radial fall-off, at an exposure 1.5×
+        // the ambient's, with that ambient light also present.
+        let ambientLight: (Int, Int) -> Float = { x, y in
+            let shadow: Float = (x - 160) * (x - 160) + (y - 90) * (y - 90) < 2500 ? 0.35 : 1
+            return (0.1 + 0.5 * Float(x) / 255) * shadow
+        }
+        // Kept within an unclipped exposure (flash + ambient ≤ 1), as a camera's auto-exposure would.
+        let flashLight: (Int, Int) -> Float = { x, y in 0.5 * expf(-Float((x - 128) * (x - 128) + (y - 128) * (y - 128)) / 40000) }
+        let ambient = shaded(albedo) { x, y in ambientLight(x, y) }
+        let flash = shaded(albedo) { x, y in flashLight(x, y) + 1.5 * ambientLight(x, y) * 0.5 }
+        let recovered = try FlashPairAlbedo.compute(ambient: ambient, flash: flash, flashToAmbientExposure: 0.75)
+        // Score: the spread of log(image / true albedo). Lighting left in the image shows up as spread.
+        let truth = linearLuma(albedo)
+        func spread(_ image: CGImage) -> Float {
+            let values = zip(linearLuma(image), truth).compactMap { $1 > 0.01 && $0 > 0.001 ? logf($0 / $1) : nil }
+            let mean = values.reduce(0, +) / Float(values.count)
+            return (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Float(values.count)).squareRoot()
+        }
+        let before = spread(ambient), after = spread(recovered)
+        XCTAssertLessThan(after, before * 0.35, "Flash-only light removes the ambient gradient and shadow (\(before) → \(after))")
+    }
+
+    func testFlashPairAlignmentUndoesHandShake() throws {
+        let albedo = try XCTUnwrap(syntheticBricks(size: 256).cgImage)
+        // The ambient frame is the scene shifted 6 px right and 4 px down (the phone moved between shots).
+        let shifted = CIImage(cgImage: albedo).transformed(by: CGAffineTransform(translationX: 6, y: -4))
+            .cropped(to: CGRect(x: 0, y: 0, width: 256, height: 256))
+        let ambient = try XCTUnwrap(CIContext().createCGImage(shifted.composited(over: CIImage(color: .black)
+            .cropped(to: CGRect(x: 0, y: 0, width: 256, height: 256))), from: CGRect(x: 0, y: 0, width: 256, height: 256)))
+        let aligned = try FlashPairAlbedo.align(ambient, to: albedo)
+        let a = linearLuma(aligned), t = linearLuma(albedo), b = linearLuma(ambient)
+        func error(_ x: [Float]) -> Float {
+            var sum: Float = 0, n: Float = 0
+            for y in 20..<236 { for x2 in 20..<236 { sum += abs(x[y * 256 + x2] - t[y * 256 + x2]); n += 1 } }
+            return sum / n
+        }
+        XCTAssertLessThan(error(a), error(b) * 0.3, "Registration brings the ambient frame back onto the flash frame")
     }
 
     @MainActor

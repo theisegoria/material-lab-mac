@@ -338,7 +338,8 @@ final class CaptureStore {
         let revision = inputRevision
         // Until learned normals exist for this crop the preview stays analytic; inference runs alongside.
         let authored = authored
-        let wantsLearned = recipe.guideNormalWeight > 0 && !authored.hasGeometry
+        let depth = recipe.depthGeometry ? source.depth : nil
+        let wantsLearned = recipe.guideNormalWeight > 0 && !authored.hasGeometry && learnedModel != nil
         let guide: GuideSource? = wantsLearned ? currentLearnedField().map(GuideSource.field) : nil
         if wantsLearned && guide == nil { startLearnedInference() }
         previewTask = Task { [weak self] in
@@ -347,7 +348,7 @@ final class CaptureStore {
             let result = await Task.detached(priority: .userInitiated) {
                 try? MaterialProcessor.derive(image: image, quad: quad, resolution: MaterialProcessor.previewResolution,
                                               recipe: recipe, control: control, preview: true, guide: guide,
-                                              authored: authored)
+                                              authored: authored, depth: depth)
             }.value
             guard !Task.isCancelled else { return }
             if let result, revision == self.inputRevision {
@@ -361,7 +362,8 @@ final class CaptureStore {
     func derive() async {
         guard let source, !isDeriving else { return }
         guard crop.isValid else { errorMessage = CaptureError.invalidCrop.localizedDescription; return }
-        if recipe.guideNormalWeight > 0 && learnedModel == nil {
+        // Learned geometry needs the model, unless the photo's depth supplies the geometry instead.
+        if recipe.guideNormalWeight > 0 && learnedModel == nil && !(recipe.depthGeometry && source.depth != nil) {
             errorMessage = LearnedNormalError.notInstalled.localizedDescription
             return
         }
@@ -394,8 +396,9 @@ final class CaptureStore {
         let revision = inputRevision
         let geometry = geometryKey
         let authored = authored
+        let depth = recipe.depthGeometry ? source.depth : nil
         var guide: GuideSource?
-        if recipe.guideNormalWeight > 0 {
+        if recipe.guideNormalWeight > 0 && learnedModel != nil {
             // Reuse the preview's inference only when it ran at this resolution's working size (the tiling contract).
             if let field = currentLearnedField(),
                field.work == LearnedNormalEstimator.workResolution(for: resolution), field.wrap == recipe.tileWrap {
@@ -407,7 +410,8 @@ final class CaptureStore {
         do {
             let result = try await Task.detached(priority: .userInitiated) {
                 try MaterialProcessor.derive(image: image, quad: quad, resolution: resolution,
-                                             recipe: recipe, control: control, guide: guide, authored: authored)
+                                             recipe: recipe, control: control, guide: guide, authored: authored,
+                                             depth: depth)
             }.value
             if let field = result.learnedField, geometry == geometryKey {
                 learnedField = field
@@ -562,6 +566,15 @@ final class CaptureStore {
 
     /// Artist-made inputs for this capture: a hand-made albedo and maps that replace the derived ones.
     private(set) var authored = AuthoredMaps()
+
+    /// Whether the current photo carries depth (LiDAR or dual-camera) for the depth-geometry option.
+    var sourceHasDepth: Bool { source?.depth != nil }
+
+    /// Turns photo-depth geometry on or off; turning it on gives the guide full weight if it had none.
+    func setDepthGeometry(_ on: Bool) {
+        recipe.depthGeometry = on
+        if on && recipe.guideNormalWeight == 0 { recipe.guideNormalWeight = 1 }
+    }
 
     /// Marks the source as a hand-made albedo: it is used whole (a centered square, no perspective correction).
     func setHandMadeAlbedo(_ on: Bool) {

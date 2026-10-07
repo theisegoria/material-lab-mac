@@ -82,6 +82,8 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     /// The material-library preset (LibraryPreset) this recipe started from; later edits keep the name, as the CLI
     /// does. Recorded as recipe.material_preset in bundles.
     var materialPreset: String?
+    /// Use the photo's depth (LiDAR on Pro iPhones) as a geometry guide, blended with learned geometry when both exist.
+    var depthGeometry = false
 
     /// Whether the core changes the albedo pixels (delighting, edge treatment or repair).
     var conditionsAlbedo: Bool { albedoEqualize > 0 || seamlessBlend > 0 || albedoRepair != .off }
@@ -149,6 +151,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels
         case tileWrap, assignedMetalness, bentNormal, normalStrength, normalYDown, aoStrength
         case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair, materialPreset
+        case depthGeometry
     }
 
     init(from decoder: Decoder) throws {
@@ -173,6 +176,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         seamlessMode = try c.decodeIfPresent(SeamlessMode.self, forKey: .seamlessMode) ?? .blend
         albedoRepair = try c.decodeIfPresent(AlbedoRepair.self, forKey: .albedoRepair) ?? .off
         materialPreset = LibraryPreset.named(try c.decodeIfPresent(String.self, forKey: .materialPreset))?.id
+        depthGeometry = try c.decodeIfPresent(Bool.self, forKey: .depthGeometry) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -195,6 +199,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         try c.encode(seamlessMode, forKey: .seamlessMode)
         try c.encode(albedoRepair, forKey: .albedoRepair)
         try c.encodeIfPresent(materialPreset, forKey: .materialPreset)
+        if depthGeometry { try c.encode(depthGeometry, forKey: .depthGeometry) }
     }
 
     var cValue: PBRLabRecipe {
@@ -460,10 +465,11 @@ enum MaterialProcessor {
 
     static func derive(image: UIImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
                        control: DerivationControl? = nil, preview: Bool = false,
-                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps()) throws -> DerivedMaterial {
+                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps(),
+                       depth: DepthCapture? = nil) throws -> DerivedMaterial {
         guard let cgImage = image.cgImage else { throw CaptureError.invalidImage }
         return try derive(image: cgImage, quad: quad, resolution: resolution, recipe: recipe,
-                          control: control, preview: preview, guide: guide, authored: authored)
+                          control: control, preview: preview, guide: guide, authored: authored, depth: depth)
     }
 
     /// Call off the main actor. A `preview` derivation skips PNG encoding and is never exported.
@@ -472,7 +478,8 @@ enum MaterialProcessor {
     /// for exportable derivations).
     static func derive(image: CGImage, quad: PerspectiveQuad, resolution: Int, recipe: MaterialRecipe,
                        control: DerivationControl? = nil, preview: Bool = false,
-                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps()) throws -> DerivedMaterial {
+                       guide: GuideSource? = nil, authored: AuthoredMaps = AuthoredMaps(),
+                       depth: DepthCapture? = nil) throws -> DerivedMaterial {
         // An authored metalness map fills the ORM blue channel, which exists only with assigned metalness.
         var recipe = recipe
         if authored.maps[.metalness] != nil, recipe.assignedMetalness == nil { recipe.assignedMetalness = 0 }
@@ -502,6 +509,22 @@ enum MaterialProcessor {
                 control?.setPhaseOffset(0.35)
             }
             guideNormals = learnedField?.guide(size: resolution)
+        }
+        // Photo depth (LiDAR): its normals guide the form, blended evenly with learned geometry when both exist.
+        if recipe.depthGeometry, recipe.guideNormalWeight > 0, !authored.hasGeometry, let depth,
+           let depthNormals = DepthGuide.normals(depth, quad: quad, size: resolution) {
+            let combined = guideNormals.map { DepthGuide.blend($0.rgba8, depthNormals.rgba8, weightB: 0.5) } ?? depthNormals.rgba8
+            let hash = SHA256.hash(data: combined).map { String(format: "%02x", $0) }.joined()
+            let learned = guideNormals?.provenance
+            let provenance = GuideNormalsProvenance(
+                estimator: learned == nil ? DepthGuide.estimatorName : "\(learned!.estimator)+\(DepthGuide.estimatorName)",
+                contract: LearnedNormalEstimator.contract,
+                weightsSHA256: learned?.weightsSHA256 ?? "none", mogeCommit: learned?.mogeCommit ?? "none",
+                modelFile: learned?.modelFile ?? (depth.isAbsolute ? "lidar-depth" : "photo-disparity"),
+                computeUnits: learned?.computeUnits ?? "cpu_only",
+                workResolution: learned?.workResolution ?? resolution, tiles: learned?.tiles ?? 0,
+                tiling: learned?.tiling ?? "depth_plane_fit_v1", normalsSHA256: hash)
+            guideNormals = GuideNormals(rgba8: combined, size: resolution, provenance: provenance)
         }
         if control?.isCancelled == true { throw CaptureError.cancelled }
         let authoredPixels = try authored.decoded(size: resolution)

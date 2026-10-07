@@ -175,7 +175,7 @@ struct MaterialReviewView: View {
     }
 
     private var identityCard: some View {
-        Card(title: "Identity", symbol: "tag") {
+        Card(title: String(localized: "Identity"), symbol: "tag") {
             VStack(spacing: 0) {
                 TextField("Material name, e.g. weathered basalt", text: $store.semanticLabel)
                     .textInputAutocapitalization(.sentences)
@@ -197,7 +197,7 @@ struct MaterialReviewView: View {
     }
 
     private func cropCard(_ source: SourceImage) -> some View {
-        Card(title: "Perspective Crop", symbol: "perspective") {
+        Card(title: String(localized: "Perspective Crop"), symbol: "perspective") {
             HStack(alignment: .top, spacing: 14) {
                 PerspectiveCropView(image: source.displayImage, quad: .constant(store.crop),
                                     showsGrid: false, interactive: false)
@@ -240,7 +240,7 @@ struct MaterialReviewView: View {
     }
 
     private var recipeCard: some View {
-        Card(title: "Recipe", symbol: "slider.horizontal.3") {
+        Card(title: String(localized: "Recipe"), symbol: "slider.horizontal.3") {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("Material prior", selection: Binding(get: { store.recipe.preset },
                                                             set: { store.setPreset($0) })) {
@@ -263,7 +263,7 @@ struct MaterialReviewView: View {
     }
 
     private var deriveCard: some View {
-        Card(title: "Derive", symbol: "cpu") {
+        Card(title: String(localized: "Derive"), symbol: "cpu") {
             VStack(alignment: .leading, spacing: 14) {
                 Picker("Output resolution", selection: $store.resolution) {
                     ForEach(CaptureStore.resolutions, id: \.self) { size in
@@ -318,7 +318,7 @@ struct MaterialReviewView: View {
     }
 
     private func checksCard(_ material: DerivedMaterial) -> some View {
-        Card(title: "Checks", symbol: "checkmark.seal") {
+        Card(title: String(localized: "Checks"), symbol: "checkmark.seal") {
             VStack(alignment: .leading, spacing: 10) {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                     GridRow {
@@ -348,7 +348,7 @@ struct MaterialReviewView: View {
     }
 
     private func exportCard(_ material: DerivedMaterial) -> some View {
-        Card(title: "Export", symbol: "square.and.arrow.up") {
+        Card(title: String(localized: "Export"), symbol: "square.and.arrow.up") {
             VStack(spacing: 10) {
                 Button {
                     focusedField = nil
@@ -641,16 +641,16 @@ struct MaterialPreviewPane: View {
         let text: String
         let symbol: String
         if store.isDeriving {
-            text = "Deriving \(String(store.resolution))²"
+            text = String(localized: "Deriving \(String(store.resolution))²")
             symbol = "hourglass"
         } else if store.isUpdatingPreview {
-            text = "Updating"
+            text = String(localized: "Updating")
             symbol = "arrow.triangle.2.circlepath"
         } else if store.hasExportableMaps {
-            text = "\(String(store.resolution))² · Final"
+            text = String(localized: "\(String(store.resolution))² · Final")
             symbol = "checkmark.seal.fill"
         } else {
-            text = "Live · \(MaterialProcessor.previewResolution)²"
+            text = String(localized: "Live · \(MaterialProcessor.previewResolution)²")
             symbol = "bolt.fill"
         }
         return Label(text, systemImage: symbol)

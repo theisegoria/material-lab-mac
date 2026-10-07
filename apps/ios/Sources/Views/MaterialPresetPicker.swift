@@ -53,8 +53,10 @@ struct MaterialPresetPicker: View {
 
     private func summary(_ preset: LibraryPreset) -> String {
         let r = preset.recipe
-        var text = "\(MaterialPreset(r.preset).title) · roughness \(String(format: "%.2f", r.roughness_base))"
-        if r.assigned_metalness_enabled != 0 { text += " · metal \(String(format: "%.1f", r.assigned_metalness))" }
+        var text = String(localized: "\(MaterialPreset(r.preset).title) · roughness \(String(format: "%.2f", r.roughness_base))")
+        if r.assigned_metalness_enabled != 0 {
+            text += String(localized: " · metal \(String(format: "%.1f", r.assigned_metalness))")
+        }
         return text
     }
 }

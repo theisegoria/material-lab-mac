@@ -80,6 +80,21 @@ struct RecipeEditorView: View {
                         Label("Bent normal map", systemImage: "arrow.turn.up.right")
                     }
                     LearnedGeometryRows(store: store, importModel: { showModelImporter = true })
+                    if store.sourceHasDepth {
+                        Toggle(isOn: Binding(get: { store.recipe.depthGeometry }, set: { store.setDepthGeometry($0) })) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("LiDAR depth")
+                                    Text("Uses the depth this photo was captured with to shape the surface, blended with learned geometry when both are on.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                            }
+                        }
+                        .accessibilityIdentifier("depth-geometry")
+                    }
                 } header: {
                     Text("Relief")
                 } footer: {
@@ -268,7 +283,8 @@ struct LearnedGeometryRows: View {
     @Bindable var store: CaptureStore
     let importModel: () -> Void
 
-    private var available: Bool { store.learnedModel != nil }
+    /// The geometry slider works with the learned model, or with photo depth alone.
+    private var available: Bool { store.learnedModel != nil || (store.recipe.depthGeometry && store.sourceHasDepth) }
 
     /// "Quick estimate", then "Refining · pass 18 of 50 · ~6 s" once a pass time is known.
     private func progressText(_ progress: LearnedProgress) -> String {
@@ -284,7 +300,7 @@ struct LearnedGeometryRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RecipeSlider(title: String(localized: "Learned geometry"), symbol: "sparkles",
+            RecipeSlider(title: store.recipe.depthGeometry ? String(localized: "Geometry guide") : String(localized: "Learned geometry"), symbol: "sparkles",
                          value: $store.recipe.guideNormalWeight, range: 0...1, step: 0.05,
                          format: "%.0f%%", percent: true, baseline: store.baselineRecipe.guideNormalWeight)
                 .disabled(!available)

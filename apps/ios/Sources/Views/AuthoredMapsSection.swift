@@ -26,7 +26,7 @@ struct AuthoredMapsSection: View {
                     }
                 } label: {
                     LabeledContent {
-                        Text(store.authored.maps[role]?.name ?? (role.replacesMap ? "Estimated" : "None"))
+                        Text(store.authored.maps[role]?.name ?? (role.replacesMap ? String(localized: "Estimated") : String(localized: "None")))
                             .foregroundStyle(store.authored.maps[role] == nil ? .secondary : .primary)
                             .lineLimit(1)
                             .fixedSize()

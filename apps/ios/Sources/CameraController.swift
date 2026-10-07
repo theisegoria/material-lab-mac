@@ -114,6 +114,12 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
     var onExposure: ((ExposureReading) -> Void)?
     /// Whether this camera can capture Apple ProRAW (set once the session is configured; read on the main queue).
     private(set) var supportsProRAW = false
+    /// Whether photos can carry depth (LiDAR camera on Pro iPhones); read on the main queue.
+    private(set) var supportsDepth = false
+    /// Flash/no-flash albedo for cameras without Constant Color (needs a flash); read on the main queue.
+    private(set) var supportsFlashPair = false
+    /// Why the last flash pair fell back to the ambient photo, if it did.
+    var onFlashPairNote: ((String) -> Void)?
 
     private let queue = DispatchQueue(label: "io.materiallab.capture.camera", qos: .userInitiated)
     private let videoQueue = DispatchQueue(label: "io.materiallab.capture.video", qos: .utility)
@@ -148,8 +154,12 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
                     if !self.session.isRunning { self.session.startRunning() }
                     let supportsConstantColor = self.photoOutput.isConstantColorSupported
                     let supportsProRAW = self.photoOutput.isAppleProRAWEnabled
+                    let supportsDepth = self.photoOutput.isDepthDataDeliveryEnabled
+                    let supportsFlashPair = !supportsConstantColor && self.photoOutput.supportedFlashModes.contains(.on)
                     DispatchQueue.main.async {
+                        self.supportsFlashPair = supportsFlashPair
                         self.supportsProRAW = supportsProRAW
+                        self.supportsDepth = supportsDepth
                         self.onReady?(.success(supportsConstantColor))
                     }
                 } catch {
@@ -165,13 +175,18 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
 
     /// `preferProRAW` captures Apple ProRAW plus a processed photo (when supported and Constant Color is not in use);
     /// the RAW is developed neutrally into the primary image and the processed photo is kept as the fallback.
-    func capture(preferConstantColor: Bool, flash: AVCaptureDevice.FlashMode, preferProRAW: Bool = false) {
+    /// `preferDepth` embeds the photo's depth map (LiDAR) in the file for depth-guided geometry; it is captured on its
+    /// own, without Constant Color or ProRAW, to keep the request within combinations the camera supports.
+    func capture(preferConstantColor: Bool, flash: AVCaptureDevice.FlashMode, preferProRAW: Bool = false,
+                 preferDepth: Bool = false) {
         queue.async {
             guard self.session.isRunning else {
                 DispatchQueue.main.async { self.onCapture?(.failure(CaptureError.cameraNotReady)) }
                 return
             }
-            let constantColor = preferConstantColor && self.photoOutput.isConstantColorSupported
+            let depth = preferDepth && self.photoOutput.isDepthDataDeliveryEnabled
+            let preferProRAW = preferProRAW && !depth
+            let constantColor = !depth && preferConstantColor && self.photoOutput.isConstantColorSupported
             let rawFormat = self.photoOutput.availableRawPhotoPixelFormatTypes.first {
                 AVCapturePhotoOutput.isAppleProRAWPixelFormat($0)
             }
@@ -182,6 +197,11 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
                 self.rawRequests.insert(settings.uniqueID)
             } else {
                 settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            }
+            if depth {
+                settings.isDepthDataDeliveryEnabled = true
+                settings.isDepthDataFiltered = true
+                settings.embedsDepthDataInPhoto = true
             }
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
             settings.photoQualityPrioritization = self.photoOutput.maxPhotoQualityPrioritization
@@ -197,9 +217,54 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         }
     }
 
+    /// Flash/no-flash albedo: an ambient photo, then a flash photo, combined by FlashPairAlbedo. The ambient photo is
+    /// kept as the fallback; if the pair cannot be used, the ambient photo is delivered alone with a note.
+    func captureFlashPair() {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            do {
+                let ambient = try await self.takePhoto(flash: .off)
+                let flash = try await self.takePhoto(flash: .on)
+                let capture: CameraCapture
+                do {
+                    let albedo = try FlashPairAlbedo.albedoPNG(ambient: ambient, flash: flash)
+                    capture = CameraCapture(primaryData: albedo, fallbackData: ambient, confidence: nil,
+                                            constantColorRequested: false, centerConfidence: 0, capturedAt: Date())
+                } catch {
+                    let note = error.localizedDescription
+                    DispatchQueue.main.async { self.onFlashPairNote?(note) }
+                    capture = CameraCapture(primaryData: ambient, fallbackData: nil, confidence: nil,
+                                            constantColorRequested: false, centerConfidence: 0, capturedAt: Date())
+                }
+                DispatchQueue.main.async { self.onCapture?(.success(capture)) }
+            } catch {
+                DispatchQueue.main.async { self.onCapture?(.failure(error)) }
+            }
+        }
+    }
+
+    /// One JPEG photo with the given flash mode (used by the flash pair).
+    private func takePhoto(flash: AVCaptureDevice.FlashMode) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                guard self.session.isRunning else { continuation.resume(throwing: CaptureError.cameraNotReady); return }
+                let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
+                settings.flashMode = self.photoOutput.supportedFlashModes.contains(flash) ? flash : .off
+                let delegate = SinglePhotoDelegate(continuation: continuation)
+                self.pairDelegates.insert(delegate)
+                delegate.onFinish = { [weak self] in self?.queue.async { self?.pairDelegates.remove(delegate) } }
+                self.photoOutput.capturePhoto(with: settings, delegate: delegate)
+            }
+        }
+    }
+    private var pairDelegates: Set<SinglePhotoDelegate> = []
+
     private func configureIfNeeded() throws {
         guard session.inputs.isEmpty else { return }
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+        // The LiDAR depth camera (Pro iPhones) is the wide camera paired with LiDAR, so photos can carry depth.
+        guard let camera = AVCaptureDevice.default(.builtInLiDARDepthCamera, for: .video, position: .back)
+                ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
             throw CaptureError.cameraUnavailable
         }
         let input = try AVCaptureDeviceInput(device: camera)
@@ -237,6 +302,9 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         }
         if photoOutput.isAppleProRAWSupported {
             photoOutput.isAppleProRAWEnabled = true
+        }
+        if photoOutput.isDepthDataDeliverySupported {
+            photoOutput.isDepthDataDeliveryEnabled = true
         }
         session.commitConfiguration()
     }
@@ -374,18 +442,34 @@ enum CaptureError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .cameraPermissionDenied: "Camera access is disabled. Allow access in Settings or import a photo."
-        case .cameraUnavailable: "No usable camera is available. Import a photo instead."
-        case .cameraNotReady: "Camera is starting. Try again shortly."
-        case .photoUnavailable: "No processed photo was delivered. Try another capture."
-        case .invalidImage: "The selected image could not be decoded."
-        case .importTooLarge: "This image is larger than the 120 MB import limit."
-        case .invalidCrop: "The crop corners do not form a usable square."
-        case .missingLabel: "Add a material name before exporting."
-        case .derivationFailed(let reason): "Derivation failed: \(reason)"
-        case .cancelled: "Derivation was cancelled."
-        case .metadataScrubFailed: "The original photo could not be re-encoded without private metadata."
-        case .bundleTooLarge: "This material bundle exceeds the 64 MiB transfer limit."
+        case .cameraPermissionDenied: String(localized: "Camera access is disabled. Allow access in Settings or import a photo.")
+        case .cameraUnavailable: String(localized: "No usable camera is available. Import a photo instead.")
+        case .cameraNotReady: String(localized: "Camera is starting. Try again shortly.")
+        case .photoUnavailable: String(localized: "No processed photo was delivered. Try another capture.")
+        case .invalidImage: String(localized: "The selected image could not be decoded.")
+        case .importTooLarge: String(localized: "This image is larger than the 120 MB import limit.")
+        case .invalidCrop: String(localized: "The crop corners do not form a usable square.")
+        case .missingLabel: String(localized: "Add a material name before exporting.")
+        case .derivationFailed(let reason): String(localized: "Derivation failed: \(reason)")
+        case .cancelled: String(localized: "Derivation was cancelled.")
+        case .metadataScrubFailed: String(localized: "The original photo could not be re-encoded without private metadata.")
+        case .bundleTooLarge: String(localized: "This material bundle exceeds the 64 MiB transfer limit.")
         }
+    }
+}
+
+/// Delivers one photo's file data to an async caller.
+private final class SinglePhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sendable {
+    private var continuation: CheckedContinuation<Data, Error>?
+    var onFinish: (() -> Void)?
+
+    init(continuation: CheckedContinuation<Data, Error>) { self.continuation = continuation }
+
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error { continuation?.resume(throwing: error) }
+        else if let data = photo.fileDataRepresentation() { continuation?.resume(returning: data) }
+        else { continuation?.resume(throwing: CaptureError.photoUnavailable) }
+        continuation = nil
+        onFinish?()
     }
 }

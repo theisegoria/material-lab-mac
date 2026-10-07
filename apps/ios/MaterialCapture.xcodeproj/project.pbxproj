@@ -19,6 +19,7 @@
 		2B1F4396BB33D1F513544EDA /* MaterialReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765096232A3E053B322829A /* MaterialReviewView.swift */; };
 		328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F148DAAD36AD6741A16372 /* PerspectiveCrop.swift */; };
 		329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF290546E6549B3910B141 /* RectangleDetector.swift */; };
+		4E1DC8432FC61457FF1E1CCB /* FlashPairAlbedo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 394C796B0AA342616ED7AAFC /* FlashPairAlbedo.swift */; };
 		4FA6555C742D47492D2C8D30 /* MaterialCaptureUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A629929F13483947C91BAFC /* MaterialCaptureUITests.swift */; };
 		644AF13EAE0BB8C2AEB31096 /* PreviewEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D65ED6328D5C5682F5153314 /* PreviewEnvironment.swift */; };
 		6C35067BA70DC82A8DAF4D57 /* RecipeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26169906969BC485E1B6991A /* RecipeEditorView.swift */; };
@@ -31,6 +32,7 @@
 		9449017682FBA12091108C7A /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1921D821D866362E08300599 /* MaterialPresetLibrary.swift */; };
 		9764BF38A15BB8026827E324 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */; };
 		99882DCAAB392DEA6D6A4400 /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103EE2A60187EB25A163CA98 /* CaptureStore.swift */; };
+		9FD414858D2BD962C11E59E8 /* DepthGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82171C1201CC793933FE5A94 /* DepthGuide.swift */; };
 		A5512AB50A2E1C9D71D26F8D /* ExportTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185DD6F9558B8B17CBFA12EC /* ExportTargets.swift */; };
 		ACF2BC5B9C246FFE6EFCBED7 /* PNGWriter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7AE465EB70F60C9BB0B0DD16 /* PNGWriter.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O2"; }; };
 		AF9E8138045F2214A9BADA02 /* MacLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A8573F8A5F7205045D1540 /* MacLinkView.swift */; };
@@ -79,6 +81,7 @@
 		1A9509ADD2CAB213380A9DEB /* MaterialCaptureTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MaterialCaptureTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		26169906969BC485E1B6991A /* RecipeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeEditorView.swift; sourceTree = "<group>"; };
 		27EDB0F204AE74526DF06A0B /* MaterialProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialProcessor.swift; sourceTree = "<group>"; };
+		394C796B0AA342616ED7AAFC /* FlashPairAlbedo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashPairAlbedo.swift; sourceTree = "<group>"; };
 		3BA4705114E89C4F767F416E /* MaterialCaptureUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MaterialCaptureUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		452A596EB164DCE14C051001 /* AuthoredMaps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthoredMaps.swift; sourceTree = "<group>"; };
 		4729EC0562C1777EAA5CAFAC /* MaterialCapture-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MaterialCapture-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -94,6 +97,7 @@
 		7AE465EB70F60C9BB0B0DD16 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
 		7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialSphereView.swift; sourceTree = "<group>"; };
 		7F791FB494E077A9E17AA82A /* CropEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropEditorView.swift; sourceTree = "<group>"; };
+		82171C1201CC793933FE5A94 /* DepthGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthGuide.swift; sourceTree = "<group>"; };
 		8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuedDerivation.swift; sourceTree = "<group>"; };
 		8BBF290546E6549B3910B141 /* RectangleDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RectangleDetector.swift; sourceTree = "<group>"; };
@@ -214,6 +218,8 @@
 				F88398771DD88DAAD8CA7D8F /* CaptureLibrary.swift */,
 				103EE2A60187EB25A163CA98 /* CaptureStore.swift */,
 				86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */,
+				82171C1201CC793933FE5A94 /* DepthGuide.swift */,
+				394C796B0AA342616ED7AAFC /* FlashPairAlbedo.swift */,
 				519A027C3D145DF71CF7626D /* Info.plist */,
 				FDEF30BB0AA2A1B31F497E54 /* LearnedNormalEstimator.swift */,
 				8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */,
@@ -442,10 +448,12 @@
 				B69C87A99A028790DD468AA1 /* Common.mm in Sources */,
 				0EA5072CD72F4EAF1992577B /* ContinuedDerivation.swift in Sources */,
 				CA78AFBF6846FC75F590B990 /* CropEditorView.swift in Sources */,
+				9FD414858D2BD962C11E59E8 /* DepthGuide.swift in Sources */,
 				09A555B0F9F00ACDF5BDF7F7 /* Export.mm in Sources */,
 				F9B0D5E73D388C6F5EF72D06 /* ExportAPI.mm in Sources */,
 				A5512AB50A2E1C9D71D26F8D /* ExportTargets.swift in Sources */,
 				C67851AB7C86004627FB1855 /* ExportTargetsSheet.swift in Sources */,
+				4E1DC8432FC61457FF1E1CCB /* FlashPairAlbedo.swift in Sources */,
 				0B852323449B9BD488E0065A /* IntentEntities.swift in Sources */,
 				BC70DF399371763442140032 /* LearnedNormalEstimator.swift in Sources */,
 				0161B89001B13F4DFF20D988 /* LibraryView.swift in Sources */,

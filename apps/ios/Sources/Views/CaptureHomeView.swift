@@ -113,6 +113,12 @@ private struct CameraCaptureView: View {
     @State private var cameraMessage: String?
     @State private var preferConstantColor = true
     @State private var supportsProRAW = false
+    @State private var supportsDepth = false
+    @State private var supportsFlashPair = false
+    /// Flash/no-flash albedo where Constant Color is unavailable; remembered.
+    @AppStorage("materialCapture.preferFlashPair") private var preferFlashPair = true
+    /// Embed LiDAR depth for depth-guided geometry; on by default where available, remembered.
+    @AppStorage("materialCapture.preferDepth") private var preferDepth = true
     /// Apple ProRAW for truer albedo (developed neutrally); off by default, remembered.
     @AppStorage("materialCapture.preferProRAW") private var preferProRAW = false
     @State private var flash: FlashSetting = .auto
@@ -177,6 +183,8 @@ private struct CameraCaptureView: View {
                     supportsConstantColor = supported
                     preferConstantColor = supported
                     supportsProRAW = camera.supportsProRAW
+                    supportsDepth = camera.supportsDepth
+                    supportsFlashPair = camera.supportsFlashPair
                     cameraMessage = nil
                 case .failure(let error):
                     isReady = false
@@ -198,6 +206,9 @@ private struct CameraCaptureView: View {
                 }
             }
             camera.onExposure = { reading in exposure = reading }
+            camera.onFlashPairNote = { note in
+                store.errorMessage = String(localized: "The flash pair was not used, so the normal photo was kept. \(note)")
+            }
             camera.start()
             level.start()
         }
@@ -314,6 +325,20 @@ private struct CameraCaptureView: View {
                     .glassEffect(.regular, in: .capsule)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
+                if isReady && supportsDepth {
+                    Button {
+                        preferDepth.toggle()
+                    } label: {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.title3)
+                            .frame(width: 48, height: 48)
+                    }
+                    .glassEffect(preferDepth ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .circle)
+                    .glassEffectID("depth", in: glass)
+                    .accessibilityLabel("LiDAR depth")
+                    .accessibilityValue(preferDepth ? "On" : "Off")
+                    .accessibilityHint("Saves depth with the photo to shape the surface. Constant Color and RAW are not used for depth photos.")
+                }
                 if isReady && supportsProRAW {
                     Button {
                         preferProRAW.toggle()
@@ -328,7 +353,21 @@ private struct CameraCaptureView: View {
                     .accessibilityValue(preferProRAW ? "On" : "Off")
                     .accessibilityHint("Captures RAW and develops it neutrally for truer surface colour. Used when Constant Color is off.")
                 }
-                if isReady {
+                if isReady && supportsFlashPair {
+                    Button {
+                        preferFlashPair.toggle()
+                    } label: {
+                        Image(systemName: preferFlashPair ? "bolt.circle.fill" : "bolt.circle")
+                            .font(.title3)
+                            .frame(width: 48, height: 48)
+                    }
+                    .glassEffect(preferFlashPair ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .circle)
+                    .glassEffectID("flash-pair", in: glass)
+                    .accessibilityLabel("Flash pair")
+                    .accessibilityValue(preferFlashPair ? "On" : "Off")
+                    .accessibilityHint("Takes a photo without and then with the flash and keeps only the flash's light, removing shadows and uneven lighting from the albedo. Hold steady.")
+                }
+                if isReady && !supportsFlashPair {
                     Button {
                         preferConstantColor.toggle()
                     } label: {
@@ -367,8 +406,13 @@ private struct CameraCaptureView: View {
                     ShutterButton(isBusy: isCapturing) {
                         isCapturing = true
                         shutterCount += 1
-                        camera.capture(preferConstantColor: preferConstantColor, flash: flash.captureMode,
-                                       preferProRAW: supportsProRAW && preferProRAW)
+                        if supportsFlashPair && preferFlashPair && !(supportsDepth && preferDepth) {
+                            camera.captureFlashPair()
+                        } else {
+                            camera.capture(preferConstantColor: preferConstantColor, flash: flash.captureMode,
+                                           preferProRAW: supportsProRAW && preferProRAW,
+                                           preferDepth: supportsDepth && preferDepth)
+                        }
                     }
                     .disabled(isCapturing)
                 } else {

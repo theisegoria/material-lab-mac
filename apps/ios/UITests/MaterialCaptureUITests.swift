@@ -5,8 +5,17 @@ final class MaterialCaptureUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// MARKETING_LANG=ja runs the app (and the label lookups below) in Japanese.
+    private var japanese: Bool { ProcessInfo.processInfo.environment["MARKETING_LANG"] == "ja" }
+    private func label(_ english: String) -> String {
+        guard japanese else { return english }
+        return ["Photos": "写真", "Relit": "ライティング", "Tiled": "タイル", "Compare": "比較", "Map": "マップ",
+                "Normal": "ノーマル", "Height": "高さ", "Albedo": "アルベド", "Cancel": "キャンセル", "Done": "完了"][english] ?? english
+    }
+
     private func launchFresh() -> XCUIApplication {
         let app = XCUIApplication()
+        if japanese { app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"] }
         app.launchEnvironment["MATERIAL_CAPTURE_RESET"] = "1"
         app.launch()
         return app
@@ -14,7 +23,7 @@ final class MaterialCaptureUITests: XCTestCase {
 
     /// Picks the most recent photo in the simulator library through the out-of-process PhotosUI picker.
     private func importFirstPhoto(_ app: XCUIApplication) {
-        let photos = app.buttons["Photos"]
+        let photos = app.buttons[label("Photos")]
         XCTAssertTrue(photos.waitForExistence(timeout: 20), "Photos import must remain available without a simulator camera")
         photos.tap()
         let picker = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow.photospicker")
@@ -270,7 +279,7 @@ final class MaterialCaptureUITests: XCTestCase {
             throw XCTSkip("Set MARKETING_DIR to record marketing screenshots")
         }
         let suffix = ProcessInfo.processInfo.environment["MARKETING_SUFFIX"] ?? ""
-        let label = ProcessInfo.processInfo.environment["MARKETING_LABEL"] ?? "Red fireclay brick"
+        let materialName = ProcessInfo.processInfo.environment["MARKETING_LABEL"] ?? (japanese ? "赤い耐火レンガ" : "Red fireclay brick")
         let app = launchFresh()
         func toTop() {
             let scroll = app.scrollViews.firstMatch
@@ -282,14 +291,14 @@ final class MaterialCaptureUITests: XCTestCase {
             let data = XCUIScreen.main.screenshot().pngRepresentation
             try? data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name)\(suffix).png"))
         }
-        XCTAssertTrue(app.buttons["Photos"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons[label("Photos")].waitForExistence(timeout: 20))
         shot("00-capture", top: false)
         importFirstPhoto(app)
         let field = app.textFields["semantic-label"]
         XCTAssertTrue(field.waitForExistence(timeout: 20))
         field.tap()
-        field.typeText(label)
-        app.toolbars.buttons["Done"].firstMatch.tap()
+        field.typeText(materialName)
+        app.toolbars.buttons[label("Done")].firstMatch.tap()
 
         // Material library: Red brick.
         app.buttons["open-recipe"].firstMatch.tap()
@@ -314,21 +323,21 @@ final class MaterialCaptureUITests: XCTestCase {
             let button = app.buttons[title]
             if button.waitForExistence(timeout: 3) { button.tap() }
         }
-        chip("Normal")
+        chip(label("Normal"))
         shot("02-normal")
-        chip("Height")
+        chip(label("Height"))
         shot("03-height")
-        chip("Albedo")
+        chip(label("Albedo"))
         let modes = app.segmentedControls["preview-mode"]
-        modes.buttons["Relit"].tap()
+        modes.buttons[label("Relit")].tap()
         shot("04-relit", settle: 3)
         modes.buttons["3D"].tap()
         shot("05-3d", settle: 6)
-        modes.buttons["Tiled"].tap()
+        modes.buttons[label("Tiled")].tap()
         shot("06-tiled")
-        modes.buttons["Compare"].tap()
+        modes.buttons[label("Compare")].tap()
         shot("07-compare")
-        modes.buttons["Map"].tap()
+        modes.buttons[label("Map")].tap()
 
         // Derive at full resolution, then the export sheet.
         let derive = app.buttons["derive-material"]
@@ -340,7 +349,7 @@ final class MaterialCaptureUITests: XCTestCase {
         export.tap()
         XCTAssertTrue(app.switches["export-target-glb"].waitForExistence(timeout: 10))
         shot("11-export", settle: 2, top: false)
-        app.buttons["Cancel"].firstMatch.tap()
+        app.buttons[label("Cancel")].firstMatch.tap()
         let macTab = app.tabBars.buttons["Mac"]
         XCTAssertTrue(macTab.waitForExistence(timeout: 10))
         macTab.tap()

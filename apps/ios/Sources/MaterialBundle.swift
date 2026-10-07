@@ -210,6 +210,8 @@ struct SourceImage: @unchecked Sendable {
     let constantColorRequested: Bool
     let constantColorCenterConfidence: Double?
     let capturedAt: Date
+    /// Depth embedded in the photo (LiDAR or dual-camera), if any; feeds the depth-geometry option.
+    let depth: DepthCapture?
 
     var size: CGSize { CGSize(width: image.width, height: image.height) }
 
@@ -241,6 +243,7 @@ struct SourceImage: @unchecked Sendable {
             self.constantColorCenterConfidence = nil
         }
         self.capturedAt = capturedAt
+        self.depth = DepthCapture.read(from: data)
     }
 
     struct Decoded {
