@@ -112,6 +112,9 @@ private struct CameraCaptureView: View {
     @State private var supportsConstantColor = false
     @State private var cameraMessage: String?
     @State private var preferConstantColor = true
+    @State private var supportsProRAW = false
+    /// Apple ProRAW for truer albedo (developed neutrally); off by default, remembered.
+    @AppStorage("materialCapture.preferProRAW") private var preferProRAW = false
     @State private var flash: FlashSetting = .auto
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var showFileImporter = false
@@ -173,6 +176,7 @@ private struct CameraCaptureView: View {
                     isReady = true
                     supportsConstantColor = supported
                     preferConstantColor = supported
+                    supportsProRAW = camera.supportsProRAW
                     cameraMessage = nil
                 case .failure(let error):
                     isReady = false
@@ -310,6 +314,20 @@ private struct CameraCaptureView: View {
                     .glassEffect(.regular, in: .capsule)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
+                if isReady && supportsProRAW {
+                    Button {
+                        preferProRAW.toggle()
+                    } label: {
+                        Text("RAW")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 48, height: 48)
+                    }
+                    .glassEffect(preferProRAW ? .regular.tint(.accentColor).interactive() : .regular.interactive(), in: .circle)
+                    .glassEffectID("proraw", in: glass)
+                    .accessibilityLabel("Apple ProRAW")
+                    .accessibilityValue(preferProRAW ? "On" : "Off")
+                    .accessibilityHint("Captures RAW and develops it neutrally for truer surface colour. Used when Constant Color is off.")
+                }
                 if isReady {
                     Button {
                         preferConstantColor.toggle()
@@ -349,7 +367,8 @@ private struct CameraCaptureView: View {
                     ShutterButton(isBusy: isCapturing) {
                         isCapturing = true
                         shutterCount += 1
-                        camera.capture(preferConstantColor: preferConstantColor, flash: flash.captureMode)
+                        camera.capture(preferConstantColor: preferConstantColor, flash: flash.captureMode,
+                                       preferProRAW: supportsProRAW && preferProRAW)
                     }
                     .disabled(isCapturing)
                 } else {

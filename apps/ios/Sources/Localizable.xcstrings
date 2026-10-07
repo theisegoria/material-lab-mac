@@ -265,6 +265,16 @@
         }
       }
     },
+    "Apple ProRAW": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple ProRAW"
+          }
+        }
+      }
+    },
     "Apply": {
       "localizations": {
         "ja": {
@@ -577,6 +587,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "均一に照らされた平らな面を撮影するか写真を読み込むと、このiPhoneでPBRマップを生成できます。"
+          }
+        }
+      }
+    },
+    "Captures RAW and develops it neutrally for truer surface colour. Used when Constant Color is off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAWで撮影し、表面の色をより正確にするためニュートラルに現像します。Constant Colorがオフのときに使われます。"
           }
         }
       }
@@ -2461,6 +2481,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "キルト"
+          }
+        }
+      }
+    },
+    "RAW": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RAW"
           }
         }
       }

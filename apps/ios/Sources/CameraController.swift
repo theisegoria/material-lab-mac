@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import CoreVideo
 import Foundation
 import ImageIO
@@ -111,6 +112,8 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
     var onReady: ((Result<Bool, Error>) -> Void)?
     var onExposure: ((ExposureReading) -> Void)?
+    /// Whether this camera can capture Apple ProRAW (set once the session is configured; read on the main queue).
+    private(set) var supportsProRAW = false
 
     private let queue = DispatchQueue(label: "io.materiallab.capture.camera", qos: .userInitiated)
     private let videoQueue = DispatchQueue(label: "io.materiallab.capture.video", qos: .utility)
@@ -129,6 +132,8 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
     }
     private var inFlight: [Int64: InFlight] = [:]
     private var requested: [Int64: Bool] = [:]
+    /// Requests that asked for ProRAW: their RAW photo becomes the primary image.
+    private var rawRequests: Set<Int64> = []
 
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
@@ -142,7 +147,11 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
                     try self.configureIfNeeded()
                     if !self.session.isRunning { self.session.startRunning() }
                     let supportsConstantColor = self.photoOutput.isConstantColorSupported
-                    DispatchQueue.main.async { self.onReady?(.success(supportsConstantColor)) }
+                    let supportsProRAW = self.photoOutput.isAppleProRAWEnabled
+                    DispatchQueue.main.async {
+                        self.supportsProRAW = supportsProRAW
+                        self.onReady?(.success(supportsConstantColor))
+                    }
                 } catch {
                     DispatchQueue.main.async { self.onReady?(.failure(error)) }
                 }
@@ -154,14 +163,26 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         queue.async { [weak self] in self?.session.stopRunning() }
     }
 
-    func capture(preferConstantColor: Bool, flash: AVCaptureDevice.FlashMode) {
+    /// `preferProRAW` captures Apple ProRAW plus a processed photo (when supported and Constant Color is not in use);
+    /// the RAW is developed neutrally into the primary image and the processed photo is kept as the fallback.
+    func capture(preferConstantColor: Bool, flash: AVCaptureDevice.FlashMode, preferProRAW: Bool = false) {
         queue.async {
             guard self.session.isRunning else {
                 DispatchQueue.main.async { self.onCapture?(.failure(CaptureError.cameraNotReady)) }
                 return
             }
             let constantColor = preferConstantColor && self.photoOutput.isConstantColorSupported
-            let settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            let rawFormat = self.photoOutput.availableRawPhotoPixelFormatTypes.first {
+                AVCapturePhotoOutput.isAppleProRAWPixelFormat($0)
+            }
+            let settings: AVCapturePhotoSettings
+            if preferProRAW, !constantColor, self.photoOutput.isAppleProRAWEnabled, let rawFormat {
+                settings = AVCapturePhotoSettings(rawPixelFormatType: rawFormat,
+                                                  processedFormat: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                self.rawRequests.insert(settings.uniqueID)
+            } else {
+                settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            }
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
             settings.photoQualityPrioritization = self.photoOutput.maxPhotoQualityPrioritization
             let supportedFlash = self.photoOutput.supportedFlashModes
@@ -214,6 +235,9 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         if photoOutput.isConstantColorSupported {
             photoOutput.isConstantColorEnabled = true
         }
+        if photoOutput.isAppleProRAWSupported {
+            photoOutput.isAppleProRAWEnabled = true
+        }
         session.commitConfiguration()
     }
 
@@ -221,8 +245,11 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         let id = photo.resolvedSettings.uniqueID
-        let data = error == nil ? photo.fileDataRepresentation() : nil
-        let isFallback = photo.isConstantColorFallbackPhoto
+        var data = error == nil ? photo.fileDataRepresentation() : nil
+        let isRaw = photo.isRawPhoto
+        if isRaw, let dng = data { data = Self.developProRAW(dng) }
+        // In a ProRAW request the processed photo is kept as the fallback.
+        let isFallback = photo.isConstantColorFallbackPhoto || (!isRaw && rawRequestsContains(id))
         let center = photo.constantColorCenterWeightedMeanConfidenceLevel
         let confidence = isFallback ? nil : photo.constantColorConfidenceMap.flatMap(Self.copyConfidence)
         queue.async {
@@ -248,6 +275,7 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         queue.async {
             let state = self.inFlight.removeValue(forKey: id)
             let constantColor = self.requested.removeValue(forKey: id) ?? false
+            self.rawRequests.remove(id)
             let result: Result<CameraCapture, Error>
             if let primary = state?.primaryData {
                 // A usable primary photo wins over a failed fallback delivery.
@@ -261,6 +289,21 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
             }
             DispatchQueue.main.async { self.onCapture?(result) }
         }
+    }
+
+    private func rawRequestsContains(_ id: Int64) -> Bool { queue.sync { rawRequests.contains(id) } }
+
+    /// Develops an Apple ProRAW DNG neutrally for albedo: no tone boost, local tone mapping, sharpening or noise
+    /// reduction, so surface colour stays as close to linear-scene as an 8-bit sRGB image allows.
+    static func developProRAW(_ dng: Data) -> Data? {
+        guard let filter = CIRAWFilter(imageData: dng, identifierHint: nil) else { return nil }
+        filter.boostAmount = 0
+        filter.localToneMapAmount = 0
+        filter.sharpnessAmount = 0
+        filter.luminanceNoiseReductionAmount = 0
+        filter.extendedDynamicRangeAmount = 0
+        guard let image = filter.outputImage, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        return CIContext().pngRepresentation(of: image, format: .RGBA8, colorSpace: space)
     }
 
     // MARK: Exposure guidance
