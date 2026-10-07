@@ -11,7 +11,9 @@ dist="$repo_root/build/dist"
 model="$repo_root/third_party/moge/build/MoGe2Normals.mlpackage"
 [[ -e "$model" ]] || echo "warning: no learned model at $model; the app will need one imported" >&2
 
-rm -rf "$build" "$dist" && mkdir -p "$dist"
+# Remove only this script's outputs: build/dist also holds the CLI archives.
+rm -rf "$build" "$dist/staging" "$dist/MaterialLab-$version-macOS.dmg" "$dist/MaterialLab-$version-macOS.dmg.sha256"
+mkdir -p "$dist"
 (cd "$repo_root/apps/macos" && xcodegen generate -q)
 # The Xcode build compiles the model into Contents/Resources/Models when it exists.
 xcodebuild -project "$repo_root/apps/macos/MaterialLab.xcodeproj" -scheme MaterialLab -configuration Release \
