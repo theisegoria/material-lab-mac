@@ -7,7 +7,8 @@ enum PreviewShape: String, CaseIterable, Identifiable {
     case sphere, cube, plane
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .sphere: "Sphere"
         case .cube: "Rounded cube"

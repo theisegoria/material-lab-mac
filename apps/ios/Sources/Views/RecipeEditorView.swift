@@ -65,7 +65,7 @@ struct RecipeEditorView: View {
                 AuthoredMapsSection(store: store)
 
                 Section {
-                    RecipeSlider(title: "Height", symbol: "mountain.2", value: $store.recipe.heightStrength,
+                    RecipeSlider(title: String(localized: "Height"), symbol: "mountain.2", value: $store.recipe.heightStrength,
                                  range: MaterialRecipe.heightStrengthRange, step: 0.01, baseline: store.baselineRecipe.heightStrength)
                     Picker(selection: $store.recipe.heightPolarity) {
                         Text("Raised").tag(Int32(1))
@@ -73,7 +73,7 @@ struct RecipeEditorView: View {
                     } label: {
                         Label("Bright features", systemImage: "circle.lefthalf.filled.inverse")
                     }
-                    RecipeSlider(title: "Normal strength", symbol: "cube.transparent",
+                    RecipeSlider(title: String(localized: "Normal strength"), symbol: "cube.transparent",
                                  value: $store.recipe.normalStrength,
                                  range: MaterialRecipe.normalStrengthRange, step: 0.1, format: "%.1f×", baseline: store.baselineRecipe.normalStrength)
                     Toggle(isOn: $store.recipe.bentNormal) {
@@ -91,9 +91,9 @@ struct RecipeEditorView: View {
                 }
 
                 Section("Surface") {
-                    RecipeSlider(title: "Roughness", symbol: "circle.dotted", value: $store.recipe.roughnessBase,
+                    RecipeSlider(title: String(localized: "Roughness"), symbol: "circle.dotted", value: $store.recipe.roughnessBase,
                                  range: 0...1, step: 0.01, baseline: store.baselineRecipe.roughnessBase)
-                    RecipeSlider(title: "Roughness variation", symbol: "waveform.path",
+                    RecipeSlider(title: String(localized: "Roughness variation"), symbol: "waveform.path",
                                  value: $store.recipe.roughnessVariation,
                                  range: MaterialRecipe.roughnessVariationRange, step: 0.01, baseline: store.baselineRecipe.roughnessVariation)
                     Toggle(isOn: Binding(get: { store.recipe.assignedMetalness != nil },
@@ -101,7 +101,7 @@ struct RecipeEditorView: View {
                         Label("Assign metalness (ORM)", systemImage: "square.stack.3d.up")
                     }
                     if store.recipe.assignedMetalness != nil {
-                        RecipeSlider(title: "Metalness", symbol: "gearshape",
+                        RecipeSlider(title: String(localized: "Metalness"), symbol: "gearshape",
                                      value: Binding(get: { store.recipe.assignedMetalness ?? 0 },
                                                     set: { store.recipe.assignedMetalness = $0 }),
                                      range: 0...1, step: 0.01)
@@ -109,13 +109,13 @@ struct RecipeEditorView: View {
                 }
 
                 Section {
-                    RecipeSlider(title: "Remove lighting", symbol: "sun.max.trianglebadge.exclamationmark",
+                    RecipeSlider(title: String(localized: "Remove lighting"), symbol: "sun.max.trianglebadge.exclamationmark",
                                  value: $store.recipe.albedoEqualize,
                                  range: MaterialRecipe.albedoEqualizeRange, step: 0.01, format: "%.0f%%", percent: true, baseline: store.baselineRecipe.albedoEqualize)
-                    RecipeSlider(title: "AO strength", symbol: "circle.lefthalf.filled",
+                    RecipeSlider(title: String(localized: "AO strength"), symbol: "circle.lefthalf.filled",
                                  value: $store.recipe.aoStrength,
                                  range: MaterialRecipe.aoStrengthRange, step: 0.05, format: "%.2f×", baseline: store.baselineRecipe.aoStrength)
-                    RecipeSlider(title: "AO radius", symbol: "circle.dashed",
+                    RecipeSlider(title: String(localized: "AO radius"), symbol: "circle.dashed",
                                  value: $store.recipe.aoRadiusPixels,
                                  range: MaterialRecipe.aoRadiusRange, step: 1, format: "%.0f px", baseline: store.baselineRecipe.aoRadiusPixels)
                     VStack(alignment: .leading, spacing: 6) {
@@ -284,7 +284,7 @@ struct LearnedGeometryRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            RecipeSlider(title: "Learned geometry", symbol: "sparkles",
+            RecipeSlider(title: String(localized: "Learned geometry"), symbol: "sparkles",
                          value: $store.recipe.guideNormalWeight, range: 0...1, step: 0.05,
                          format: "%.0f%%", percent: true, baseline: store.baselineRecipe.guideNormalWeight)
                 .disabled(!available)

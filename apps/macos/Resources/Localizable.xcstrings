@@ -1,0 +1,4597 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "": {
+      "shouldTranslate": false
+    },
+    "%@": {
+      "shouldTranslate": false
+    },
+    "%@ View": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@表示"
+          }
+        }
+      }
+    },
+    "%@ histogram": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のヒストグラム"
+          }
+        }
+      }
+    },
+    "%@ view": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@表示"
+          }
+        }
+      }
+    },
+    "%@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ · %2$@"
+          }
+        }
+      },
+      "shouldTranslate": false
+    },
+    "%@ · passed size, hash, image and privacy checks": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · サイズ、ハッシュ、画像、プライバシーの検査に合格"
+          }
+        }
+      }
+    },
+    "%@, %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@, %2$@"
+          }
+        }
+      },
+      "shouldTranslate": false
+    },
+    "%@: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@: %2$@"
+          }
+        }
+      },
+      "shouldTranslate": false
+    },
+    "%@×": {
+      "shouldTranslate": false
+    },
+    "%lld": {
+      "shouldTranslate": false
+    },
+    "%lld capture%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld capture%2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件のキャプチャ%@"
+          }
+        }
+      }
+    },
+    "%lld exported · %lld failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld exported · %2$lld failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件書き出し · %lld件失敗"
+          }
+        }
+      }
+    },
+    "%lld percent source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソース %lld%%"
+          }
+        }
+      }
+    },
+    "%lld%%": {
+      "shouldTranslate": false
+    },
+    "%lld. %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld. %2$@"
+          }
+        }
+      },
+      "shouldTranslate": false
+    },
+    "%lld×": {
+      "shouldTranslate": false
+    },
+    "3D": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3D"
+          }
+        }
+      }
+    },
+    "3D tools": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3Dツール"
+          }
+        }
+      }
+    },
+    "A 16-bit grayscale height map replaces the estimate.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "16ビットのグレースケール高さマップが推定値の代わりに使われます。"
+          }
+        }
+      }
+    },
+    "A material sets the relief prior plus tuned relief, roughness and AO. Flat is the safe default for painted or unknown surfaces.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを選ぶと、レリーフ事前設定と、調整済みのレリーフ・ラフネス・AOが設定されます。塗装面や不明な表面には「フラット」が安全な既定値です。"
+          }
+        }
+      }
+    },
+    "A new Mac identity is created. Every paired iPhone must scan a new code.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいMac IDが作成されます。ペアリング済みのすべてのiPhoneで新しいコードを読み取る必要があります。"
+          }
+        }
+      }
+    },
+    "A resource pack with LabPBR colour, _n and _s textures for shader packs.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェーダーパック向けに、LabPBRのカラー、_n、_sテクスチャを含むリソースパック。"
+          }
+        }
+      }
+    },
+    "A standard_surface .mtlx with its textures: Houdini, Maya, Blender, USD, Omniverse.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テクスチャ付きのstandard_surface .mtlx：Houdini、Maya、Blender、USD、Omniverse。"
+          }
+        }
+      }
+    },
+    "A starting recipe such as Red brick or Brushed steel.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「赤レンガ」や「ヘアライン仕上げの鋼」などの開始レシピ。"
+          }
+        }
+      }
+    },
+    "A textured plane with base colour, normal and ORM: three.js, Babylon, Blender, most engines.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベースカラー、ノーマル、ORMを貼った平面：three.js、Babylon、Blender、ほとんどのエンジン。"
+          }
+        }
+      }
+    },
+    "AO": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AO"
+          }
+        }
+      }
+    },
+    "AO depth": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AOの深さ"
+          }
+        }
+      }
+    },
+    "AO radius": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AOの半径"
+          }
+        }
+      }
+    },
+    "About Material Lab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Material Labについて"
+          }
+        }
+      }
+    },
+    "Advanced": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        }
+      }
+    },
+    "Albedo": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベド"
+          }
+        }
+      }
+    },
+    "Albedo repair": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベド修復"
+          }
+        }
+      }
+    },
+    "Albedo repair, %@: seam %@ before, %@ after": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Albedo repair, %1$@: seam %2$@ before, %3$@ after"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベド修復（%@）：継ぎ目 修復前 %@、修復後 %@"
+          }
+        }
+      }
+    },
+    "Albedo, Normal, ORM and Height for ORMMaterial3D.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ORMMaterial3D用のアルベド、ノーマル、ORM、高さ。"
+          }
+        }
+      }
+    },
+    "All (Neural Engine, GPU, CPU)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて（Neural Engine、GPU、CPU）"
+          }
+        }
+      }
+    },
+    "Always on while Repair albedo is on: a repaired albedo tiles.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「アルベドを修復」がオンの間は常にオンです。修復したアルベドはタイル化できます。"
+          }
+        }
+      }
+    },
+    "Ambient occlusion": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アンビエントオクルージョン"
+          }
+        }
+      }
+    },
+    "Ambient occlusion from the height field.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さフィールドから求めたアンビエントオクルージョン。"
+          }
+        }
+      }
+    },
+    "Amplitude of the estimated relief.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推定レリーフの振幅。"
+          }
+        }
+      }
+    },
+    "An artist decision, never inferred from color.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーティストが決める値で、色から推定することはありません。"
+          }
+        }
+      }
+    },
+    "Apply": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "適用"
+          }
+        }
+      }
+    },
+    "Apply a recipe you saved, or save this one to reuse on other sources": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存したレシピを適用するか、このレシピを保存して他のソースで再利用します"
+          }
+        }
+      }
+    },
+    "Apply “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を適用"
+          }
+        }
+      }
+    },
+    "Approve & Import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認して読み込む"
+          }
+        }
+      }
+    },
+    "Asphalt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アスファルト"
+          }
+        }
+      }
+    },
+    "Asphalt shingles": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アスファルトシングル"
+          }
+        }
+      }
+    },
+    "Assign metalness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メタルネスを指定"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
+          }
+        }
+      }
+    },
+    "Average unoccluded direction.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遮られていない方向の平均。"
+          }
+        }
+      }
+    },
+    "Back": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        }
+      }
+    },
+    "Back to the single map view": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単一マップ表示に戻る"
+          }
+        }
+      }
+    },
+    "Band per edge used by the repair, as a fraction of the image. 0 uses the default 0.12.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修復に使う各辺の帯の幅（画像に対する割合）。0の場合は既定値0.12を使います。"
+          }
+        }
+      }
+    },
+    "Bare metal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無垢の金属"
+          }
+        }
+      }
+    },
+    "Base Color, Normal, Mask Map (metallic, occlusion, detail, smoothness) and Height.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベースカラー、ノーマル、マスクマップ（メタリック、オクルージョン、ディテール、スムースネス）、高さ。"
+          }
+        }
+      }
+    },
+    "Base Map, Normal, Metallic with smoothness in alpha, Occlusion and Height.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベースマップ、ノーマル、アルファにスムースネスを含むメタリック、オクルージョン、高さ。"
+          }
+        }
+      }
+    },
+    "Base color with lighting optionally flattened.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティングを必要に応じて平坦化したベースカラー。"
+          }
+        }
+      }
+    },
+    "BaseColor, DirectX Normal, packed ORM and Height textures.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "BaseColor、DirectXノーマル、パックしたORM、高さのテクスチャ。"
+          }
+        }
+      }
+    },
+    "Basic": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基本"
+          }
+        }
+      }
+    },
+    "Basic shows the controls most materials need; Advanced shows every parameter.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「基本」はほとんどのマテリアルに必要な項目を、「詳細」はすべてのパラメータを表示します。"
+          }
+        }
+      }
+    },
+    "Batch Export %lld Sources…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件のソースを一括書き出し…"
+          }
+        }
+      }
+    },
+    "Batch Export 1 Source…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1件のソースを一括書き出し…"
+          }
+        }
+      }
+    },
+    "Batch Export Eligible Sources…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対象のソースを一括書き出し…"
+          }
+        }
+      }
+    },
+    "Batch Queue": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一括処理キュー"
+          }
+        }
+      }
+    },
+    "Before and after comparison": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理前と処理後の比較"
+          }
+        }
+      }
+    },
+    "Bent Normal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベントノーマル"
+          }
+        }
+      }
+    },
+    "Bent normal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベントノーマル"
+          }
+        }
+      }
+    },
+    "Bent normal map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベントノーマルマップ"
+          }
+        }
+      }
+    },
+    "Blend": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブレンド"
+          }
+        }
+      }
+    },
+    "Blender": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blender"
+          }
+        }
+      }
+    },
+    "Bright details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明るい部分"
+          }
+        }
+      }
+    },
+    "Bring your own artwork: anything you add replaces the estimate, and the bundle records it as authored.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自作のアートワークを使えます。追加したものは推定値の代わりに使われ、バンドルには作成者提供として記録されます。"
+          }
+        }
+      }
+    },
+    "Brushed steel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘアライン仕上げの鋼"
+          }
+        }
+      }
+    },
+    "CPU only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CPUのみ"
+          }
+        }
+      }
+    },
+    "Camera Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラ受信箱"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル"
+          }
+        }
+      }
+    },
+    "Cancelled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンセル済み"
+          }
+        }
+      }
+    },
+    "Canvas": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンバス"
+          }
+        }
+      }
+    },
+    "Canvas view": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャンバス表示"
+          }
+        }
+      }
+    },
+    "Capture File…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャファイル…"
+          }
+        }
+      }
+    },
+    "Captures are checksum-verified on arrival. Camera albedo and derived maps remain estimates until reviewed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信したキャプチャはチェックサムで検証されます。カメラのアルベドと生成されたマップは、確認するまで推定値として扱われます。"
+          }
+        }
+      }
+    },
+    "Cardboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "段ボール"
+          }
+        }
+      }
+    },
+    "Carpet": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カーペット"
+          }
+        }
+      }
+    },
+    "Catalog…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カタログ…"
+          }
+        }
+      }
+    },
+    "Category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリ"
+          }
+        }
+      }
+    },
+    "Cavity": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャビティ"
+          }
+        }
+      }
+    },
+    "Changed from the material's defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルの既定値から変更されています"
+          }
+        }
+      }
+    },
+    "Choose Material › Batch Export Eligible Sources to queue every reviewed source with the current recipe.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「マテリアル」›「対象のソースを一括書き出し」を選ぶと、確認済みのすべてのソースを現在のレシピでキューに追加します。"
+          }
+        }
+      }
+    },
+    "Choose MoGe2Normals.mlpackage (or a compiled .mlmodelc). It is compiled once and kept in ~/Library/Application Support/Material Lab/Models.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoGe2Normals.mlpackage（またはコンパイル済みの.mlmodelc）を選択してください。一度だけコンパイルされ、~/Library/Application Support/Material Lab/Models に保存されます。"
+          }
+        }
+      }
+    },
+    "Choose a material and tune": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを選んで調整"
+          }
+        }
+      }
+    },
+    "Choose glTF, USDZ, Unreal, Unity, Godot and more alongside the bundle.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルと一緒にglTF、USDZ、Unreal、Unity、Godotなどを選べます。"
+          }
+        }
+      }
+    },
+    "Choose…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択…"
+          }
+        }
+      }
+    },
+    "Cinder block": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンクリートブロック"
+          }
+        }
+      }
+    },
+    "Coated metal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "塗装された金属"
+          }
+        }
+      }
+    },
+    "Cobblestones": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "石畳"
+          }
+        }
+      }
+    },
+    "Compare": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比較"
+          }
+        }
+      }
+    },
+    "Compare with": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比較対象"
+          }
+        }
+      }
+    },
+    "Compare with the source photo, the relit view, or a pinned earlier version of this recipe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の写真、ライティング表示、またはこのレシピのピン留めした以前のバージョンと比較します"
+          }
+        }
+      }
+    },
+    "Compute units": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演算ユニット"
+          }
+        }
+      }
+    },
+    "Concrete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンクリート"
+          }
+        }
+      }
+    },
+    "Concrete & plaster": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンクリートと漆喰"
+          }
+        }
+      }
+    },
+    "Connecting securely…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全に接続中…"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続ける"
+          }
+        }
+      }
+    },
+    "Contract": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "契約"
+          }
+        }
+      }
+    },
+    "Controls": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コントロール"
+          }
+        }
+      }
+    },
+    "Convexity": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "凸部"
+          }
+        }
+      }
+    },
+    "Copper": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "銅"
+          }
+        }
+      }
+    },
+    "Copy Code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードをコピー"
+          }
+        }
+      }
+    },
+    "Copy the exact QR payload for simulator or accessibility pairing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シミュレータやアクセシビリティでのペアリング用に、QRの内容をそのままコピーします。"
+          }
+        }
+      }
+    },
+    "Creates a new Mac identity; paired iPhones must pair again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいMac IDを作成します。ペアリング済みのiPhoneは再度ペアリングが必要です。"
+          }
+        }
+      }
+    },
+    "Cube": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立方体"
+          }
+        }
+      }
+    },
+    "Cuts a copy in along the lowest-difference seam. Keeps features crisp.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差が最も小さい継ぎ目に沿ってコピーをはめ込みます。細部がくっきり残ります。"
+          }
+        }
+      }
+    },
+    "Cuts along the lowest-difference seam. Best for brick, tiles, planks and most photos.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差が最も小さい継ぎ目に沿って切り替えます。レンガ、タイル、板材、ほとんどの写真に最適です。"
+          }
+        }
+      }
+    },
+    "Decline": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        }
+      }
+    },
+    "Delete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        }
+      }
+    },
+    "Delivered": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信済み"
+          }
+        }
+      }
+    },
+    "Denim": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デニム"
+          }
+        }
+      }
+    },
+    "Derive": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成"
+          }
+        }
+      }
+    },
+    "Derive Maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップを生成"
+          }
+        }
+      }
+    },
+    "Derive Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを生成"
+          }
+        }
+      }
+    },
+    "Derive PBR Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PBRマテリアルを生成"
+          }
+        }
+      }
+    },
+    "Derive a material from ${photo}": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${photo}からマテリアルを生成"
+          }
+        }
+      }
+    },
+    "Derive maps now (⌘R)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐマップを生成（⌘R）"
+          }
+        }
+      }
+    },
+    "Deriving…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成中…"
+          }
+        }
+      }
+    },
+    "Describe the material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを説明"
+          }
+        }
+      }
+    },
+    "Device Link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスリンク"
+          }
+        }
+      }
+    },
+    "Diamond plate": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縞鋼板"
+          }
+        }
+      }
+    },
+    "DirectX (−Y)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DirectX（−Y）"
+          }
+        }
+      }
+    },
+    "DirectX normal map (green down)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DirectXノーマルマップ（緑が下向き）"
+          }
+        }
+      }
+    },
+    "Direction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方向"
+          }
+        }
+      }
+    },
+    "Drop files to import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルをドロップして読み込む"
+          }
+        }
+      }
+    },
+    "Drop in a straight-on photo of a surface (or a hand-painted albedo), or receive a capture from Material Capture on your iPhone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表面を正面から撮った写真（または手描きのアルベド）をドロップするか、iPhoneのMaterial Captureからキャプチャを受信します。"
+          }
+        }
+      }
+    },
+    "Drop photos or textures onto this window, or import them to derive a full PBR material.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真やテクスチャをこのウインドウにドロップするか読み込むと、完全なPBRマテリアルを生成できます。"
+          }
+        }
+      }
+    },
+    "Drop to Import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドロップして読み込む"
+          }
+        }
+      }
+    },
+    "Edge": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エッジ"
+          }
+        }
+      }
+    },
+    "Edge wear mask.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エッジの摩耗マスク。"
+          }
+        }
+      }
+    },
+    "Edit Labels…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラベルを編集…"
+          }
+        }
+      }
+    },
+    "Estimated relief, 16-bit.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推定したレリーフ（16ビット）。"
+          }
+        }
+      }
+    },
+    "Expires at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効期限 %@"
+          }
+        }
+      }
+    },
+    "Export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し"
+          }
+        }
+      }
+    },
+    "Export Bundle + %lld…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドル＋%lld件を書き出す…"
+          }
+        }
+      }
+    },
+    "Export Bundle…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルを書き出す…"
+          }
+        }
+      }
+    },
+    "Export Format": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し形式"
+          }
+        }
+      }
+    },
+    "Export Formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し形式"
+          }
+        }
+      }
+    },
+    "Export Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを書き出す"
+          }
+        }
+      }
+    },
+    "Export Material…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを書き出す…"
+          }
+        }
+      }
+    },
+    "Export anywhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どこへでも書き出し"
+          }
+        }
+      }
+    },
+    "Export for your engine": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用するエンジン向けに書き出す"
+          }
+        }
+      }
+    },
+    "Exported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し済み"
+          }
+        }
+      }
+    },
+    "Fabric": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "布"
+          }
+        }
+      }
+    },
+    "Fabric / soft": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "布／柔らかい素材"
+          }
+        }
+      }
+    },
+    "Fit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体表示"
+          }
+        }
+      }
+    },
+    "Flat / painted": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フラット／塗装"
+          }
+        }
+      }
+    },
+    "Flattens low-frequency shading in the albedo (delighting).": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドの低周波の陰影を平坦化します（デライティング）。"
+          }
+        }
+      }
+    },
+    "Galvanized steel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "亜鉛めっき鋼"
+          }
+        }
+      }
+    },
+    "Game engines": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゲームエンジン"
+          }
+        }
+      }
+    },
+    "Get Started": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "はじめる"
+          }
+        }
+      }
+    },
+    "Glazed ceramic tile": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "釉薬仕上げのタイル"
+          }
+        }
+      }
+    },
+    "Godot": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Godot"
+          }
+        }
+      }
+    },
+    "Grass": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "芝生"
+          }
+        }
+      }
+    },
+    "Gravel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "砂利"
+          }
+        }
+      }
+    },
+    "Grayscale ambient occlusion: white is open.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのアンビエントオクルージョン：白は遮蔽なし。"
+          }
+        }
+      }
+    },
+    "Grayscale height (white is high). 16-bit keeps full precision.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールの高さ（白が高い）。16ビットなら精度をすべて保てます。"
+          }
+        }
+      }
+    },
+    "Grayscale mask: black flattens inferred relief, white keeps it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのマスク：黒は推定レリーフを平らにし、白は残します。"
+          }
+        }
+      }
+    },
+    "Grayscale mask: black flattens the estimated relief, white keeps it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのマスク：黒は推定レリーフを平らにし、白は残します。"
+          }
+        }
+      }
+    },
+    "Grayscale metalness: white is metal.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのメタルネス：白が金属。"
+          }
+        }
+      }
+    },
+    "Grayscale roughness: white is rough.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのラフネス：白が粗い。"
+          }
+        }
+      }
+    },
+    "Ground": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地面"
+          }
+        }
+      }
+    },
+    "Guide normals from the learned estimator (+Y). For inspection; not exported.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習推定器のガイドノーマル（+Y）。確認用で、書き出されません。"
+          }
+        }
+      }
+    },
+    "Hand-made albedo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手描きのアルベド"
+          }
+        }
+      }
+    },
+    "Height": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さ"
+          }
+        }
+      }
+    },
+    "Height map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さマップ"
+          }
+        }
+      }
+    },
+    "Height strength": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さの強さ"
+          }
+        }
+      }
+    },
+    "Hide Before/After": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理前／処理後を隠す"
+          }
+        }
+      }
+    },
+    "Hide recipe inspector": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピインスペクタを隠す"
+          }
+        }
+      }
+    },
+    "Histogram of the %@ map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@マップのヒストグラム"
+          }
+        }
+      }
+    },
+    "Histogram-preserving cross-fade. Best for fine noise and grain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒストグラムを保つクロスフェード。細かなノイズや粒状の素材に最適です。"
+          }
+        }
+      }
+    },
+    "Histogram-preserving cross-fade. Best for fine noise, sand and grain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒストグラムを保つクロスフェード。細かなノイズ、砂、粒状の素材に最適です。"
+          }
+        }
+      }
+    },
+    "Horizon search radius in source pixels.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソース画像のピクセル単位での水平線探索半径。"
+          }
+        }
+      }
+    },
+    "How many times the material repeats across the shape": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "形状全体でマテリアルを繰り返す回数"
+          }
+        }
+      }
+    },
+    "Images become sources · .pbrcapture files go to the Camera Inbox": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像はソースになり、.pbrcaptureファイルはカメラ受信箱に入ります"
+          }
+        }
+      }
+    },
+    "Images…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像…"
+          }
+        }
+      }
+    },
+    "Import": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込む"
+          }
+        }
+      }
+    },
+    "Import Capture…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャを読み込む…"
+          }
+        }
+      }
+    },
+    "Import Catalog…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カタログを読み込む…"
+          }
+        }
+      }
+    },
+    "Import Images…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像を読み込む…"
+          }
+        }
+      }
+    },
+    "Import a photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を読み込む"
+          }
+        }
+      }
+    },
+    "Import images, captures or a catalog": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像、キャプチャ、カタログを読み込む"
+          }
+        }
+      }
+    },
+    "Import or drop images to start.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像を読み込むかドロップして始めましょう。"
+          }
+        }
+      }
+    },
+    "Include unreviewed in batch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未確認のものも一括処理に含める"
+          }
+        }
+      }
+    },
+    "Incoming capture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信中のキャプチャ"
+          }
+        }
+      }
+    },
+    "Install the MoGe-2 normal model to read mortar, grout and seams as recessed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoGe-2ノーマルモデルをインストールすると、モルタル、目地、継ぎ目を凹みとして扱えます。"
+          }
+        }
+      }
+    },
+    "Installing the learned model…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習モデルをインストール中…"
+          }
+        }
+      }
+    },
+    "Interactive 3D preview of the material on a %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に適用したマテリアルのインタラクティブな3Dプレビュー"
+          }
+        }
+      }
+    },
+    "Interchange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "汎用形式"
+          }
+        }
+      }
+    },
+    "Last estimate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近の推定"
+          }
+        }
+      }
+    },
+    "Later": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "後で"
+          }
+        }
+      }
+    },
+    "Learned": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習"
+          }
+        }
+      }
+    },
+    "Learned Geometry": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習ジオメトリ"
+          }
+        }
+      }
+    },
+    "Learned geometry": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習ジオメトリ"
+          }
+        }
+      }
+    },
+    "Learned normals": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習ノーマル"
+          }
+        }
+      }
+    },
+    "Leather": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "革"
+          }
+        }
+      }
+    },
+    "Library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリ"
+          }
+        }
+      }
+    },
+    "Licences": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス"
+          }
+        }
+      }
+    },
+    "Light direction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライトの方向"
+          }
+        }
+      }
+    },
+    "Light elevation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライトの高さ"
+          }
+        }
+      }
+    },
+    "Lighting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティング"
+          }
+        }
+      }
+    },
+    "Lighting & Tiling": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティングとタイリング"
+          }
+        }
+      }
+    },
+    "Lighting environment": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティング環境"
+          }
+        }
+      }
+    },
+    "Listening on the local network": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルネットワークで待機中"
+          }
+        }
+      }
+    },
+    "Live Update": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブ更新"
+          }
+        }
+      }
+    },
+    "Live update": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブ更新"
+          }
+        }
+      }
+    },
+    "Loading source…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソースを読み込み中…"
+          }
+        }
+      }
+    },
+    "Local steepness.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局所的な傾き。"
+          }
+        }
+      }
+    },
+    "Mac certificate SHA-256": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac証明書のSHA-256"
+          }
+        }
+      }
+    },
+    "Make tileable": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイル化"
+          }
+        }
+      }
+    },
+    "Map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップ"
+          }
+        }
+      }
+    },
+    "Maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップ"
+          }
+        }
+      }
+    },
+    "Maps named for Substance 3D Painter and Designer.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Substance 3D PainterとDesigner用の名前を付けたマップ。"
+          }
+        }
+      }
+    },
+    "Masonry": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "組積"
+          }
+        }
+      }
+    },
+    "Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアル"
+          }
+        }
+      }
+    },
+    "Material Lab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Material Lab"
+          }
+        }
+      }
+    },
+    "Material Lab includes this model. A model you install takes precedence and is kept in ~/Library/Application Support/Material Lab/Models.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Material Labにはこのモデルが含まれています。インストールしたモデルが優先され、~/Library/Application Support/Material Lab/Models に保存されます。"
+          }
+        }
+      }
+    },
+    "Material recipe inspector": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルレシピインスペクタ"
+          }
+        }
+      }
+    },
+    "Material sources": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルのソース"
+          }
+        }
+      }
+    },
+    "MaterialX": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MaterialX"
+          }
+        }
+      }
+    },
+    "Matte floor tile": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マットな床タイル"
+          }
+        }
+      }
+    },
+    "Mean opposite-edge difference: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対辺の平均差：%@"
+          }
+        }
+      }
+    },
+    "Metal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金属"
+          }
+        }
+      }
+    },
+    "Metalness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メタルネス"
+          }
+        }
+      }
+    },
+    "Metalness map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メタルネスマップ"
+          }
+        }
+      }
+    },
+    "Method": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方式"
+          }
+        }
+      }
+    },
+    "Microsurface scattering, 0 glossy to 1 matte.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "微細表面の散乱。0が光沢、1がつや消し。"
+          }
+        }
+      }
+    },
+    "Minecraft (LabPBR)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minecraft（LabPBR）"
+          }
+        }
+      }
+    },
+    "MoGe commit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoGeのコミット"
+          }
+        }
+      }
+    },
+    "MoGe-2 Learned Normals": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoGe-2 学習ノーマル"
+          }
+        }
+      }
+    },
+    "Model": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデル"
+          }
+        }
+      }
+    },
+    "Model status: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルの状態：%@"
+          }
+        }
+      }
+    },
+    "Modified": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更あり"
+          }
+        }
+      }
+    },
+    "Monocular geometry that reads recesses a luminance heuristic gets wrong.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輝度による推定では誤りやすい凹みを読み取る単眼ジオメトリ推定です。"
+          }
+        }
+      }
+    },
+    "Moss": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "苔"
+          }
+        }
+      }
+    },
+    "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接空間ノーマルの勾配に掛ける値。1で変化なし。最大16まで入力できます。"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前"
+          }
+        }
+      }
+    },
+    "Name, e.g. Wet slate": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前（例：濡れたスレート）"
+          }
+        }
+      }
+    },
+    "Neural Engine (recommended)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neural Engine（推奨）"
+          }
+        }
+      }
+    },
+    "New Code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいコード"
+          }
+        }
+      }
+    },
+    "No Batch Yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一括処理はまだありません"
+          }
+        }
+      }
+    },
+    "No Captures Yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャはまだありません"
+          }
+        }
+      }
+    },
+    "No Material Selected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルが選択されていません"
+          }
+        }
+      }
+    },
+    "No Sources": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソースがありません"
+          }
+        }
+      }
+    },
+    "No saved recipes yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存したレシピはまだありません"
+          }
+        }
+      }
+    },
+    "None": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "なし"
+          }
+        }
+      }
+    },
+    "Normal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ノーマル"
+          }
+        }
+      }
+    },
+    "Normal convention": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ノーマルの規約"
+          }
+        }
+      }
+    },
+    "Normal map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ノーマルマップ"
+          }
+        }
+      }
+    },
+    "Normal strength": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ノーマルの強さ"
+          }
+        }
+      }
+    },
+    "Not delivered": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未送信"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "ORM": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ORM"
+          }
+        }
+      }
+    },
+    "Occlusion map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オクルージョンマップ"
+          }
+        }
+      }
+    },
+    "Off": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ"
+          }
+        }
+      }
+    },
+    "On": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オン"
+          }
+        }
+      }
+    },
+    "One-time Material Lab pairing code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Material Labの1回限りのペアリングコード"
+          }
+        }
+      }
+    },
+    "Open Learned Geometry Settings…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "学習ジオメトリ設定を開く…"
+          }
+        }
+      }
+    },
+    "Open the inbox folder in Finder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信箱フォルダをFinderで開く"
+          }
+        }
+      }
+    },
+    "OpenGL (+Y)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（+Y）"
+          }
+        }
+      }
+    },
+    "OpenGL (+Y, green up) suits glTF, Blender and Unity; DirectX (−Y) suits Unreal. Batch applies this recipe to eligible sources in the sidebar.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenGL（+Y、緑が上）はglTF、Blender、Unityに、DirectX（−Y）はUnrealに適しています。一括処理はサイドバーの対象ソースにこのレシピを適用します。"
+          }
+        }
+      }
+    },
+    "Opens the capture in the material workspace": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャをマテリアル作業画面で開きます"
+          }
+        }
+      }
+    },
+    "Organic": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有機物"
+          }
+        }
+      }
+    },
+    "Overcast": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "曇天"
+          }
+        }
+      }
+    },
+    "Packaging capture…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプチャをパッケージ中…"
+          }
+        }
+      }
+    },
+    "Packed occlusion, roughness and metalness.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オクルージョン、ラフネス、メタルネスをまとめたもの。"
+          }
+        }
+      }
+    },
+    "Painted brick": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "塗装レンガ"
+          }
+        }
+      }
+    },
+    "Painted metal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "塗装金属"
+          }
+        }
+      }
+    },
+    "Painted plaster": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "塗装漆喰"
+          }
+        }
+      }
+    },
+    "Perceptual roughness prior: 0 glossy, 1 matte.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知覚ラフネスの事前値：0は光沢、1はつや消し。"
+          }
+        }
+      }
+    },
+    "Performance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パフォーマンス"
+          }
+        }
+      }
+    },
+    "Photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真"
+          }
+        }
+      }
+    },
+    "Pick a material such as Red brick or Brushed steel, then adjust relief, roughness and tiling. Maps update live; ⌘1–9 switch between them, and ⌘Z undoes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「赤レンガ」や「ヘアライン仕上げの鋼」などのマテリアルを選び、レリーフ、ラフネス、タイリングを調整します。マップはライブで更新され、⌘1〜9で切り替え、⌘Zで取り消せます。"
+          }
+        }
+      }
+    },
+    "Pin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピン留め"
+          }
+        }
+      }
+    },
+    "Pin these maps, then use Compare › Pinned to wipe between them and your later edits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらのマップをピン留めし、「比較」›「ピン留め」で以後の編集と見比べます"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ピン留め"
+          }
+        }
+      }
+    },
+    "Plane": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平面"
+          }
+        }
+      }
+    },
+    "Plastic": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラスチック"
+          }
+        }
+      }
+    },
+    "Polished concrete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磨きコンクリート"
+          }
+        }
+      }
+    },
+    "Polished marble": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "磨き大理石"
+          }
+        }
+      }
+    },
+    "Preparing…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備中…"
+          }
+        }
+      }
+    },
+    "Preview Tiling": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイリングをプレビュー"
+          }
+        }
+      }
+    },
+    "Processing progress": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理の進行状況"
+          }
+        }
+      }
+    },
+    "Provenance and review notes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出所と確認メモ"
+          }
+        }
+      }
+    },
+    "Queued": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中"
+          }
+        }
+      }
+    },
+    "Quilt": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キルト"
+          }
+        }
+      }
+    },
+    "Raised": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "凸"
+          }
+        }
+      }
+    },
+    "Raised ridges.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "盛り上がった稜線。"
+          }
+        }
+      }
+    },
+    "Raw timber": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無垢材"
+          }
+        }
+      }
+    },
+    "Re-derive automatically ~150 ms after each change (⌥⌘R)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更のたびに約150ミリ秒後に自動で再生成（⌥⌘R）"
+          }
+        }
+      }
+    },
+    "Re-pin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再ピン留め"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備完了"
+          }
+        }
+      }
+    },
+    "Rebuild the albedo itself so it tiles on both axes. The repaired albedo feeds every derived map and learned geometry.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベド自体を再構成して縦横両方向にタイル化します。修復したアルベドは、生成するすべてのマップと学習ジオメトリに使われます。"
+          }
+        }
+      }
+    },
+    "Rebuilds the albedo by cutting a copy in along the lowest-difference seam. Keeps features crisp.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差が最も小さい継ぎ目に沿ってコピーをはめ込み、アルベドを再構成します。細部がくっきり残ります。"
+          }
+        }
+      }
+    },
+    "Rebuilds the albedo so it tiles on both axes: quilts along the cheapest seam, or blends when no clean cut exists.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドを再構成して縦横両方向にタイル化します。最も目立たない継ぎ目でキルト処理し、きれいに切れない場合はブレンドします。"
+          }
+        }
+      }
+    },
+    "Rebuilds the albedo so it tiles: cuts along the cheapest seam, or blends when no clean cut exists.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドを再構成してタイル化します。最も目立たない継ぎ目で切り替え、きれいに切れない場合はブレンドします。"
+          }
+        }
+      }
+    },
+    "Rebuilds the albedo with a histogram-preserving cross-fade. Best for fine noise and grain.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒストグラムを保つクロスフェードでアルベドを再構成します。細かなノイズや粒状の素材に最適です。"
+          }
+        }
+      }
+    },
+    "Recessed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "凹"
+          }
+        }
+      }
+    },
+    "Recipe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピ"
+          }
+        }
+      }
+    },
+    "Recipe Change": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピの変更"
+          }
+        }
+      }
+    },
+    "Red brick": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "赤レンガ"
+          }
+        }
+      }
+    },
+    "Red brick, oak planks, rusted steel and 36 more set the relief, roughness and AO for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "赤レンガ、オークの板材、錆びた鋼など39種類のマテリアルが、レリーフ、ラフネス、AOを自動で設定します。"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新"
+          }
+        }
+      }
+    },
+    "Relief": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レリーフ"
+          }
+        }
+      }
+    },
+    "Relief exaggeration seen by the occlusion search; 0 disables AO.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オクルージョン探索で使うレリーフの誇張度。0でAOを無効にします。"
+          }
+        }
+      }
+    },
+    "Relief mask": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レリーフマスク"
+          }
+        }
+      }
+    },
+    "Relief prior": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レリーフ事前設定"
+          }
+        }
+      }
+    },
+    "Relit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティング"
+          }
+        }
+      }
+    },
+    "Reload the inbox folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信箱フォルダを再読み込み"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        }
+      }
+    },
+    "Remove %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を削除"
+          }
+        }
+      }
+    },
+    "Remove baked lighting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "焼き込まれたライティングを除去"
+          }
+        }
+      }
+    },
+    "Repair albedo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドを修復"
+          }
+        }
+      }
+    },
+    "Repair band": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修復の帯"
+          }
+        }
+      }
+    },
+    "Reset Device Trust…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスの信頼をリセット…"
+          }
+        }
+      }
+    },
+    "Reset Recipe to Preset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピをプリセットに戻す"
+          }
+        }
+      }
+    },
+    "Reset Trust": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信頼をリセット"
+          }
+        }
+      }
+    },
+    "Reset all values to the preset defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての値をプリセットの既定値に戻す"
+          }
+        }
+      }
+    },
+    "Reset device trust?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスの信頼をリセットしますか？"
+          }
+        }
+      }
+    },
+    "Reset recipe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピをリセット"
+          }
+        }
+      }
+    },
+    "Reset to default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定値に戻す"
+          }
+        }
+      }
+    },
+    "Restrained height-driven variation.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高さに応じた控えめな変化。"
+          }
+        }
+      }
+    },
+    "Retry Failed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗した項目を再試行"
+          }
+        }
+      }
+    },
+    "Revert to Built-in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内蔵モデルに戻す"
+          }
+        }
+      }
+    },
+    "Review Notes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認メモ"
+          }
+        }
+      }
+    },
+    "Roblox": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Roblox"
+          }
+        }
+      }
+    },
+    "Roughness": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラフネス"
+          }
+        }
+      }
+    },
+    "Roughness map": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラフネスマップ"
+          }
+        }
+      }
+    },
+    "Roughness variation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラフネスの変化"
+          }
+        }
+      }
+    },
+    "Rounded cube": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "角丸の立方体"
+          }
+        }
+      }
+    },
+    "Rubber": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゴム"
+          }
+        }
+      }
+    },
+    "Rubble stone wall": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "乱石積みの壁"
+          }
+        }
+      }
+    },
+    "Rusted steel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "錆びた鋼"
+          }
+        }
+      }
+    },
+    "Sand": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "砂"
+          }
+        }
+      }
+    },
+    "Sandstone": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "砂岩"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
+          }
+        }
+      }
+    },
+    "Save Current Recipe…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のレシピを保存…"
+          }
+        }
+      }
+    },
+    "Save Map as PNG…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップをPNGで保存…"
+          }
+        }
+      }
+    },
+    "Save Recipe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピを保存"
+          }
+        }
+      }
+    },
+    "Save Report…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レポートを保存…"
+          }
+        }
+      }
+    },
+    "Save labels": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラベルを保存"
+          }
+        }
+      }
+    },
+    "Saved recipes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存したレシピ"
+          }
+        }
+      }
+    },
+    "Saves every setting except this source's relief mask and height override. A recipe with the same name is replaced.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このソースのレリーフマスクと高さの上書き以外のすべての設定を保存します。同じ名前のレシピは置き換えられます。"
+          }
+        }
+      }
+    },
+    "Seams": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "継ぎ目"
+          }
+        }
+      }
+    },
+    "Search materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを検索"
+          }
+        }
+      }
+    },
+    "Select None": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて解除"
+          }
+        }
+      }
+    },
+    "Semantic label": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "意味ラベル"
+          }
+        }
+      }
+    },
+    "Send a capture from Material Capture on iPhone through Device Link, or drop a .pbrcapture file here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhoneのMaterial Captureからデバイスリンクでキャプチャを送るか、.pbrcaptureファイルをここにドロップしてください。"
+          }
+        }
+      }
+    },
+    "Send captures from iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhoneからキャプチャを送信"
+          }
+        }
+      }
+    },
+    "Separate base colour, normal, roughness, occlusion, metallic and height maps.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ベースカラー、ノーマル、ラフネス、オクルージョン、メタリック、高さの個別マップ。"
+          }
+        }
+      }
+    },
+    "Set Up Device Link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスリンクを設定"
+          }
+        }
+      }
+    },
+    "Shape": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "形状"
+          }
+        }
+      }
+    },
+    "Show %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を表示"
+          }
+        }
+      }
+    },
+    "Show Before/After (Space)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理前／処理後を表示（スペース）"
+          }
+        }
+      }
+    },
+    "Show in Finder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finderで表示"
+          }
+        }
+      }
+    },
+    "Show recipe inspector": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシピインスペクタを表示"
+          }
+        }
+      }
+    },
+    "Show the bundle in Finder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルをFinderで表示"
+          }
+        }
+      }
+    },
+    "Show the map repeated 3 × 3 to check the seams": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップを3×3で繰り返して継ぎ目を確認"
+          }
+        }
+      }
+    },
+    "Show tile boundaries": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイルの境界を表示"
+          }
+        }
+      }
+    },
+    "Single": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "単一"
+          }
+        }
+      }
+    },
+    "Skip": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキップ"
+          }
+        }
+      }
+    },
+    "Slate": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スレート"
+          }
+        }
+      }
+    },
+    "Slope": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傾斜"
+          }
+        }
+      }
+    },
+    "Small crevices.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小さな隙間。"
+          }
+        }
+      }
+    },
+    "Soft blend": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソフトブレンド"
+          }
+        }
+      }
+    },
+    "Soil": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "土"
+          }
+        }
+      }
+    },
+    "Source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソース"
+          }
+        }
+      }
+    },
+    "Sphere": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "球"
+          }
+        }
+      }
+    },
+    "Start Secure Link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全なリンクを開始"
+          }
+        }
+      }
+    },
+    "Start from a material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルから始める"
+          }
+        }
+      }
+    },
+    "Start from a tuned material: brick, concrete, wood, metal and more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "調整済みのマテリアルから始めましょう：レンガ、コンクリート、木材、金属など"
+          }
+        }
+      }
+    },
+    "Start the link to show a pairing code": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを開始するとペアリングコードが表示されます"
+          }
+        }
+      }
+    },
+    "Status": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態"
+          }
+        }
+      }
+    },
+    "Step %lld of %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Step %1$lld of %2$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ステップ %lld / %lld"
+          }
+        }
+      }
+    },
+    "Stone / concrete": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "石材／コンクリート"
+          }
+        }
+      }
+    },
+    "Stone / masonry": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "石材／組積"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "Stopped": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止中"
+          }
+        }
+      }
+    },
+    "Structured": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "構造的"
+          }
+        }
+      }
+    },
+    "Stucco": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタッコ"
+          }
+        }
+      }
+    },
+    "Studio": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタジオ"
+          }
+        }
+      }
+    },
+    "Substance 3D": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Substance 3D"
+          }
+        }
+      }
+    },
+    "Sunset": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夕暮れ"
+          }
+        }
+      }
+    },
+    "Surface": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表面"
+          }
+        }
+      }
+    },
+    "SurfaceAppearance colour, normal, roughness and metalness maps (at most 1024²).": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SurfaceAppearance用のカラー、ノーマル、ラフネス、メタルネスマップ（最大1024²）。"
+          }
+        }
+      }
+    },
+    "Synthetic": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合成素材"
+          }
+        }
+      }
+    },
+    "Tangent-space normal map; also drives height, AO and the masks.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接空間ノーマルマップ。高さ、AO、マスクにも反映されます。"
+          }
+        }
+      }
+    },
+    "Tangent-space surface direction.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接空間での表面の向き。"
+          }
+        }
+      }
+    },
+    "Terracotta roof tiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テラコッタの屋根瓦"
+          }
+        }
+      }
+    },
+    "The .pbrmaterial bundle (every map plus its manifest) is always written. Choose formats to add beside it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ".pbrmaterialバンドル（すべてのマップとマニフェスト）は常に書き出されます。一緒に書き出す形式を選んでください。"
+          }
+        }
+      }
+    },
+    "The Neural Engine runs in half precision, so results can differ slightly between chips and macOS versions. CPU only is slower but more reproducible. Estimates are cached per source, so recipe edits never re-run the model.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neural Engineは半精度で動作するため、チップやmacOSのバージョンによって結果がわずかに異なることがあります。「CPUのみ」は低速ですが再現性が高くなります。推定結果はソースごとにキャッシュされるため、レシピを編集してもモデルは再実行されません。"
+          }
+        }
+      }
+    },
+    "The albedo is exported as photographed (plus any Make tileable edge treatment).": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドは撮影したまま書き出されます（「タイル化」の端処理は適用されます）。"
+          }
+        }
+      }
+    },
+    "The albedo stays as photographed, plus any Make tileable edge treatment.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドは撮影したままで、「タイル化」の端処理のみ適用されます。"
+          }
+        }
+      }
+    },
+    "The iPhone pins this Mac's certificate from the one-time code. Every transfer still needs your approval here, and files sent through AirDrop use the same verified .pbrcapture format.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhoneは1回限りのコードからこのMacの証明書を固定します。転送のたびにここでの承認が必要で、AirDropで送ったファイルも同じ検証済みの.pbrcapture形式を使います。"
+          }
+        }
+      }
+    },
+    "The source is painted or drawn, not photographed. It is recorded as authored; leave Remove baked lighting and Repair albedo off to keep it untouched.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ソースは撮影ではなく、描いたものです。作成者提供として記録されます。そのまま使うには「焼き込まれたライティングを除去」と「アルベドを修復」をオフにしてください。"
+          }
+        }
+      }
+    },
+    "Three by three tiled preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3×3のタイルプレビュー"
+          }
+        }
+      }
+    },
+    "Tile": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイル"
+          }
+        }
+      }
+    },
+    "Tiled": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイル"
+          }
+        }
+      }
+    },
+    "Tiling": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイリング"
+          }
+        }
+      }
+    },
+    "Tiling Quality": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイリング品質"
+          }
+        }
+      }
+    },
+    "Tiling method": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイル化の方式"
+          }
+        }
+      }
+    },
+    "Time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間"
+          }
+        }
+      }
+    },
+    "Treat the image as tiling when filtering and sampling occlusion.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィルタ処理とオクルージョンのサンプリングで、画像をタイルとして扱います。"
+          }
+        }
+      }
+    },
+    "Tree bark": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "樹皮"
+          }
+        }
+      }
+    },
+    "Trust": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信頼"
+          }
+        }
+      }
+    },
+    "Turns a photo into a PBR material: a .pbrmaterial bundle with every map, plus any export formats you choose.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真をPBRマテリアルに変換します。すべてのマップを含む.pbrmaterialバンドルと、選んだ書き出し形式を作成します。"
+          }
+        }
+      }
+    },
+    "USDZ": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USDZ"
+          }
+        }
+      }
+    },
+    "Unity HDRP": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unity HDRP"
+          }
+        }
+      }
+    },
+    "Unity URP / Built-in": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unity URP / ビルトイン"
+          }
+        }
+      }
+    },
+    "Unreal Engine": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unreal Engine"
+          }
+        }
+      }
+    },
+    "Uploading…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード中…"
+          }
+        }
+      }
+    },
+    "UsdPreviewSurface material for Quick Look, AR Quick Look and Reality Composer.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Look、AR Quick Look、Reality Composer用のUsdPreviewSurfaceマテリアル。"
+          }
+        }
+      }
+    },
+    "Use a precise name and category. These labels travel with every exported map so a text parser can identify the surface.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正確な名前とカテゴリを付けてください。これらのラベルは書き出したすべてのマップに付くため、テキスト解析で表面を識別できます。"
+          }
+        }
+      }
+    },
+    "Varnished wood": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ニス塗りの木材"
+          }
+        }
+      }
+    },
+    "View": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示"
+          }
+        }
+      }
+    },
+    "Waiting for approval on Mac…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Macでの承認を待っています…"
+          }
+        }
+      }
+    },
+    "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MoGe-2学習ジオメトリの重み：大きな形状と細部の向きに影響します。0は解析のみ。1でも細かな質感は写真から取り、学習した表面に沿って向きを決めます。"
+          }
+        }
+      }
+    },
+    "Weights SHA-256": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重みのSHA-256"
+          }
+        }
+      }
+    },
+    "Welcome to Material Lab": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Material Labへようこそ"
+          }
+        }
+      }
+    },
+    "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各辺の帯の幅（画像に対する割合）。0の場合は端を変更しません。"
+          }
+        }
+      }
+    },
+    "Wood": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "木材"
+          }
+        }
+      }
+    },
+    "Wood planks": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "木の板"
+          }
+        }
+      }
+    },
+    "Worst wrap step as a multiple of an ordinary neighbouring step (1× or below shows no seam). Method: %@, band %lld %%.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Worst wrap step as a multiple of an ordinary neighbouring step (1× or below shows no seam). Method: %1$@, band %2$lld %%."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "折り返し部分の最大の段差を、通常の隣接ピクセル間の段差の倍数で示します（1×以下なら継ぎ目なし）。方式：%@、帯 %lld%%。"
+          }
+        }
+      }
+    },
+    "Wrap filters at edges": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端でフィルタを折り返す"
+          }
+        }
+      }
+    },
+    "Your grayscale ambient occlusion map (white is open) replaces the estimate.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのアンビエントオクルージョンマップ（白は遮蔽なし）が推定値の代わりに使われます。"
+          }
+        }
+      }
+    },
+    "Your grayscale metalness map (white is metal) fills the ORM map's metalness.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのメタルネスマップ（白が金属）がORMマップのメタルネスに使われます。"
+          }
+        }
+      }
+    },
+    "Your grayscale roughness map (white is rough) replaces the estimate.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グレースケールのラフネスマップ（白が粗い）が推定値の代わりに使われます。"
+          }
+        }
+      }
+    },
+    "Your maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自作のマップ"
+          }
+        }
+      }
+    },
+    "Your tangent-space normal map replaces the estimate and also drives height, AO and the masks.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接空間ノーマルマップが推定値の代わりに使われ、高さ、AO、マスクにも反映されます。"
+          }
+        }
+      }
+    },
+    "Zoom": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大／縮小"
+          }
+        }
+      }
+    },
+    "Zoom in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拡大"
+          }
+        }
+      }
+    },
+    "Zoom out": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "縮小"
+          }
+        }
+      }
+    },
+    "Zoom to fit (double-click the canvas)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体を表示（キャンバスをダブルクリック）"
+          }
+        }
+      }
+    },
+    "glTF binary (.glb)": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "glTFバイナリ（.glb）"
+          }
+        }
+      }
+    },
+    "masonry": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "組積"
+          }
+        }
+      }
+    },
+    "or drag on the image": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "または画像上をドラッグ"
+          }
+        }
+      }
+    },
+    "weathered limestone wall": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "風化した石灰岩の壁"
+          }
+        }
+      }
+    },
+    "⌘E writes the .pbrmaterial bundle plus glTF, USDZ, MaterialX, Unreal, Unity, Godot, Blender, Substance, Roblox or Minecraft files.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘Eで.pbrmaterialバンドルに加え、glTF、USDZ、MaterialX、Unreal、Unity、Godot、Blender、Substance、Roblox、Minecraft用のファイルを書き出します。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

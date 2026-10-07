@@ -1,5 +1,6 @@
 name: MaterialLab
 options:
+  developmentLanguage: en
   bundleIdPrefix: io.materiallab
   createIntermediateGroups: false
   deploymentTarget:
@@ -33,6 +34,8 @@ targets:
       - path: ../shared
         group: Shared
       - path: Resources/AppIcon.icns
+        buildPhase: resources
+      - path: Resources/Localizable.xcstrings
         buildPhase: resources
       # The derivation core is compute-bound; optimize it in every configuration, as the CMake build does.
       - path: ../../core/src/PBRMaterialLab.cpp

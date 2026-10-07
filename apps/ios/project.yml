@@ -1,5 +1,6 @@
 name: MaterialCapture
 options:
+  developmentLanguage: en
   bundleIdPrefix: io.materiallab
   createIntermediateGroups: false
   deploymentTarget:

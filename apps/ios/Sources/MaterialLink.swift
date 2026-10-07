@@ -93,7 +93,8 @@ private enum TrustedMacKeychain {
 enum LinkPhase: Equatable, Sendable {
     case idle, preparing, connecting, uploading, awaitingApproval, delivered, failed
 
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .idle: "Ready"
         case .preparing: "Packaging capture…"

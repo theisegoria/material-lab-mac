@@ -6,7 +6,8 @@ import SwiftUI
 enum PreviewShape: String, CaseIterable, Identifiable {
     case sphere, cube, plane
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { rawValue.capitalized }
     var symbol: String {
         switch self {
         case .sphere: "circle"

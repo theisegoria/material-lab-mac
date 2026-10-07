@@ -5,7 +5,8 @@ import RealityKit
 enum PreviewEnvironment: String, CaseIterable, Identifiable, Sendable {
     case studio, overcast, sunset
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { rawValue.capitalized }
     var symbol: String {
         switch self {
         case .studio: "light.panel"

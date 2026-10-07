@@ -8,7 +8,8 @@ import UIKit
 enum MaterialPreset: String, CaseIterable, Codable, Identifiable, Sendable {
     case flat, stone, fabric, organic, coatedMetal, bareMetal
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .flat: "Flat / painted"
         case .stone: "Stone / concrete"
@@ -50,7 +51,8 @@ enum SeamlessMode: String, CaseIterable, Codable, Identifiable, Sendable {
     /// Histogram-preserving blend: fine stochastic textures such as noise, sand and grain.
     case blend
     var id: String { rawValue }
-    var title: String { self == .cut ? "Structured" : "Soft blend" }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { self == .cut ? "Structured" : "Soft blend" }
     var cValue: UInt32 { self == .cut ? 1 : 0 }
 }
 
@@ -224,7 +226,8 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
 enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
     case off, auto, quilt, blend
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .off: "Off"
         case .auto: "Auto"
@@ -232,7 +235,8 @@ enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
         case .blend: "Blend"
         }
     }
-    var explanation: String {
+    var explanation: String { L(englishExplanation) }
+    var englishExplanation: String {
         switch self {
         case .off: "The albedo stays as photographed, plus any Make tileable edge treatment."
         case .auto: "Rebuilds the albedo so it tiles: cuts along the cheapest seam, or blends when no clean cut exists."
@@ -273,7 +277,8 @@ extension Comparable {
 enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
     case albedo, height, normal, roughness, ao, cavity, convexity, slope, edge, bentNormal, orm
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .ao: "Ambient occlusion"
         case .bentNormal: "Bent normal"
@@ -281,7 +286,8 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         default: rawValue.capitalized
         }
     }
-    var shortTitle: String {
+    var shortTitle: String { L(englishShortTitle) }
+    var englishShortTitle: String {
         switch self {
         case .ao: "AO"
         case .bentNormal: "Bent Normal"

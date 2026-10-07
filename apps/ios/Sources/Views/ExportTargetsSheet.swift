@@ -25,7 +25,7 @@ struct ExportTargetsSheet: View {
                     }
                 }
                 ForEach(ExportTarget.Group.allCases, id: \.self) { group in
-                    Section(group.rawValue) {
+                    Section(group.title) {
                         ForEach(ExportTarget.all.filter { $0.group == group }) { target in
                             Toggle(isOn: binding(for: target)) {
                                 Label {

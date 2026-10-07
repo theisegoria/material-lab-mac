@@ -64,33 +64,33 @@ struct RecipeInspector: View {
             }
 
             Section {
-                ParameterRow(title: "Height strength", value: $store.recipe.heightStrength,
+                ParameterRow(title: String(localized: "Height strength"), value: $store.recipe.heightStrength,
                              range: MaterialRecipe.Range.heightStrength, digits: 2, baseline: base.heightStrength,
-                             help: "Amplitude of the estimated relief.")
+                             help: String(localized: "Amplitude of the estimated relief."))
                 Picker("Bright details", selection: $store.recipe.heightPolarity) {
                     Text("Raised").tag(Int32(1))
                     Text("Recessed").tag(Int32(-1))
                 }
                 .pickerStyle(.segmented)
                 if advanced {
-                    ParameterRow(title: "Normal strength", value: $store.recipe.normalStrength,
+                    ParameterRow(title: String(localized: "Normal strength"), value: $store.recipe.normalStrength,
                                  range: MaterialRecipe.Range.normalStrength, digits: 2, baseline: base.normalStrength,
                                  sliderRange: 0...4,
-                                 help: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16.")
+                                 help: String(localized: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16."))
                 }
                 LearnedGeometryRow(store: store, learned: store.learned)
                 if advanced {
                 AttachmentRow(
-                    title: "Relief mask",
+                    title: String(localized: "Relief mask"),
                     systemImage: "circle.lefthalf.striped.horizontal",
                     url: store.recipe.reliefMaskURL,
                     choose: { store.showReliefImporter = true },
                     clear: { store.recipe.reliefMaskURL = nil },
-                    help: "Grayscale mask: black flattens inferred relief, white keeps it."
+                    help: String(localized: "Grayscale mask: black flattens inferred relief, white keeps it.")
                 )
                 }
             } header: {
-                SectionHeader(title: "Relief", modified: modified(\.heightStrength, \.normalStrength) ||
+                SectionHeader(title: String(localized: "Relief"), modified: modified(\.heightStrength, \.normalStrength) ||
                               store.recipe.heightPolarity != base.heightPolarity)
             }
 
@@ -98,12 +98,12 @@ struct RecipeInspector: View {
                 Toggle("Hand-made albedo", isOn: $store.recipe.authoredAlbedo)
                     .help("The source is painted or drawn, not photographed. It is recorded as authored; leave Remove baked lighting and Repair albedo off to keep it untouched.")
                 AttachmentRow(
-                    title: "Height map",
+                    title: String(localized: "Height map"),
                     systemImage: "mountain.2",
                     url: store.recipe.heightOverrideURL,
                     choose: { store.showHeightImporter = true },
                     clear: { store.recipe.heightOverrideURL = nil },
-                    help: "A 16-bit grayscale height map replaces the estimate."
+                    help: String(localized: "A 16-bit grayscale height map replaces the estimate.")
                 )
                 ForEach(AuthoredSlot.allCases) { slot in
                     AttachmentRow(
@@ -128,37 +128,37 @@ struct RecipeInspector: View {
             }
 
             Section {
-                ParameterRow(title: "Roughness", value: $store.recipe.roughnessBase,
+                ParameterRow(title: String(localized: "Roughness"), value: $store.recipe.roughnessBase,
                              range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessBase,
-                             help: "Perceptual roughness prior: 0 glossy, 1 matte.")
+                             help: String(localized: "Perceptual roughness prior: 0 glossy, 1 matte."))
                 if advanced {
-                    ParameterRow(title: "Roughness variation", value: $store.recipe.roughnessVariation,
+                    ParameterRow(title: String(localized: "Roughness variation"), value: $store.recipe.roughnessVariation,
                                  range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessVariation,
-                                 help: "Restrained height-driven variation.")
+                                 help: String(localized: "Restrained height-driven variation."))
                 }
-                ParameterRow(title: "Remove baked lighting", value: $store.recipe.albedoEqualize,
+                ParameterRow(title: String(localized: "Remove baked lighting"), value: $store.recipe.albedoEqualize,
                              range: MaterialRecipe.Range.albedoEqualize, digits: 2, baseline: base.albedoEqualize,
-                             help: "Flattens low-frequency shading in the albedo (delighting).")
+                             help: String(localized: "Flattens low-frequency shading in the albedo (delighting)."))
                 Toggle("Assign metalness", isOn: $store.recipe.assignedMetalnessEnabled.animation())
                 if store.recipe.assignedMetalnessEnabled {
-                    ParameterRow(title: "Metalness", value: $store.recipe.assignedMetalness,
+                    ParameterRow(title: String(localized: "Metalness"), value: $store.recipe.assignedMetalness,
                                  range: MaterialRecipe.Range.metalness, digits: 2, baseline: base.assignedMetalness,
-                                 help: "An artist decision, never inferred from color.")
+                                 help: String(localized: "An artist decision, never inferred from color."))
                 }
             } header: {
-                SectionHeader(title: "Surface", modified: modified(\.roughnessBase, \.roughnessVariation, \.albedoEqualize,
+                SectionHeader(title: String(localized: "Surface"), modified: modified(\.roughnessBase, \.roughnessVariation, \.albedoEqualize,
                                                                    \.assignedMetalness) ||
                               store.recipe.assignedMetalnessEnabled != base.assignedMetalnessEnabled)
             }
 
             Section {
                 if advanced {
-                    ParameterRow(title: "AO radius", value: $store.recipe.aoRadiusPixels,
+                    ParameterRow(title: String(localized: "AO radius"), value: $store.recipe.aoRadiusPixels,
                                  range: MaterialRecipe.Range.aoRadius, digits: 0, baseline: base.aoRadiusPixels, unit: "px",
-                                 help: "Horizon search radius in source pixels.")
-                    ParameterRow(title: "AO depth", value: $store.recipe.aoStrength,
+                                 help: String(localized: "Horizon search radius in source pixels."))
+                    ParameterRow(title: String(localized: "AO depth"), value: $store.recipe.aoStrength,
                                  range: MaterialRecipe.Range.aoStrength, digits: 2, baseline: base.aoStrength,
-                                 help: "Relief exaggeration seen by the occlusion search; 0 disables AO.")
+                                 help: String(localized: "Relief exaggeration seen by the occlusion search; 0 disables AO."))
                     Toggle("Bent normal map", isOn: $store.recipe.bentNormalEnabled)
                     Toggle("Wrap filters at edges", isOn: $store.recipe.tileWrap)
                         .help(store.recipe.albedoRepair == .off
@@ -168,7 +168,7 @@ struct RecipeInspector: View {
                 }
                 TileableRows(store: store)
             } header: {
-                SectionHeader(title: "Lighting & Tiling", modified: modified(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) ||
+                SectionHeader(title: String(localized: "Lighting & Tiling"), modified: modified(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) ||
                               store.recipe.albedoRepair != base.albedoRepair ||
                               store.recipe.bentNormalEnabled != base.bentNormalEnabled)
             }
@@ -359,9 +359,9 @@ private struct LearnedGeometryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ParameterRow(
-                title: "Learned geometry", value: $store.recipe.guideNormalWeight,
+                title: String(localized: "Learned geometry"), value: $store.recipe.guideNormalWeight,
                 range: MaterialRecipe.Range.guideNormalWeight, digits: 2,
-                help: "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface."
+                help: String(localized: "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface.")
             )
             .disabled(!available)
             footnote
@@ -514,11 +514,11 @@ private struct TileableRows: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ParameterRow(title: repairing ? "Repair band" : "Make tileable", value: $store.recipe.seamlessBlend,
+            ParameterRow(title: repairing ? String(localized: "Repair band") : String(localized: "Make tileable"), value: $store.recipe.seamlessBlend,
                          range: MaterialRecipe.Range.seamlessBlend, digits: 2,
                          help: repairing
-                            ? "Band per edge used by the repair, as a fraction of the image. 0 uses the default 0.12."
-                            : "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched.")
+                            ? String(localized: "Band per edge used by the repair, as a fraction of the image. 0 uses the default 0.12.")
+                            : String(localized: "Width of the edge band, per edge, as a fraction of the image. 0 leaves the edges untouched."))
             Picker("Method", selection: $store.recipe.seamlessMode) {
                 ForEach(SeamlessMode.allCases) { mode in
                     Text(mode.title).tag(mode).help(mode.explanation)

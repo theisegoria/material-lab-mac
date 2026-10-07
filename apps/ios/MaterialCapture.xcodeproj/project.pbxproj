@@ -15,6 +15,7 @@
 		0EA5072CD72F4EAF1992577B /* ContinuedDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */; };
 		11D96EC161961751BF8D93F1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BF352744C7DECF3AB1BF3A /* CameraController.swift */; };
 		19B6EB116AEE13E57E8497D3 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */; };
+		1E16C1D91663ED34C684E29C /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8FE26E320963A79EA3C012 /* Localization.swift */; };
 		2B1F4396BB33D1F513544EDA /* MaterialReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765096232A3E053B322829A /* MaterialReviewView.swift */; };
 		328E82EF07A53B03C13DB062 /* PerspectiveCrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7F148DAAD36AD6741A16372 /* PerspectiveCrop.swift */; };
 		329ACAD7DC9B2800169880E8 /* RectangleDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BBF290546E6549B3910B141 /* RectangleDetector.swift */; };
@@ -28,6 +29,7 @@
 		87ECB5226B813669841FA415 /* MaterialPresetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059979CE7842E2880FAF9500 /* MaterialPresetPicker.swift */; };
 		8FFB37A1A19938E661B17FD7 /* MaterialPresets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E66235ABB89C75162EBFD786 /* MaterialPresets.cpp */; settings = {COMPILER_FLAGS = "-std=c++23"; }; };
 		9449017682FBA12091108C7A /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1921D821D866362E08300599 /* MaterialPresetLibrary.swift */; };
+		9764BF38A15BB8026827E324 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */; };
 		99882DCAAB392DEA6D6A4400 /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103EE2A60187EB25A163CA98 /* CaptureStore.swift */; };
 		A5512AB50A2E1C9D71D26F8D /* ExportTargets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185DD6F9558B8B17CBFA12EC /* ExportTargets.swift */; };
 		ACF2BC5B9C246FFE6EFCBED7 /* PNGWriter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7AE465EB70F60C9BB0B0DD16 /* PNGWriter.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O2"; }; };
@@ -92,6 +94,7 @@
 		7AE465EB70F60C9BB0B0DD16 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
 		7B29BF9DC3CBCFB27EAE7352 /* MaterialSphereView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialSphereView.swift; sourceTree = "<group>"; };
 		7F791FB494E077A9E17AA82A /* CropEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropEditorView.swift; sourceTree = "<group>"; };
+		8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContinuedDerivation.swift; sourceTree = "<group>"; };
 		8BBF290546E6549B3910B141 /* RectangleDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RectangleDetector.swift; sourceTree = "<group>"; };
 		932926F292D6069645EE0B61 /* AuthoredMapsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthoredMapsSection.swift; sourceTree = "<group>"; };
@@ -102,6 +105,7 @@
 		A7F845479198E15E706BC7D5 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		BDF7E6D4F5385FA8C1E3A6A3 /* MaterialBundleWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundleWriter.swift; sourceTree = "<group>"; };
 		CBAE56738882608A8EAA2E80 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		CE8FE26E320963A79EA3C012 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 		D65ED6328D5C5682F5153314 /* PreviewEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewEnvironment.swift; sourceTree = "<group>"; };
 		D68B2167B16944DFECD8AE50 /* ExportAPI.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ExportAPI.mm; path = ../../core/src/tools/ExportAPI.mm; sourceTree = "<group>"; };
 		D765096232A3E053B322829A /* MaterialReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialReviewView.swift; sourceTree = "<group>"; };
@@ -212,6 +216,7 @@
 				86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */,
 				519A027C3D145DF71CF7626D /* Info.plist */,
 				FDEF30BB0AA2A1B31F497E54 /* LearnedNormalEstimator.swift */,
+				8597AA2036EDF4066E6DCA69 /* Localizable.xcstrings */,
 				EA1C7C052AA759593FCD5189 /* MaterialBundle.swift */,
 				BDF7E6D4F5385FA8C1E3A6A3 /* MaterialBundleWriter.swift */,
 				F0CCC9DCA0DDE34CD2FC5EAA /* MaterialCaptureApp.swift */,
@@ -254,6 +259,7 @@
 			children = (
 				185DD6F9558B8B17CBFA12EC /* ExportTargets.swift */,
 				99C9C3DE3865D5CB0F5EBC46 /* IntentEntities.swift */,
+				CE8FE26E320963A79EA3C012 /* Localization.swift */,
 				1921D821D866362E08300599 /* MaterialPresetLibrary.swift */,
 				D65ED6328D5C5682F5153314 /* PreviewEnvironment.swift */,
 			);
@@ -356,6 +362,7 @@
 			knownRegions = (
 				Base,
 				en,
+				ja,
 			);
 			mainGroup = A8937C5CA80BEA5502B60B1A;
 			minimizedProjectReferenceProxies = 1;
@@ -376,6 +383,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B8A11FA7E3A2CD4AC91480CB /* Assets.xcassets in Resources */,
+				9764BF38A15BB8026827E324 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -441,6 +449,7 @@
 				0B852323449B9BD488E0065A /* IntentEntities.swift in Sources */,
 				BC70DF399371763442140032 /* LearnedNormalEstimator.swift in Sources */,
 				0161B89001B13F4DFF20D988 /* LibraryView.swift in Sources */,
+				1E16C1D91663ED34C684E29C /* Localization.swift in Sources */,
 				AF9E8138045F2214A9BADA02 /* MacLinkView.swift in Sources */,
 				F64824B9FFDE1720758CFA3F /* MaterialBundle.swift in Sources */,
 				C4C4C31588C71E6B0DA03B7B /* MaterialBundleWriter.swift in Sources */,

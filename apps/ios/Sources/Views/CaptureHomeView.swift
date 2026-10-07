@@ -59,7 +59,8 @@ private enum FlashSetting: String, CaseIterable, Identifiable {
         case .off: "bolt.slash"
         }
     }
-    var title: String { rawValue.capitalized }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { rawValue.capitalized }
 }
 
 /// Device attitude relative to the surface being photographed, from CoreMotion gravity.

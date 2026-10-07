@@ -7,6 +7,7 @@ struct ExportTarget: Identifiable, Hashable, Sendable {
         case interchange = "Interchange"
         case engines = "Game engines"
         case tools = "3D tools"
+        var title: String { L(rawValue) }
     }
 
     let id: String
@@ -37,8 +38,8 @@ struct ExportTarget: Identifiable, Hashable, Sendable {
     /// Every target, in the core's display order.
     static let all: [ExportTarget] = (0..<PBRLabExportFormatCount()).compactMap { index in
         guard let format = PBRLabExportFormatAt(index)?.pointee else { return nil }
-        return ExportTarget(id: String(cString: format.identifier), title: String(cString: format.title),
-                            detail: String(cString: format.detail),
+        return ExportTarget(id: String(cString: format.identifier), title: L(String(cString: format.title)),
+                            detail: L(String(cString: format.detail)),
                             fileExtension: format.file_extension.map { String(cString: $0) })
     }
 

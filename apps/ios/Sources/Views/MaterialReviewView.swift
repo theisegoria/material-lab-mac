@@ -19,7 +19,8 @@ struct PNGDocument: FileDocument {
 enum PreviewMode: String, CaseIterable, Identifiable {
     case map, tiled, relit, lit, compare
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .map: "Map"
         case .tiled: "Tiled"

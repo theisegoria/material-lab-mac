@@ -21,7 +21,7 @@ struct ExportSheet: View {
 
             Form {
                 ForEach(ExportTarget.Group.allCases, id: \.self) { group in
-                    Section(group.rawValue) {
+                    Section(group.title) {
                         ForEach(ExportTarget.all.filter { $0.group == group }) { target in
                             Toggle(isOn: binding(for: target)) {
                                 Label {
@@ -65,7 +65,7 @@ struct ExportSheet: View {
 
     private var exportTitle: String {
         let count = store.exportTargets.count
-        return count == 0 ? "Export Bundle…" : "Export Bundle + \(count)…"
+        return count == 0 ? String(localized: "Export Bundle…") : String(localized: "Export Bundle + \(count)…")
     }
 
     private func binding(for target: ExportTarget) -> Binding<Bool> {

@@ -11,7 +11,8 @@ struct AuthoredMaps: Sendable, Equatable {
         var id: String { rawValue }
         /// The relief mask steers the estimate instead of replacing a map; it is recorded in the recipe.
         var replacesMap: Bool { self != .reliefMask }
-        var title: String {
+        var title: String { L(englishTitle) }
+        var englishTitle: String {
             switch self {
             case .height: "Height map"
             case .normal: "Normal map"
@@ -31,7 +32,8 @@ struct AuthoredMaps: Sendable, Equatable {
             case .reliefMask: "circle.lefthalf.striped.horizontal"
             }
         }
-        var explanation: String {
+        var explanation: String { L(englishExplanation) }
+        var englishExplanation: String {
             switch self {
             case .height: "Grayscale height (white is high). 16-bit keeps full precision."
             case .normal: "Tangent-space normal map; also drives height, AO and the masks."

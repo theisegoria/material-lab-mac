@@ -26,6 +26,7 @@
 		659C861E4676D4EDE26E37C2 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624746825B3FECEFAC38539B /* MaterialIntents.swift */; };
 		68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */; };
 		70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
+		8E06BDBD76612297F89C0426 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CF607F4F493784D4D315BCAF /* Localizable.xcstrings */; };
 		96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A271E5FC88FE7679F2223DA /* MapPreview.swift */; };
 		AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */; };
 		ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */; };
@@ -37,6 +38,7 @@
 		CE10299CB6DBC377765A0549 /* SourceMetadataEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */; };
 		D545A219FE36BCD0B06B3CAC /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD46F61818DC500B7D63D65 /* libz.tbd */; };
 		D5C14405C39A559D709B6F9C /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */; };
+		DEDC96903BD512AF16225253 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DDE3F620C74E70B006A36EC /* Localization.swift */; };
 		E5875DB1FE2DD84759A39788 /* ExportAPI.mm in Sources */ = {isa = PBXBuildFile; fileRef = 2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
 		E5DC10C183D97F8D368AC653 /* ExportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */; };
 		E9AC9BC36181EAD505A3B17F /* SourceSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */; };
@@ -56,6 +58,7 @@
 		1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchQueueView.swift; sourceTree = "<group>"; };
 		2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabApp.swift; sourceTree = "<group>"; };
 		2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ExportAPI.mm; path = ../../core/src/tools/ExportAPI.mm; sourceTree = "<group>"; };
+		2DDE3F620C74E70B006A36EC /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 		2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedModelStore.swift; sourceTree = "<group>"; };
 		367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaterialLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DAF581A370F7CFB20B154C5 /* Common.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Common.mm; path = ../../core/src/tools/Common.mm; sourceTree = "<group>"; };
@@ -78,6 +81,7 @@
 		B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B83D28D802A85A06E51390CE /* MaterialLab-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MaterialLab-Bridging-Header.h"; sourceTree = "<group>"; };
 		C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialPresetLibrary.swift; sourceTree = "<group>"; };
+		CF607F4F493784D4D315BCAF /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabStore.swift; sourceTree = "<group>"; };
 		D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecipeInspector.swift; sourceTree = "<group>"; };
 		DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMetadataEditor.swift; sourceTree = "<group>"; };
@@ -182,6 +186,7 @@
 			children = (
 				55F0C74ED5D3904198A685BA /* ExportTargets.swift */,
 				EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */,
+				2DDE3F620C74E70B006A36EC /* Localization.swift */,
 				C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */,
 				4BA0FA18A5512A7BDCDE643E /* PreviewEnvironment.swift */,
 			);
@@ -193,6 +198,7 @@
 			isa = PBXGroup;
 			children = (
 				FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */,
+				CF607F4F493784D4D315BCAF /* Localizable.xcstrings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -304,6 +310,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				446102869D89F7413CD7883C /* AppIcon.icns in Resources */,
+				8E06BDBD76612297F89C0426 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,6 +357,7 @@
 				4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */,
 				AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */,
 				CA9D6616D33EAA2678DF79B5 /* LocalLinkService.swift in Sources */,
+				DEDC96903BD512AF16225253 /* Localization.swift in Sources */,
 				96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */,
 				14BCE9DC4DCB9160AE7D8B08 /* Material3DPreview.swift in Sources */,
 				6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */,

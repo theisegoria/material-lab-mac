@@ -34,7 +34,8 @@ enum LearnedComputeUnits: String, Sendable {
     case cpuOnly = "cpu_only"
 
     var mlValue: MLComputeUnits { self == .all ? .all : .cpuOnly }
-    var title: String { self == .all ? "All (Neural Engine, GPU, CPU)" : "CPU only" }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { self == .all ? "All (Neural Engine, GPU, CPU)" : "CPU only" }
 }
 
 /// Where the active model came from, in resolution order.

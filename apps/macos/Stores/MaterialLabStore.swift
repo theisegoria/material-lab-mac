@@ -24,7 +24,8 @@ enum CanvasMode: String, CaseIterable, Identifiable {
     case map, relit, compare, tile, shaded3D
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .map: "Map"
         case .relit: "Relit"

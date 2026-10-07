@@ -31,7 +31,8 @@ enum MaterialPreset: String, Codable, CaseIterable, Identifiable, Sendable {
     case flat, stone, fabric, organic, coatedMetal, bareMetal
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .flat: "Flat / painted"
         case .stone: "Stone / masonry"
@@ -228,8 +229,10 @@ extension MaterialRecipe: Codable {
 enum SeamlessMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case cut, blend
     var id: String { rawValue }
-    var title: String { self == .cut ? "Structured" : "Soft blend" }
-    var explanation: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String { self == .cut ? "Structured" : "Soft blend" }
+    var explanation: String { L(englishExplanation) }
+    var englishExplanation: String {
         self == .cut
             ? "Cuts along the lowest-difference seam. Best for brick, tiles, planks and most photos."
             : "Histogram-preserving cross-fade. Best for fine noise, sand and grain."
@@ -242,7 +245,8 @@ enum SeamlessMode: String, Codable, CaseIterable, Identifiable, Sendable {
 enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
     case off, auto, quilt, blend
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .off: "Off"
         case .auto: "Auto"
@@ -250,7 +254,8 @@ enum AlbedoRepair: String, Codable, CaseIterable, Identifiable, Sendable {
         case .blend: "Blend"
         }
     }
-    var explanation: String {
+    var explanation: String { L(englishExplanation) }
+    var englishExplanation: String {
         switch self {
         case .off: "The albedo is exported as photographed (plus any Make tileable edge treatment)."
         case .auto: "Rebuilds the albedo so it tiles on both axes: quilts along the cheapest seam, or blends when no clean cut exists."
@@ -288,7 +293,8 @@ struct AlbedoRepairResult: Sendable, Equatable {
 enum NormalConvention: String, CaseIterable, Identifiable {
     case openGL, directX
     var id: String { rawValue }
-    var title: String { self == .openGL ? "OpenGL (+Y)" : "DirectX (−Y)" }
+    var title: String { L(englishTitle) }
+    var englishTitle: String { self == .openGL ? "OpenGL (+Y)" : "DirectX (−Y)" }
 }
 
 enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
@@ -297,7 +303,8 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
     case learnedNormal
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .ao: "Ambient occlusion"
         case .bentNormal: "Bent normal"
@@ -323,7 +330,8 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var shortTitle: String {
+    var shortTitle: String { L(englishShortTitle) }
+    var englishShortTitle: String {
         switch self {
         case .ao: "AO"
         case .bentNormal: "Bent normal"
@@ -342,7 +350,8 @@ enum MaterialMapKind: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// One-line explanation used for help tags and accessibility hints.
-    var explanation: String {
+    var explanation: String { L(englishExplanation) }
+    var englishExplanation: String {
         switch self {
         case .albedo: "Base color with lighting optionally flattened."
         case .height: "Estimated relief, 16-bit."
@@ -401,7 +410,8 @@ struct WorkingImageInfo: Sendable {
 enum AuthoredSlot: String, CaseIterable, Identifiable {
     case normal, roughness, ao, metalness
     var id: String { rawValue }
-    var title: String {
+    var title: String { L(englishTitle) }
+    var englishTitle: String {
         switch self {
         case .normal: "Normal map"
         case .roughness: "Roughness map"
@@ -417,7 +427,8 @@ enum AuthoredSlot: String, CaseIterable, Identifiable {
         case .metalness: "gearshape"
         }
     }
-    var help: String {
+    var help: String { L(englishHelp) }
+    var englishHelp: String {
         switch self {
         case .normal: "Your tangent-space normal map replaces the estimate and also drives height, AO and the masks."
         case .roughness: "Your grayscale roughness map (white is rough) replaces the estimate."

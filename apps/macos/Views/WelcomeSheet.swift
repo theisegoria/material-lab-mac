@@ -13,12 +13,12 @@ struct WelcomeSheet: View {
     }
 
     private let steps = [
-        Step(symbol: "photo.on.rectangle.angled", title: "Import a photo",
-             text: "Drop in a straight-on photo of a surface (or a hand-painted albedo), or receive a capture from Material Capture on your iPhone."),
-        Step(symbol: "slider.horizontal.3", title: "Choose a material and tune",
-             text: "Pick a material such as Red brick or Brushed steel, then adjust relief, roughness and tiling. Maps update live; ⌘1–9 switch between them, and ⌘Z undoes."),
-        Step(symbol: "square.and.arrow.up.on.square", title: "Export anywhere",
-             text: "⌘E writes the .pbrmaterial bundle plus glTF, USDZ, MaterialX, Unreal, Unity, Godot, Blender, Substance, Roblox or Minecraft files."),
+        Step(symbol: "photo.on.rectangle.angled", title: String(localized: "Import a photo"),
+             text: String(localized: "Drop in a straight-on photo of a surface (or a hand-painted albedo), or receive a capture from Material Capture on your iPhone.")),
+        Step(symbol: "slider.horizontal.3", title: String(localized: "Choose a material and tune"),
+             text: String(localized: "Pick a material such as Red brick or Brushed steel, then adjust relief, roughness and tiling. Maps update live; ⌘1–9 switch between them, and ⌘Z undoes.")),
+        Step(symbol: "square.and.arrow.up.on.square", title: String(localized: "Export anywhere"),
+             text: String(localized: "⌘E writes the .pbrmaterial bundle plus glTF, USDZ, MaterialX, Unreal, Unity, Godot, Blender, Substance, Roblox or Minecraft files.")),
     ]
 
     var body: some View {

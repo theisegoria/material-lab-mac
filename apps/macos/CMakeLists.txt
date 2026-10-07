@@ -60,6 +60,7 @@ set(MATERIAL_LAB_SWIFT
     ../shared/ExportTargets.swift
     ../shared/MaterialPresetLibrary.swift
     ../shared/PreviewEnvironment.swift
+    ../shared/Localization.swift
 )
 add_executable(MaterialLab MACOSX_BUNDLE ${MATERIAL_LAB_SWIFT})
 target_compile_options(MaterialLab PRIVATE -parse-as-library

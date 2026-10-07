@@ -12,7 +12,7 @@ struct LibraryPreset: Identifiable, Hashable, Sendable {
     var recipe: PBRLabRecipe { PBRLabMaterialPresetAt(index)!.pointee.recipe }
 
     var symbol: String {
-        switch category {
+        switch String(cString: PBRLabMaterialPresetAt(index)!.pointee.category) {
         case "Masonry": "square.stack.3d.up"
         case "Concrete & plaster": "building.2"
         case "Tile": "square.grid.3x3"
@@ -26,8 +26,8 @@ struct LibraryPreset: Identifiable, Hashable, Sendable {
 
     static let all: [LibraryPreset] = (0..<PBRLabMaterialPresetCount()).compactMap { index in
         guard let preset = PBRLabMaterialPresetAt(index)?.pointee else { return nil }
-        return LibraryPreset(id: String(cString: preset.identifier), title: String(cString: preset.title),
-                             category: String(cString: preset.category), index: index)
+        return LibraryPreset(id: String(cString: preset.identifier), title: L(String(cString: preset.title)),
+                             category: L(String(cString: preset.category)), index: index)
     }
 
     /// Categories in library order, each with its presets.
