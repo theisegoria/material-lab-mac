@@ -273,7 +273,7 @@ float number(const std::string& s) {
     if (parsed != s.size() || !std::isfinite(n)) throw std::runtime_error("invalid number: " + s);
     return n;
 }
-constexpr const char* kCLIVersion = "1.0.1";
+constexpr const char* kCLIVersion = "1.1.0";
 
 // --learned: the model shipped beside the binary (<prefix>/share/material-lab), the one the Mac app installs,
 // or MATERIAL_LAB_MODEL. Returns an empty path when none is found.
