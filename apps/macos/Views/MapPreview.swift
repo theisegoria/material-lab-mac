@@ -13,12 +13,18 @@ struct MaterialCanvas: View {
     @State private var pan: CGSize = .zero
     @State private var dragPan: CGSize = .zero
     @State private var split: CGFloat = 0.5
-    @State private var compareRelit = false
+    /// What Compare puts on the right of the divider: the selected map, the relit view, or the pinned version.
+    @State private var compareTarget: CompareTarget = .map
+    @State private var loupe: CGPoint?   // Normalized cursor position over the map (Map view).
     @State private var showSeams = true
     @State private var shape: PreviewShape = .sphere
+    @State private var environment: PreviewEnvironment = .studio
+    @State private var tiling: Float = 2
     @FocusState private var focused: Bool
 
     private var material: DerivedMaterial? { store.currentMaterial }
+
+    private var compareRelit: Bool { compareTarget == .relit }
 
     private var needsRelight: Bool {
         store.canvasMode == .relit || (store.canvasMode == .compare && compareRelit)
@@ -109,7 +115,7 @@ struct MaterialCanvas: View {
         switch store.canvasMode {
         case .shaded3D:
             if let material {
-                MaterialPreview3D(material: material, shape: shape)
+                MaterialPreview3D(material: material, shape: shape, environment: environment, tiling: tiling)
                     .transition(.opacity)
             } else {
                 placeholder
@@ -121,7 +127,14 @@ struct MaterialCanvas: View {
                 }
             } else { placeholder }
         case .compare:
-            if let material, let before = material.workingPreview,
+            if compareTarget == .pinned, let pinned = store.pinnedMaterial,
+               let before = pinned.previews[store.selectedMap] ?? pinned.previews[.albedo], let after = primaryImage {
+                zoomable {
+                    CompareView(before: before, after: after, split: $split,
+                                beforeTitle: "Pinned · \(store.selectedMap.shortTitle)",
+                                afterTitle: "Now · \(store.selectedMap.shortTitle)")
+                }
+            } else if let material, let before = material.workingPreview,
                let after = compareRelit ? (relitImage ?? material.previews[.albedo]) : primaryImage {
                 zoomable {
                     CompareView(before: before, after: after, split: $split,
@@ -145,6 +158,26 @@ struct MaterialCanvas: View {
                     CanvasImage(image: image, zoom: effectiveZoom)
                         .id(primaryTitle)
                         .transition(.opacity)
+                        .overlay {
+                            GeometryReader { geometry in
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onContinuousHover { phase in
+                                        switch phase {
+                                        case .active(let point):
+                                            loupe = CGPoint(x: point.x / geometry.size.width, y: point.y / geometry.size.height)
+                                        case .ended:
+                                            loupe = nil
+                                        }
+                                    }
+                                if let loupe, material != nil {
+                                    Loupe(image: image, at: loupe)
+                                        .position(x: loupe.x * geometry.size.width + 70,
+                                                  y: loupe.y * geometry.size.height - 70)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                        }
                 }
             } else { placeholder }
         }
@@ -246,17 +279,39 @@ struct MaterialCanvas: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .glassEffect(.regular, in: Capsule())
-                    hudLabel("Drag to orbit · scroll to zoom")
+                    Menu {
+                        Picker("Lighting", selection: $environment) {
+                            ForEach(PreviewEnvironment.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                        }
+                    } label: {
+                        Label(environment.title, systemImage: environment.symbol)
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.glass)
+                    .fixedSize()
+                    .help("Lighting environment")
+                    HStack(spacing: 6) {
+                        Text("Tiling").font(.callout).foregroundStyle(.secondary)
+                        Stepper(value: $tiling, in: 1...8, step: 1) {
+                            Text("\(Int(tiling))×").monospacedDigit()
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .glassEffect(.regular, in: Capsule())
+                    .help("How many times the material repeats across the shape")
                 case .relit:
                     lightControls
                 case .compare:
-                    Picker("Compare with", selection: $compareRelit) {
-                        Text(store.selectedMap.shortTitle).tag(false)
-                        Text("Relit").tag(true)
+                    Picker("Compare with", selection: $compareTarget) {
+                        Text(store.selectedMap.shortTitle).tag(CompareTarget.map)
+                        Text("Relit").tag(CompareTarget.relit)
+                        Text("Pinned").tag(CompareTarget.pinned)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .frame(width: 170)
+                    .frame(width: 240)
+                    .help("Compare with the source photo, the relit view, or a pinned earlier version of this recipe")
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .glassEffect(.regular, in: Capsule())
@@ -270,11 +325,31 @@ struct MaterialCanvas: View {
                     .help("Show tile boundaries")
                     zoomControls
                 case .map:
+                    if let material, let map = material.maps[store.selectedMap] {
+                        if let loupe, let readout = PixelReadout(map: map, kind: store.selectedMap, at: loupe) {
+                            hudLabel(readout.text).monospacedDigit()
+                        } else {
+                            HistogramStrip(map: map, kind: store.selectedMap)
+                        }
+                    }
+                    pinButton
                     zoomControls
                 }
             }
         }
         .controlSize(.regular)
+    }
+
+    /// Keeps the current maps so Compare can wipe between them and later edits.
+    private var pinButton: some View {
+        Button {
+            store.pinCurrentVersion()
+        } label: {
+            Label(store.pinnedMaterial == nil ? "Pin" : "Re-pin", systemImage: store.pinnedMaterial == nil ? "pin" : "pin.fill")
+        }
+        .buttonStyle(.glass)
+        .disabled(material == nil)
+        .help("Pin these maps, then use Compare › Pinned to wipe between them and your later edits")
     }
 
     private func hudLabel(_ text: String) -> some View {
@@ -419,6 +494,7 @@ private struct CompareView: View {
     let before: CGImage
     let after: CGImage
     @Binding var split: CGFloat
+    var beforeTitle = "Source"
     let afterTitle: String
 
     var body: some View {
@@ -443,7 +519,7 @@ private struct CompareView: View {
                     .offset(x: x - 17)
                     .frame(maxHeight: .infinity)
             }
-            .overlay(alignment: .topLeading) { tag("Before · Source") }
+            .overlay(alignment: .topLeading) { tag("Before · \(beforeTitle)") }
             .overlay(alignment: .topTrailing) { tag("After · \(afterTitle)") }
             .contentShape(Rectangle())
             .gesture(
@@ -510,5 +586,117 @@ private struct LightDragSurface: View {
             )
         }
         .accessibilityHidden(true)
+    }
+}
+
+enum CompareTarget: Hashable { case map, relit, pinned }
+
+/// A magnified 11×11 pixel patch around the cursor, nearest-neighbour, for inspecting texels.
+private struct Loupe: View {
+    let image: CGImage
+    let at: CGPoint
+
+    var body: some View {
+        let radius = 5
+        let cx = Int(at.x * CGFloat(image.width)), cy = Int(at.y * CGFloat(image.height))
+        let x = min(max(0, cx - radius), image.width - (2 * radius + 1))
+        let y = min(max(0, cy - radius), image.height - (2 * radius + 1))
+        Group {
+            if let patch = image.cropping(to: CGRect(x: x, y: y, width: 2 * radius + 1, height: 2 * radius + 1)) {
+                Image(decorative: patch, scale: 1)
+                    .resizable()
+                    .interpolation(.none)
+            }
+        }
+        .frame(width: 110, height: 110)
+        .overlay { Rectangle().stroke(.white.opacity(0.9), lineWidth: 1).frame(width: 10, height: 10) }
+        .clipShape(Circle())
+        .overlay { Circle().stroke(.white.opacity(0.85), lineWidth: 2) }
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The selected map's values under the cursor: RGBA bytes, a 16-bit height, or a decoded normal.
+private struct PixelReadout {
+    let text: String
+
+    init?(map: MaterialMapData, kind: MaterialMapKind, at point: CGPoint) {
+        let x = min(map.width - 1, max(0, Int(point.x * CGFloat(map.width))))
+        let y = min(map.height - 1, max(0, Int(point.y * CGFloat(map.height))))
+        guard point.x >= 0, point.x <= 1, point.y >= 0, point.y <= 1 else { return nil }
+        let bytes = [UInt8](map.bytes)
+        if map.format == .r16Linear {
+            let i = y * map.rowBytes + x * 2
+            guard i + 1 < bytes.count else { return nil }
+            let value = Int(bytes[i]) | Int(bytes[i + 1]) << 8
+            text = String(format: "%d, %d · height %d (%.3f)", x, y, value, Double(value) / 65535)
+            return
+        }
+        let i = y * map.rowBytes + x * 4
+        guard i + 3 < bytes.count else { return nil }
+        let r = bytes[i], g = bytes[i + 1], b = bytes[i + 2], a = bytes[i + 3]
+        switch kind {
+        case .normal, .bentNormal, .learnedNormal:
+            text = String(format: "%d, %d · n (%.2f, %.2f, %.2f)", x, y,
+                          Double(r) / 127.5 - 1, Double(g) / 127.5 - 1, Double(b) / 127.5 - 1)
+        case .albedo:
+            text = "\(x), \(y) · R \(r) G \(g) B \(b) A \(a)"
+        case .orm:
+            text = String(format: "%d, %d · AO %.2f  rough %.2f  metal %.2f", x, y,
+                          Double(r) / 255, Double(g) / 255, Double(b) / 255)
+        default:
+            text = String(format: "%d, %d · %@ %.3f", x, y, kind.title.lowercased(), Double(r) / 255)
+        }
+    }
+}
+
+/// A compact histogram of the selected map (luminance, or the first channel of data maps; height uses 16-bit).
+private struct HistogramStrip: View {
+    let map: MaterialMapData
+    let kind: MaterialMapKind
+
+    var body: some View {
+        let bins = Self.bins(map)
+        let peak = max(1, bins.max() ?? 1)
+        Canvas { context, size in
+            let step = size.width / CGFloat(bins.count)
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: size.height))
+            for (index, value) in bins.enumerated() {
+                let height = size.height * CGFloat((Double(value) / Double(peak)).squareRoot())
+                path.addLine(to: CGPoint(x: CGFloat(index) * step, y: size.height - height))
+            }
+            path.addLine(to: CGPoint(x: size.width, y: size.height))
+            path.closeSubpath()
+            context.fill(path, with: .color(.accentColor.opacity(0.75)))
+        }
+        .frame(width: 160, height: 26)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: Capsule())
+        .help("Histogram of the \(kind.title.lowercased()) map")
+        .accessibilityLabel("\(kind.title) histogram")
+    }
+
+    static func bins(_ map: MaterialMapData) -> [Int] {
+        var bins = [Int](repeating: 0, count: 64)
+        let bytes = [UInt8](map.bytes)
+        let stride = max(1, (map.width * map.height) / 65536)   // Sample at most ~64K pixels.
+        var pixel = 0
+        while pixel < map.width * map.height {
+            let x = pixel % map.width, y = pixel / map.width
+            let value: Int
+            if map.format == .r16Linear {
+                let i = y * map.rowBytes + x * 2
+                value = (Int(bytes[i]) | Int(bytes[i + 1]) << 8) >> 10
+            } else {
+                let i = y * map.rowBytes + x * 4
+                value = (Int(bytes[i]) * 54 + Int(bytes[i + 1]) * 183 + Int(bytes[i + 2]) * 19) >> 10
+            }
+            bins[min(63, value)] += 1
+            pixel += stride
+        }
+        return bins
     }
 }

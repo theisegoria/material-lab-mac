@@ -46,6 +46,12 @@ enum SnapshotHarness {
                 }
             }
         }
+        if let bundlePath = environment["MATERIAL_LAB_SNAPSHOT_OPEN_BUNDLE"] {
+            store.openMaterialBundle(URL(fileURLWithPath: bundlePath))
+            let r = store.recipe
+            print("open-bundle:", store.selectedSource?.semanticLabel ?? "-", r.materialPreset ?? "-", r.preset.rawValue,
+                  r.roughnessBase, r.assignedMetalnessEnabled, r.albedoRepair.rawValue)
+        }
         await waitForDerivation(store)
         if environment["MATERIAL_LAB_SNAPSHOT_UNDO_CHECK"] != nil { await undoCheck(store: store) }
         if environment["MATERIAL_LAB_SNAPSHOT_PRESET_CHECK"] != nil { await presetCheck(store: store) }

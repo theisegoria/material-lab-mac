@@ -217,6 +217,49 @@ enum MaterialBundle {
         }
     }
 
+    /// A .pbrmaterial bundle opened for review and re-derivation: its albedo becomes the source and its manifest
+    /// recipe the starting recipe. The albedo is already conditioned (delit, made tileable or repaired), so those
+    /// steps are switched off to avoid applying them twice.
+    static func openMaterialBundle(_ bundle: URL) throws -> (source: MaterialSource, recipe: MaterialRecipe) {
+        let manifestURL = bundle.appendingPathComponent("manifest.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["bundle_kind"] as? String == "pbr-material-bundle",
+              let raw = object["recipe"] as? [String: Any] else {
+            throw MaterialBundleError.invalidCapture("not a Material Lab .pbrmaterial bundle")
+        }
+        let albedo = bundle.appendingPathComponent("albedo.png")
+        guard FileManager.default.fileExists(atPath: albedo.path) else {
+            throw MaterialBundleError.invalidCapture("the bundle has no albedo.png")
+        }
+        let prior = (raw["preset"] as? String).flatMap(MaterialPreset.init(externalName:)) ?? .flat
+        var recipe = MaterialEngine.defaultRecipe(for: prior)
+        func number(_ key: String) -> Float? { (raw[key] as? Double).map(Float.init) }
+        recipe.heightStrength = number("height_strength") ?? recipe.heightStrength
+        recipe.roughnessBase = number("roughness_base") ?? recipe.roughnessBase
+        recipe.roughnessVariation = number("roughness_variation") ?? recipe.roughnessVariation
+        recipe.aoRadiusPixels = number("ao_radius_pixels") ?? recipe.aoRadiusPixels
+        recipe.normalStrength = number("normal_strength") ?? recipe.normalStrength
+        recipe.aoStrength = number("ao_strength") ?? recipe.aoStrength
+        recipe.guideNormalWeight = number("guide_normal_weight") ?? 0
+        recipe.assignedMetalness = number("assigned_metalness") ?? 0
+        recipe.assignedMetalnessEnabled = raw["assigned_metalness_enabled"] as? Bool ?? false
+        recipe.bentNormalEnabled = raw["bent_normal_enabled"] as? Bool ?? false
+        recipe.normalYDown = raw["normal_y_down"] as? Bool ?? false
+        recipe.tileWrap = raw["tile_wrap"] as? Bool ?? true
+        if let polarity = raw["height_polarity"] as? Int, polarity == 1 || polarity == -1 { recipe.heightPolarity = Int32(polarity) }
+        recipe.materialPreset = LibraryPreset.named(raw["material_preset"] as? String)?.id
+        recipe.albedoEqualize = 0
+        recipe.seamlessBlend = 0
+        recipe.albedoRepair = .off
+        if (object["source"] as? [String: Any])?["source_kind"] as? String == "authored_albedo" { recipe.authoredAlbedo = true }
+        let label = object["semantic_label"] as? String ?? bundle.deletingPathExtension().lastPathComponent
+        let source = MaterialSource(id: "bundle:\(bundle.path)", url: albedo, semanticLabel: label,
+                                    category: object["category"] as? String ?? "uncategorized", origin: .imported,
+                                    reviewStatus: "reviewed", originalEnvelopeURL: nil)
+        return (source, recipe)
+    }
+
     /// Reads the capture recipe back into an editable Mac recipe (absent 1.1.0 fields use defaults).
     static func recipe(fromCaptureEnvelope url: URL) -> MaterialRecipe? {
         guard let data = try? Data(contentsOf: url),

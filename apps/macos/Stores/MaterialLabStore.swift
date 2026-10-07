@@ -91,6 +91,14 @@ final class MaterialLabStore {
     }
     var showExportSheet = false
     var showWelcome = false
+    /// A version of the maps kept for comparison against later edits (Compare › Pinned).
+    private(set) var pinnedMaterial: DerivedMaterial?
+
+    func pinCurrentVersion() {
+        guard let currentMaterial else { return }
+        pinnedMaterial = currentMaterial
+        status = "Pinned this version. Choose Compare › Pinned to see what later edits change."
+    }
     var includeUnreviewedBatch = false
     /// Named recipes the user saved, newest first.
     private(set) var savedRecipes: [SavedRecipe] = []
@@ -223,6 +231,7 @@ final class MaterialLabStore {
         deriveControl?.cancel()
         selectedSourceID = id
         derived = nil
+        pinnedMaterial = nil
         derivationError = nil
         guard let id, let source = selectedSource else { return }
         let remembered = recipesBySource[id]
@@ -684,6 +693,21 @@ final class MaterialLabStore {
     }
 
     /// Reads, hashes, decodes and writes a capture off the main thread.
+    /// Opens a .pbrmaterial for review: its albedo becomes a source with the bundle's recipe.
+    func openMaterialBundle(_ url: URL) {
+        do {
+            let (source, bundleRecipe) = try MaterialBundle.openMaterialBundle(url)
+            sources.removeAll { $0.id == source.id }
+            sources.append(source)
+            deduplicateAndSort()
+            selectSource(source.id)
+            recipe = bundleRecipe
+            status = "Opened \(url.lastPathComponent) with its recipe."
+        } catch {
+            alert = MaterialAlert(title: "Cannot Open Bundle", message: error.localizedDescription)
+        }
+    }
+
     func importCapture(_ url: URL) {
         isImporting = true
         status = "Verifying capture…"
@@ -721,6 +745,8 @@ final class MaterialLabStore {
         let files = urls.filter(\.isFileURL)
         guard !files.isEmpty else { return false }
         let captures = files.filter { $0.pathExtension.lowercased() == "pbrcapture" }
+        let bundles = files.filter { $0.pathExtension.lowercased() == "pbrmaterial" }
+        bundles.forEach(openMaterialBundle)
         let catalogs = files.filter { $0.pathExtension.lowercased() == "json" }
         let images = files.filter { url in
             guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
@@ -729,8 +755,8 @@ final class MaterialLabStore {
         captures.forEach(importCapture)
         if let catalog = catalogs.first { importCatalog(catalog) }
         if !images.isEmpty { importSources(images) }
-        let handled = !captures.isEmpty || !catalogs.isEmpty || !images.isEmpty
-        if !handled { status = "Drop images, .pbrcapture files or a catalog JSON." }
+        let handled = !captures.isEmpty || !bundles.isEmpty || !catalogs.isEmpty || !images.isEmpty
+        if !handled { status = "Drop images, .pbrmaterial bundles, .pbrcapture files or a catalog JSON." }
         return handled
     }
 

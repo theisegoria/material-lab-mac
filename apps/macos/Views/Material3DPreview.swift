@@ -38,6 +38,9 @@ enum PreviewShape: String, CaseIterable, Identifiable {
 struct MaterialPreview3D: View {
     let material: DerivedMaterial
     let shape: PreviewShape
+    var environment: PreviewEnvironment = .studio
+    /// UV repeats across the preview geometry, so tiling shows.
+    var tiling: Float = 2
     @State private var scene = PreviewScene()
 
     private var materialKey: MaterialKey {
@@ -45,7 +48,7 @@ struct MaterialPreview3D: View {
             albedo: material.previews[.albedo].map { ObjectIdentifier($0) },
             normalYDown: material.recipe.normalYDown,
             metalness: material.recipe.assignedMetalnessEnabled ? material.recipe.assignedMetalness : -1,
-            shape: shape
+            shape: shape, tiling: tiling
         )
     }
 
@@ -55,10 +58,11 @@ struct MaterialPreview3D: View {
             scene.install(into: &content)
         } update: { _ in
             scene.setShape(shape)
+            scene.setEnvironment(environment)
         }
         .realityViewCameraControls(.orbit)
         .task(id: materialKey) {
-            await scene.apply(material, shape: shape)
+            await scene.apply(material, shape: shape, tiling: tiling)
         }
         .accessibilityLabel("Interactive 3D preview of the material on a \(shape.title.lowercased())")
     }
@@ -68,6 +72,7 @@ struct MaterialPreview3D: View {
         let normalYDown: Bool
         let metalness: Float
         let shape: PreviewShape
+        let tiling: Float
     }
 }
 
@@ -77,6 +82,7 @@ final class PreviewScene {
     let model = ModelEntity()
     private(set) var environment: EnvironmentResource?
     private var currentShape: PreviewShape?
+    private var currentEnvironment: PreviewEnvironment = .studio
     private var installed = false
 
     func install(into content: inout RealityViewCameraContent) {
@@ -98,7 +104,7 @@ final class PreviewScene {
             key.look(at: .zero, from: SIMD3(-1.6, 2.2, 2.4), relativeTo: nil)
             root.addChild(key)
 
-            environment = Self.makeEnvironment()
+            environment = PreviewEnvironment.studio.makeResource()
             if let environment {
                 root.components.set(ImageBasedLightComponent(source: .single(environment), intensityExponent: 0.4))
                 model.components.set(ImageBasedLightReceiverComponent(imageBasedLight: root))
@@ -128,7 +134,14 @@ final class PreviewScene {
         }
     }
 
-    func apply(_ material: DerivedMaterial, shape: PreviewShape) async {
+    func setEnvironment(_ choice: PreviewEnvironment) {
+        guard choice != currentEnvironment, let resource = choice.makeResource() else { return }
+        currentEnvironment = choice
+        environment = resource
+        root.components.set(ImageBasedLightComponent(source: .single(resource), intensityExponent: 0.4))
+    }
+
+    func apply(_ material: DerivedMaterial, shape: PreviewShape, tiling: Float? = nil) async {
         setShape(shape)
         do {
             var pbr = PhysicallyBasedMaterial()
@@ -148,7 +161,7 @@ final class PreviewScene {
             }
             pbr.metallic = .init(floatLiteral: material.recipe.assignedMetalnessEnabled
                                  ? material.recipe.assignedMetalness : 0)
-            pbr.textureCoordinateTransform = .init(scale: SIMD2(repeating: shape.uvRepeat))
+            pbr.textureCoordinateTransform = .init(scale: SIMD2(repeating: tiling ?? shape.uvRepeat))
             guard !Task.isCancelled else { return }
             model.model?.materials = [pbr]
         } catch {
@@ -171,33 +184,6 @@ final class PreviewScene {
         descriptor.maxAnisotropy = 8
         texture.sampler = .init(descriptor)
         return texture
-    }
-
-    /// A soft studio environment: bright overhead key, neutral horizon, dark floor.
-    private static func makeEnvironment() -> EnvironmentResource? {
-        let width = 256, height = 128
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(
-                data: nil, width: width, height: height, bitsPerComponent: 8,
-                bytesPerRow: width * 4, space: space,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else { return nil }
-        let colors = [
-            CGColor(srgbRed: 0.98, green: 0.98, blue: 1.0, alpha: 1),
-            CGColor(srgbRed: 0.62, green: 0.64, blue: 0.68, alpha: 1),
-            CGColor(srgbRed: 0.20, green: 0.20, blue: 0.21, alpha: 1)
-        ] as CFArray
-        guard let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.5, 1])
-        else { return nil }
-        // CoreGraphics' origin is bottom-left; the top row of the equirect is the zenith.
-        context.drawLinearGradient(
-            gradient, start: CGPoint(x: 0, y: CGFloat(height)), end: .zero, options: []
-        )
-        // A broad warm softbox above the horizon.
-        context.setFillColor(CGColor(srgbRed: 1, green: 0.96, blue: 0.9, alpha: 0.9))
-        context.fillEllipse(in: CGRect(x: 40, y: 84, width: 56, height: 26))
-        guard let image = context.makeImage() else { return nil }
-        return try? EnvironmentResource(equirectangular: image, options: .init(samplingQuality: .normal))
     }
 }
 
