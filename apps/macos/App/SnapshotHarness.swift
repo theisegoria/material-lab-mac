@@ -13,6 +13,24 @@ enum SnapshotHarness {
 
     static var isActive: Bool { environment["MATERIAL_LAB_SNAPSHOT_DIR"] != nil }
 
+    /// UI-test staging (MATERIAL_LAB_UITEST_SOURCE): adds the photo as a transient source with
+    /// an optional library preset (MATERIAL_LAB_UITEST_PRESET), derives it and leaves the real
+    /// window up for XCUITest screenshots, which show Liquid Glass as it renders on screen.
+    static var isStaging: Bool { environment["MATERIAL_LAB_UITEST_SOURCE"] != nil }
+
+    static func stage(store: MaterialLabStore) async {
+        guard let path = environment["MATERIAL_LAB_UITEST_SOURCE"] else { return }
+        let source = MaterialSource(
+            id: "uitest:\(path)", url: URL(fileURLWithPath: path),
+            semanticLabel: environment["MATERIAL_LAB_UITEST_LABEL"] ?? "Red fireclay brick",
+            category: "masonry", origin: .imported, reviewStatus: "reviewed", originalEnvelopeURL: nil
+        )
+        store.sources.insert(source, at: 0)
+        store.selectSource(source.id)
+        if let library = LibraryPreset.named(environment["MATERIAL_LAB_UITEST_PRESET"]) { store.chooseLibraryPreset(library) }
+        await waitForDerivation(store)
+    }
+
     static func run(store: MaterialLabStore) async {
         guard let directoryPath = environment["MATERIAL_LAB_SNAPSHOT_DIR"] else { return }
         let directory = URL(fileURLWithPath: directoryPath, isDirectory: true)

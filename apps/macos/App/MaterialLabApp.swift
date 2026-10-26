@@ -23,6 +23,7 @@ struct MaterialLabApp: App {
                 .task {
                     store.bootstrap()
                     if SnapshotHarness.isActive { await SnapshotHarness.run(store: store); return }
+                    if SnapshotHarness.isStaging { await SnapshotHarness.stage(store: store); return }
                     try? Tips.configure([.displayFrequency(.immediate)])
                     if !WelcomeSheet.hasBeenShown { store.showWelcome = true }
                 }

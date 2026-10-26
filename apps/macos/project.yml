@@ -90,6 +90,7 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
     scheme:
       environmentVariables: {}
+      testTargets: [MaterialLabUITests]
   QuickLookThumbnail:
     type: app-extension
     platform: macOS
@@ -103,3 +104,16 @@ targets:
         CODE_SIGN_ENTITLEMENTS: QuickLookThumbnail/QuickLookThumbnail.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
+  MaterialLabUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources: [UITests]
+    dependencies:
+      - target: MaterialLab
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ''
+        SWIFT_OBJC_BRIDGING_HEADER: ''
+        PRODUCT_BUNDLE_IDENTIFIER: io.materiallab.desktop.uitests
+        TEST_TARGET_NAME: MaterialLab
