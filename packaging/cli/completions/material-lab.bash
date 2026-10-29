@@ -14,7 +14,7 @@ _material_lab() {
             COMPREPLY=($(compgen -f -- "$cur")); return ;;
     esac
     COMPREPLY=($(compgen -W "--input --output --catalog --watch --validate --label --id --preset --list-presets --authored --height-map --normal-map --normal-map-dx --roughness-map --ao-map --metalness-map --height-strength \
-        --polarity --normal-strength --roughness --roughness-variation --ao-radius --ao-strength --equalize --seamless \
+        --polarity --normal-strength --roughness --roughness-variation --roughness-albedo-limit --mid-relief-share --tile-metres --substrate-relief --ao-radius --ao-strength --equalize --seamless \
         --seamless-mode --repair-albedo --metalness --normal-dx --no-tile --bent-normal --learned --learned-normals \
         --learned-cpu-only --guide-normals --guide-weight --save-guide-normals --recipe --saved-recipe --save-recipe \
         --also-export --jobs --report --keep-going --include-unreviewed --info --contact-sheet --diff --export --format \

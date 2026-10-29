@@ -11,7 +11,7 @@ A Mac import validates a .pbrcapture file, saves it in the separate camera inbox
 
 ## Algorithm versions and recipe fields
 
-Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0`, `1.2.0`, `1.3.0` and `1.4.0`. A field introduced by a version is required from that version on:
+Both formats carry the core algorithm version (`algorithm_version` / `algorithmVersion`). Validators accept `1.0.0`, `1.1.0`, `1.2.0`, `1.3.0`, `1.4.0` and `1.5.0`. A field introduced by a version is required from that version on unless marked optional; optional fields may not appear before their version:
 
 | Since | `.pbrmaterial` recipe (snake_case) | `.pbrcapture` recipe (camelCase) | Range |
 | --- | --- | --- | --- |
@@ -22,6 +22,10 @@ Both formats carry the core algorithm version (`algorithm_version` / `algorithmV
 | 1.1.0 | `seamless_blend` | `seamlessBlend` | 0–0.45 |
 | 1.2.0 | `guide_normal_weight` | `guideNormalWeight` | 0–1 |
 | 1.2.0 (optional) | `seamless_mode` | `seamlessMode` | `"cut"` or `"blend"`; absent means `"blend"` |
+| 1.5.0 (optional) | `mid_relief_share` | — | 0–0.8; absent means the preset default (0.35, flat 0) |
+| 1.5.0 (optional) | `tile_metres` | — | 0–64; 0 or absent means unknown (1 m) |
+| 1.5.0 (optional) | `roughness_albedo_limit` | — | 0–1; absent means 0.45 (1 is off) |
+| 1.5.0 (optional) | `substrate_relief` | — | 0–1; absent means 0 |
 
 Algorithm 1.3.0 keeps the recipe fields but changes three meanings: `ao_radius_pixels` is in pixels of a 1024² reference (it scales with the tile), `height_strength` scales a per-preset target rms surface slope instead of a luminance difference, and `normal_strength` scales the whole estimated surface (normals, AO, diagnostics and the height span). Estimated height is **range-normalized** (lowest point 0, highest 65535) instead of centred on 0.5, so a 1.3.0 `.pbrmaterial` manifest must carry a top-level `relief` object:
 
@@ -33,6 +37,8 @@ Algorithm 1.3.0 keeps the recipe fields but changes three meanings: `ao_radius_p
 | `learned_detail_correlation` | −1–1 | Correlation of learned and albedo relief in the σ 3–8 px band. |
 | `detail_polarity` | ±1 | Sign applied to albedo-derived fine relief (+1 = bright raised). |
 | `height_wrap_seam_ratio` | ≥ 0 | Mean opposite-edge height step divided by the mean adjacent step; about 1 means the height tiles without a visible seam. Use it instead of `seam_metrics.height_value_delta`, whose scale now depends on the relief. |
+
+From 1.5.0, `relief` may also carry `mid_relief_share_before` and `mid_relief_share_after` (0–1, the 4–30 mm band's share of the rms slope) and `roughness_albedo_correlation_before` and `roughness_albedo_correlation_after` (−1–1), all four or none. 1.5.0 estimated height maps the geometry's 0.5–99.5 % range linearly onto 0.01–0.99 and compresses outliers into the ends, so `height_span_tile_widths` is the depth of a unit height step in that linear bulk.
 
 ### Albedo repair (1.4.0)
 

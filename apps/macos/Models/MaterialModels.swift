@@ -397,6 +397,11 @@ struct MaterialRelief: Sendable {
     let learnedDetailCorrelation: Float
     let detailPolarity: Int
     let heightWrapSeamRatio: Float
+    /// Algorithm 1.5.0: the 4-30 mm relief share and the roughness/luminance correlation, before and after correction.
+    let midReliefShareBefore: Float
+    let midReliefShareAfter: Float
+    let roughnessAlbedoCorrelationBefore: Float
+    let roughnessAlbedoCorrelationAfter: Float
 }
 
 struct WorkingImageInfo: Sendable {

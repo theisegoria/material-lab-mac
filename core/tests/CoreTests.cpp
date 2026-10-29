@@ -44,7 +44,7 @@ int main() {
     constexpr unsigned n = 32;
     auto source = solid(n, 128);
     auto recipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
-    assert(std::strcmp(PBRLabVersion(), "1.4.0") == 0);
+    assert(std::strcmp(PBRLabVersion(), "1.5.0") == 0);
     auto* flat = derive(source, n, recipe);
     auto a = map(flat, PBRLabMapAlbedo), hm = map(flat, PBRLabMapHeight);
     auto no = map(flat, PBRLabMapNormal), ro = map(flat, PBRLabMapRoughness);
@@ -717,6 +717,71 @@ int main() {
         PBRLabFreeResult(second);
     }
 
+    {
+        // 1.5.0. A grain-dominated photo gets a 4-30 mm relief floor at the same rms slope; roughness is kept within the
+        // albedo-correlation limit; the flat preset gains a small substrate relief only when asked.
+        constexpr unsigned size = 256;
+        std::vector<uint8_t> photo(size * size * 4, 255);
+        uint32_t state = 2463534242u;
+        for (unsigned y = 0; y < size; ++y)
+            for (unsigned x = 0; x < size; ++x) {
+                state ^= state << 13; state ^= state >> 17; state ^= state << 5;
+                const double grain = (state >> 8) / double(1u << 24) - .5;
+                const double patch = ((x / 32 + y / 32) % 2) ? 70 : -70;  // Large paint patches drive the roughness cue.
+                const double mid = 6 * std::sin(6.2831853 * x / 12.0) * std::sin(6.2831853 * y / 12.0);
+                const size_t i = (size_t(y) * size + x) * 4;
+                photo[i] = photo[i + 1] = photo[i + 2] = static_cast<uint8_t>(std::clamp(std::lround(128 + patch + mid + 90 * grain), 0L, 255L));
+            }
+        auto stone = PBRLabDefaultRecipe(PBRLabPresetStone);
+        assert(stone.mid_relief_share > .3f && stone.roughness_albedo_limit < 1 && stone.tile_metres == 0);
+        auto* floored = derive(photo, size, stone);
+        auto fi = PBRLabGetDerivationInfo(floored);
+        auto plain = stone; plain.mid_relief_share = 0; plain.roughness_albedo_limit = 1;
+        auto* unfloored = derive(photo, size, plain);
+        auto ui = PBRLabGetDerivationInfo(unfloored);
+        std::cout << "mid relief share " << fi.mid_relief_share_before << " -> " << fi.mid_relief_share_after
+                  << ", rms slope " << ui.rms_slope << " vs " << fi.rms_slope << "; roughness/albedo correlation "
+                  << fi.roughness_albedo_correlation_before << " -> " << fi.roughness_albedo_correlation_after << "\n";
+        assert(fi.mid_relief_share_before < stone.mid_relief_share && fi.mid_relief_share_after > fi.mid_relief_share_before);
+        assert(fi.mid_relief_share_after > stone.mid_relief_share - .03f);
+        assert(std::fabs(fi.rms_slope - ui.rms_slope) < .02f * ui.rms_slope);  // Same amplitude, redistributed over scales.
+        assert(ui.mid_relief_share_after == ui.mid_relief_share_before);
+        assert(std::fabs(ui.roughness_albedo_correlation_after - ui.roughness_albedo_correlation_before) < 1e-6f);
+        if (std::fabs(fi.roughness_albedo_correlation_before) > stone.roughness_albedo_limit)
+            assert(std::fabs(fi.roughness_albedo_correlation_after) < stone.roughness_albedo_limit + .02f);
+        assert(std::fabs(ui.roughness_albedo_correlation_before) > stone.roughness_albedo_limit);  // The branch is exercised.
+        // A physical tile width moves the band: on a 4 m tile 4-30 mm is 1-8 reference pixels, mostly grain already.
+        auto wide = stone; wide.tile_metres = 4;
+        auto* wideTile = derive(photo, size, wide);
+        assert(PBRLabGetDerivationInfo(wideTile).mid_relief_share_before != fi.mid_relief_share_before);
+        PBRLabFreeResult(floored); PBRLabFreeResult(unfloored); PBRLabFreeResult(wideTile);
+        // Flat substrate relief: none by default; a small, deterministic, artwork-independent rms slope when asked.
+        auto flatRecipe = PBRLabDefaultRecipe(PBRLabPresetFlat);
+        assert(flatRecipe.mid_relief_share == 0 && flatRecipe.substrate_relief == 0);
+        auto* bare = derive(photo, size, flatRecipe);
+        assert(PBRLabGetDerivationInfo(bare).rms_slope == 0);
+        flatRecipe.substrate_relief = 1;
+        auto* film = derive(photo, size, flatRecipe);
+        auto* film2 = derive(photo, size, flatRecipe);
+        const float filmSlope = PBRLabGetDerivationInfo(film).rms_slope;
+        std::cout << "flat substrate rms slope " << filmSlope << "\n";
+        assert(filmSlope > .02f && filmSlope < .05f);
+        auto n1 = map(film, PBRLabMapNormal), n2 = map(film2, PBRLabMapNormal);
+        assert(std::memcmp(n1.pixels, n2.pixels, n1.byte_count) == 0);
+        bool varied = false;
+        for (size_t i = 0; i < size_t(size) * size && !varied; ++i) varied = n1.pixels[i * 4] != n1.pixels[0];
+        assert(varied);
+        PBRLabFreeResult(bare); PBRLabFreeResult(film); PBRLabFreeResult(film2);
+        // Out-of-range 1.5.0 fields are rejected.
+        PBRLabInput pin{photo.data(), size * 4, nullptr, 0, nullptr, 0, size, size, nullptr, 0};
+        char why[128]{};
+        for (int k = 0; k < 4; ++k) {
+            auto bad = stone;
+            if (k == 0) bad.mid_relief_share = .9f; else if (k == 1) bad.tile_metres = -1;
+            else if (k == 2) bad.roughness_albedo_limit = 1.5f; else bad.substrate_relief = NAN;
+            assert(!PBRLabDerive(&pin, &bad, nullptr, nullptr, why, sizeof(why)));
+        }
+    }
     PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n, nullptr, 0};
     char error[64]{};
     assert(!PBRLabDerive(&in, &recipe, stop, nullptr, error, sizeof(error)));

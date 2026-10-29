@@ -273,7 +273,7 @@ float number(const std::string& s) {
     if (parsed != s.size() || !std::isfinite(n)) throw std::runtime_error("invalid number: " + s);
     return n;
 }
-constexpr const char* kCLIVersion = "1.1.0";
+constexpr const char* kCLIVersion = "1.2.0";
 
 // --learned: the model shipped beside the binary (<prefix>/share/material-lab), the one the Mac app installs,
 // or MATERIAL_LAB_MODEL. Returns an empty path when none is found.
@@ -315,6 +315,8 @@ constexpr const char* kUsage =
     "  --repair-albedo off|blend|quilt|auto  rebuild the albedo itself so it tiles (band = --seamless, default 0.12);\n"
     "    the repaired albedo feeds every derived map and the learned estimator (auto: quilt unless its cut is costly)\n"
     "  --metalness 0..1  --relief-mask-r8 RAW  --height-override-r16le RAW\n"
+    "  --tile-metres 0..64 (physical tile width; 0 = unknown, 1 m)  --mid-relief-share 0..0.8 (4-30 mm relief floor)\n"
+    "  --roughness-albedo-limit 0..1 (max roughness/luminance correlation; 1 off)  --substrate-relief 0..1 (flat preset)\n"
     "Authored inputs (artist-made images; resampled to the source size):\n"
     "  --authored  the input is a hand-made albedo (recorded as authored)\n"
     "  --height-map IMG  --normal-map IMG [--normal-map-dx]  --roughness-map IMG  --ao-map IMG  --metalness-map IMG\n"
@@ -377,6 +379,10 @@ PBRLabRecipe recipeFromObject(NSDictionary* r) {
     num("albedo_equalize", "albedoEqualize", recipe.albedo_equalize);
     num("seamless_blend", "seamlessBlend", recipe.seamless_blend);
     num("guide_normal_weight", "guideNormalWeight", recipe.guide_normal_weight);
+    num("mid_relief_share", "midReliefShare", recipe.mid_relief_share);
+    num("tile_metres", "tileMetres", recipe.tile_metres);
+    num("roughness_albedo_limit", "roughnessAlbedoLimit", recipe.roughness_albedo_limit);
+    num("substrate_relief", "substrateRelief", recipe.substrate_relief);
     if (id polarity = field("height_polarity", "heightPolarity")) {
         if (!unitPolarity(polarity)) throw std::runtime_error("recipe field height_polarity must be 1 or -1");
         recipe.height_polarity = [polarity intValue];
@@ -422,6 +428,10 @@ NSDictionary* recipeDictionary(const PBRLabRecipe& r) {
         @"albedo_equalize": @(r.albedo_equalize),
         @"seamless_blend": @(r.seamless_blend),
         @"guide_normal_weight": @(r.guide_normal_weight),
+        @"mid_relief_share": @(r.mid_relief_share),
+        @"tile_metres": @(r.tile_metres),
+        @"roughness_albedo_limit": @(r.roughness_albedo_limit),
+        @"substrate_relief": @(r.substrate_relief),
         @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
         @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
     };
@@ -504,6 +514,10 @@ Options parse(int argc, const char** argv) {
         else if (flag == "--normal-strength") recipeNumber(&PBRLabRecipe::normal_strength);
         else if (flag == "--equalize") recipeNumber(&PBRLabRecipe::albedo_equalize);
         else if (flag == "--seamless") recipeNumber(&PBRLabRecipe::seamless_blend);
+        else if (flag == "--mid-relief-share") recipeNumber(&PBRLabRecipe::mid_relief_share);
+        else if (flag == "--tile-metres") recipeNumber(&PBRLabRecipe::tile_metres);
+        else if (flag == "--roughness-albedo-limit") recipeNumber(&PBRLabRecipe::roughness_albedo_limit);
+        else if (flag == "--substrate-relief") recipeNumber(&PBRLabRecipe::substrate_relief);
         else if (flag == "--seamless-mode") {
             std::string mode = value();
             if (mode != "cut" && mode != "blend") throw std::runtime_error("--seamless-mode must be cut or blend");
@@ -1160,7 +1174,11 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                                 @"learned_form_share": @(info.learned_form_share),
                                 @"learned_detail_correlation": @(info.learned_detail_correlation),
                                 @"detail_polarity": @(info.detail_polarity),
-                                @"height_wrap_seam_ratio": @(info.height_wrap_seam_ratio)};
+                                @"height_wrap_seam_ratio": @(info.height_wrap_seam_ratio),
+                                @"mid_relief_share_before": @(info.mid_relief_share_before),
+                                @"mid_relief_share_after": @(info.mid_relief_share_after),
+                                @"roughness_albedo_correlation_before": @(info.roughness_albedo_correlation_before),
+                                @"roughness_albedo_correlation_after": @(info.roughness_albedo_correlation_after)};
         if (review) {
             manifest[@"source_review_status"] = review->reviewed ? @"reviewed" : @"unreviewed";
             manifest[@"included_by_opt_in"] = @(review->includedByOptIn);
@@ -1182,13 +1200,14 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
 
 // ---------------------------------------------------------------------------------------------
 // Bundle validation.
-// version: 0 = 1.0.0, 1 = 1.1.0, 2 = 1.2.0, 3 = 1.3.0, 4 = 1.4.0. Fields introduced by a version are required from it on.
+// version: 0 = 1.0.0, 1 = 1.1.0, 2 = 1.2.0, 3 = 1.3.0, 4 = 1.4.0, 5 = 1.5.0. Fields introduced by a version are required from it on.
 int algorithmLevel(NSString* algorithm) {
     if ([algorithm isEqualToString:@"1.0.0"]) return 0;
     if ([algorithm isEqualToString:@"1.1.0"]) return 1;
     if ([algorithm isEqualToString:@"1.2.0"]) return 2;
     if ([algorithm isEqualToString:@"1.3.0"]) return 3;
     if ([algorithm isEqualToString:@"1.4.0"]) return 4;
+    if ([algorithm isEqualToString:@"1.5.0"]) return 5;
     return -1;
 }
 bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string& why) {
@@ -1217,6 +1236,18 @@ bool validateRecipe(NSDictionary* recipe, bool snakeCase, int level, std::string
         if (!finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
     }
     if (!unitPolarity(recipe[key("height_polarity", "heightPolarity")])) { why = "height polarity"; return false; }
+    // Optional, from 1.5.0 on (absent means the preset default, which is what the apps derive with).
+    static constexpr Range v15[] = {
+        {"mid_relief_share", "midReliefShare", 0, .8, 5},
+        {"tile_metres", "tileMetres", 0, 64, 5},
+        {"roughness_albedo_limit", "roughnessAlbedoLimit", 0, 1, 5},
+        {"substrate_relief", "substrateRelief", 0, 1, 5},
+    };
+    for (const auto& range : v15) {
+        id value = recipe[key(range.snake, range.camel)];
+        if (!value) continue;
+        if (level < range.since || !finiteNumber(value, range.lo - 1e-6, range.hi + 1e-6)) { why = snakeCase ? range.snake : range.camel; return false; }
+    }
     // Optional: the material-library preset the recipe started from.
     if (id named = recipe[key("material_preset", "materialPreset")]) {
         NSString* text = asString(named);
@@ -1354,6 +1385,16 @@ void validate(const fs::path& bundle, bool quiet = false) {
             !finiteNumber(relief[@"learned_form_share"], 0, 1 + 1e-6) || !finiteNumber(relief[@"learned_detail_correlation"], -1 - 1e-6, 1 + 1e-6) ||
             !unitPolarity(relief[@"detail_polarity"]) || !finiteNumber(relief[@"height_wrap_seam_ratio"], 0, 1e6))
             throw std::runtime_error("manifest relief (height span, slope, learned share/correlation, detail polarity) is missing or invalid");
+        // 1.5.0 (optional; the CLI and the Mac app record them): the mid-scale relief share and the roughness/albedo
+        // correlation, before and after their corrections. Recorded all together or not at all.
+        NSArray* v15Relief = @[@"mid_relief_share_before", @"mid_relief_share_after", @"roughness_albedo_correlation_before", @"roughness_albedo_correlation_after"];
+        NSUInteger present = 0;
+        for (NSString* name in v15Relief) present += relief[name] != nil;
+        if (present && (level < 5 || present != v15Relief.count || !finiteNumber(relief[@"mid_relief_share_before"], 0, 1 + 1e-6) ||
+                        !finiteNumber(relief[@"mid_relief_share_after"], 0, 1 + 1e-6) ||
+                        !finiteNumber(relief[@"roughness_albedo_correlation_before"], -1 - 1e-6, 1 + 1e-6) ||
+                        !finiteNumber(relief[@"roughness_albedo_correlation_after"], -1 - 1e-6, 1 + 1e-6)))
+            throw std::runtime_error("manifest relief 1.5.0 fields (mid-relief share, roughness/albedo correlation) are incomplete or invalid");
     }
     id reviewStatus = manifest[@"source_review_status"];
     if (reviewStatus && ![asString(reviewStatus) isEqualToString:@"reviewed"] && ![asString(reviewStatus) isEqualToString:@"unreviewed"] &&

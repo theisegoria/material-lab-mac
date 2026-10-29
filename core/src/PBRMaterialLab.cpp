@@ -39,6 +39,15 @@ constexpr float kCavityGain = 1.5f;            // Curvature (reference pixels of
 constexpr float kRoughnessSpread = 0.25f;      // Roughness standard deviation at roughness_variation 1.
 constexpr float kRoughnessCavityWeight = 0.45f, kRoughnessContrastWeight = 0.35f, kRoughnessFacetWeight = 0.3f;
 constexpr int kAOSlices = 8;        // Two-sided slices: 16 horizon directions.
+// 1.5.0. Mid-scale relief: the band (millimetres) that survives at viewing distance, its default minimum share of the
+// rms slope, and the secant steps that reach it. Roughness may correlate with blurred luminance at most this much.
+constexpr float kMidReliefLowMM = 4.0f, kMidReliefHighMM = 30.0f;
+constexpr float kDefaultMidReliefShare = 0.35f;
+constexpr int kMidReliefIterations = 5;
+constexpr float kDefaultRoughnessAlbedoLimit = 0.45f;
+constexpr float kRobustHeightQuantile = 0.005f;  // Height export: the 0.5..99.5 % geometry range is the linear bulk (robust depth)
+constexpr float kRobustHeightTail = 0.01f;       // ...and the outliers are compressed into 1 % of each end of the range.
+constexpr float kSubstrateSlope = 0.035f;        // Flat-preset substrate rms slope at substrate_relief 1 (painted film).
 constexpr int kAOStepsPerSide = 8;
 
 float clamp01(float v) { return std::clamp(v, 0.0f, 1.0f); }
@@ -258,7 +267,9 @@ bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
         !in01(r->ao_radius_pixels, 64) || !in01(r->assigned_metalness, 1) ||
         !in01(r->normal_strength, 16) || !in01(r->ao_strength, 4) ||
         !in01(r->albedo_equalize, 1) || !in01(r->seamless_blend, .45f) ||
-        !in01(r->guide_normal_weight, 1) || r->seamless_mode > 1 || r->albedo_repair > 3) {
+        !in01(r->guide_normal_weight, 1) || r->seamless_mode > 1 || r->albedo_repair > 3 ||
+        !in01(r->mid_relief_share, .8f) || !in01(r->tile_metres, 64) || !in01(r->roughness_albedo_limit, 1) ||
+        !in01(r->substrate_relief, 1)) {
         why = "recipe contains an invalid preset or out-of-range parameter"; return false;
     }
     return true;
@@ -840,7 +851,7 @@ struct PBRLabResult {
     PBRLabAlbedoRepairInfo repair{};
 };
 
-extern "C" const char *PBRLabVersion(void) { return "1.4.0"; }
+extern "C" const char *PBRLabVersion(void) { return "1.5.0"; }
 
 extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     PBRLabRecipe r{};
@@ -867,6 +878,10 @@ extern "C" PBRLabRecipe PBRLabDefaultRecipe(PBRLabPreset preset) {
     r.guide_normal_weight = 0.0f;
     r.seamless_mode = 1;
     r.albedo_repair = 0;
+    r.mid_relief_share = r.preset == PBRLabPresetFlat ? 0.0f : kDefaultMidReliefShare;
+    r.tile_metres = 0.0f;
+    r.roughness_albedo_limit = kDefaultRoughnessAlbedoLimit;
+    r.substrate_relief = 0.0f;
     return r;
 }
 
@@ -1038,6 +1053,80 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 const float gain = static_cast<float>(polarity * target / signalRms);
                 for (size_t i = 0; i < count; ++i) geometry[i] = gain * signal[i];
             }
+            // Mid-scale relief (1.5.0). The 4-30 mm band (seams, fasteners, chips, dents) is what remains of a surface a
+            // few metres away; a photograph's relief cue is dominated by grain, which averages flat there. Where that band
+            // carries less than mid_relief_share of the rms slope, the photo's own band (oriented as the albedo detail)
+            // is added until it does; the surface then returns to its previous rms slope, so the preset prior still
+            // sets the relief amplitude and only its distribution over scales changes.
+            if (recipe->mid_relief_share > 0 && (hasSignal || useGuide) && recipe->preset != PBRLabPresetFlat) {
+                const float mmPerReference = (recipe->tile_metres > 0 ? recipe->tile_metres : 1.0f) * 1000.0f / kReferenceSize;
+                const float lowSigma = .5f * kMidReliefLowMM / mmPerReference;
+                const float highSigma = std::min(.5f * kMidReliefHighMM / mmPerReference, kReferenceSize / 8.0f);
+                if (highSigma > lowSigma * 1.5f) {
+                    auto bandOf = [&](const std::vector<float> &f) {
+                        auto fineBlur = smoothBlur(f, width, height, radius(lowSigma * std::numbers::sqrt3_v<float>), tiled);
+                        auto coarseBlur = smoothBlur(f, width, height, radius(highSigma * std::numbers::sqrt3_v<float>), tiled);
+                        for (size_t i = 0; i < count; ++i) fineBlur[i] -= coarseBlur[i];
+                        return fineBlur;
+                    };
+                    const double total = rmsSlope(geometry, width, height, tiled);
+                    const double mid = rmsSlope(bandOf(geometry), width, height, tiled);
+                    const double before = total > 1e-12 ? mid / total : 0.0;
+                    info.mid_relief_share_before = info.mid_relief_share_after = static_cast<float>(before);
+                    const double wanted = recipe->mid_relief_share;
+                    if (total > 1e-12 && before < wanted) {
+                        auto cue = bandOf(logLum);
+                        const double cueRms = rmsSlope(cue, width, height, tiled);
+                        if (cueRms > 1e-12) {
+                            const float orient = static_cast<float>(info.detail_polarity / cueRms);
+                            for (auto &c : cue) c *= orient; // Unit rms slope, oriented as the albedo detail.
+                            std::vector<float> trial(count);
+                            auto shareAt = [&](double amount) {
+                                for (size_t i = 0; i < count; ++i) trial[i] = geometry[i] + static_cast<float>(amount) * cue[i];
+                                const double t = rmsSlope(trial, width, height, tiled);
+                                return t > 1e-12 ? rmsSlope(bandOf(trial), width, height, tiled) / t : 0.0;
+                            };
+                            // Independent slopes add roughly in quadrature; the added band also raises the total, so a
+                            // few secant steps on its amplitude reach the share.
+                            double a0 = 0, s0 = before;
+                            double a1 = std::sqrt(std::max(wanted * wanted * total * total - mid * mid, 0.0));
+                            double s1 = shareAt(a1);
+                            for (int k = 0; k < kMidReliefIterations && std::abs(s1 - wanted) > .01 && std::abs(s1 - s0) > 1e-9; ++k) {
+                                const double a2 = std::max(a1 + (wanted - s1) * (a1 - a0) / (s1 - s0), 0.0);
+                                a0 = a1; s0 = s1; a1 = a2; s1 = shareAt(a1);
+                            }
+                            for (size_t i = 0; i < count; ++i) geometry[i] += static_cast<float>(a1) * cue[i];
+                            const double mixed = rmsSlope(geometry, width, height, tiled);
+                            const float restore = mixed > 1e-12 ? static_cast<float>(total / mixed) : 0.0f;
+                            for (auto &g : geometry) g *= restore;
+                            info.mid_relief_share_after = static_cast<float>(s1);
+                        }
+                    }
+                }
+            }
+            // Substrate relief (1.5.0, flat preset). Printed film, paint and cover glass are not perfectly flat, but the
+            // artwork must never be read as relief: deterministic periodic noise seeded by the image, at a fine and a
+            // broad scale, scaled to a small rms slope. AO and the diagnostics follow from it as for any relief.
+            if (recipe->preset == PBRLabPresetFlat && recipe->substrate_relief > 0 && !useGuide) {
+                uint64_t seed = 1469598103934665603ull;
+                for (size_t i = 0; i < count * 4; i += 97) seed = (seed ^ albedo[i]) * 1099511628211ull;
+                std::vector<float> noise(count);
+                for (size_t i = 0; i < count; ++i) {
+                    uint64_t z = seed + i * 0x9e3779b97f4a7c15ull;
+                    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull; z = (z ^ (z >> 27)) * 0x94d049bb133111ebull; z ^= z >> 31;
+                    noise[i] = static_cast<float>(static_cast<double>(z >> 11) * (1.0 / 9007199254740992.0)) - .5f;
+                }
+                auto fine = smoothBlur(noise, width, height, radius(1.0f), tiled);
+                auto broad = smoothBlur(noise, width, height, radius(7.0f), tiled);
+                const double fineRms = rmsSlope(fine, width, height, tiled), broadRms = rmsSlope(broad, width, height, tiled);
+                if (fineRms > 1e-12 && broadRms > 1e-12) {
+                    for (size_t i = 0; i < count; ++i)
+                        geometry[i] = static_cast<float>(.6 * fine[i] / fineRms + .8 * broad[i] / broadRms);
+                    const double substrateRms = rmsSlope(geometry, width, height, tiled);
+                    const float gain = substrateRms > 1e-12 ? static_cast<float>(kSubstrateSlope * recipe->substrate_relief / substrateRms) : 0.0f;
+                    for (auto &g : geometry) g *= gain;
+                }
+            }
             if (input->relief_mask_r8)
                 for (int y = 0; y < height; ++y) {
                     const uint8_t *mask = input->relief_mask_r8 + static_cast<size_t>(y) * input->relief_mask_row_bytes;
@@ -1064,15 +1153,36 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             }
             info.height_span_tile_widths = kNormalDepthPixels * scale * recipe->normal_strength / static_cast<float>(width);
         } else {
-            const float span = highest - lowest;
+            // Robust range (1.5.0): a few deep pits or spikes no longer own the 16-bit range, and so the relief depth.
+            // The 0.5..99.5 % geometry range maps linearly onto all but kRobustHeightTail of each end; the outliers are
+            // compressed (still monotonic, never clamped into plateaus) into those ends. The recorded span is the
+            // linear bulk's depth per unit height.
+            float low = lowest, high = highest, tail = 0;
+            if (count >= 4096 && highest - lowest > 1e-6f) {
+                std::vector<float> sorted(geometry);
+                const size_t k0 = static_cast<size_t>(kRobustHeightQuantile * static_cast<float>(count - 1));
+                const size_t k1 = count - 1 - k0;
+                std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k0), sorted.end());
+                const float q0 = sorted[k0];
+                std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k1), sorted.end());
+                const float q1 = sorted[k1];
+                if (q1 - q0 > 1e-6f && (q1 - q0) / (1 - 2 * kRobustHeightTail) < highest - lowest) {
+                    low = q0; high = q1; tail = kRobustHeightTail;
+                }
+            }
+            const float span = high - low;
             const bool relief = span > 1e-6f;
             for (size_t i = 0; i < count; ++i) {
-                heights[i] = relief ? (geometry[i] - lowest) / span : .5f;
+                const float g = geometry[i];
+                if (!relief) heights[i] = .5f;
+                else if (g < low) heights[i] = tail * (g - lowest) / (low - lowest);
+                else if (g > high) heights[i] = 1 - tail + tail * (g - high) / (highest - high);
+                else heights[i] = tail + (1 - 2 * tail) * (g - low) / span;
                 uint16_t q = static_cast<uint16_t>(std::lround(clamp01(heights[i]) * 65535.0f));
                 heightMap.data[i * 2] = static_cast<uint8_t>(q & 255);
                 heightMap.data[i * 2 + 1] = static_cast<uint8_t>(q >> 8);
             }
-            info.height_span_tile_widths = relief ? span / static_cast<float>(width) : 0.0f;
+            info.height_span_tile_widths = relief ? span / (1 - 2 * tail) / static_cast<float>(width) : 0.0f;
         }
         info.rms_slope = static_cast<float>(rmsSlope(geometry, width, height, tiled));
 
@@ -1117,6 +1227,39 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
             const float amplitude = recipe->roughness_variation * kRoughnessSpread;
             for (size_t i = 0; i < count; ++i)
                 roughnessValue[i] = std::clamp(recipe->roughness_base + amplitude * cue[i], roughLo, roughHi);
+            // Albedo independence (1.5.0). Relief and micro-contrast cues are read from the photograph, so dark paint
+            // would otherwise always be rough. The luminance-explained part is scaled down until the correlation with
+            // blurred luminance is at most roughness_albedo_limit; mean and spread are kept.
+            const auto lum = smoothBlur(luminance, width, height, radius(2), tiled);
+            auto moments = [&](const std::vector<float> &v) {
+                double sum = 0, squares = 0;
+                for (float x : v) { sum += x; squares += static_cast<double>(x) * x; }
+                const double mean = sum / static_cast<double>(count);
+                return std::array<double, 2>{mean, std::sqrt(std::max(squares / static_cast<double>(count) - mean * mean, 0.0))};
+            };
+            auto correlationWith = [&](const std::vector<float> &v, const std::array<double, 2> &mv, const std::array<double, 2> &ml) {
+                double sum = 0;
+                for (size_t i = 0; i < count; ++i) sum += (v[i] - mv[0]) * (lum[i] - ml[0]);
+                return mv[1] > 1e-12 && ml[1] > 1e-12 ? sum / static_cast<double>(count) / (mv[1] * ml[1]) : 0.0;
+            };
+            const auto ml = moments(lum), mr = moments(roughnessValue);
+            const double correlation = correlationWith(roughnessValue, mr, ml);
+            info.roughness_albedo_correlation_before = info.roughness_albedo_correlation_after = static_cast<float>(correlation);
+            const double limit = recipe->roughness_albedo_limit;
+            if (limit < 1 && std::abs(correlation) > limit && mr[1] > 1e-9 && ml[1] > 1e-12) {
+                std::vector<float> residual(count);
+                for (size_t i = 0; i < count; ++i)
+                    residual[i] = static_cast<float>((roughnessValue[i] - mr[0]) / mr[1] - correlation * (lum[i] - ml[0]) / ml[1]);
+                auto mres = moments(residual);
+                if (mres[1] > 1e-6) {
+                    const double target = (correlation < 0 ? -1.0 : 1.0) * limit, rest = std::sqrt(1 - target * target);
+                    for (size_t i = 0; i < count; ++i) {
+                        const double z = target * (lum[i] - ml[0]) / ml[1] + rest * (residual[i] - mres[0]) / mres[1];
+                        roughnessValue[i] = std::clamp(static_cast<float>(mr[0] + mr[1] * z), roughLo, roughHi);
+                    }
+                    info.roughness_albedo_correlation_after = static_cast<float>(correlationWith(roughnessValue, moments(roughnessValue), ml));
+                }
+            }
         }
         checkpoint(progress, context, .32f);
 

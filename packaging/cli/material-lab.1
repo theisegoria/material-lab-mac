@@ -60,6 +60,12 @@ List the material presets by category, with their prior and roughness (or their 
 Relief amplitude, whether bright details are raised (1) or recessed (-1), and normal intensity.
 .It Fl -roughness Ar 0..1 , Fl -roughness-variation Ar 0..1
 Roughness prior and how much it varies with surface texture.
+.It Fl -roughness-albedo-limit Ar 0..1
+Largest allowed correlation between roughness and brightness, so dark paint is not automatically rough (default 0.45; 1 turns it off).
+.It Fl -tile-metres Ar 0..64 , Fl -mid-relief-share Ar 0..0.8
+Physical width of the tile (0 = unknown, taken as 1 m) and the least share of the surface slope kept in 4-30 mm relief such as seams, fasteners and dents (default 0.35; 0 turns it off).
+.It Fl -substrate-relief Ar 0..1
+Flat preset only: a slight, artwork-independent unevenness of the printed or painted surface (default 0).
 .It Fl -ao-radius Ar 0..64 , Fl -ao-strength Ar 0..4 , Fl -bent-normal
 Ambient occlusion search radius in pixels, depth exaggeration, and an optional bent-normal map.
 .It Fl -equalize Ar 0..1

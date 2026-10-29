@@ -94,6 +94,14 @@ typedef struct PBRLabRecipe {
     // (histogram-preserving), 2 = quilt (minimum-error cut, multi-band), 3 = auto (quilt unless its cut ratio > 4).
     // The band is seamless_blend of the tile per edge, or 0.12 when that is 0.
     uint32_t albedo_repair;
+    // Added in 1.5.0 (docs/DERIVATION.md, "Mid-scale relief"). PBRLabDefaultRecipe enables the mid-scale floor and the
+    // roughness/albedo decorrelation; zero values reproduce 1.4.0 except for the robust height range.
+    float mid_relief_share;          // Minimum share of the inferred relief's rms slope carried by the 4-30 mm band (seams,
+                                     // fasteners, chips, dents: the scale still resolved at viewing distance), [0,0.8]; 0 off.
+    float tile_metres;               // Physical width of the tile in metres for physical relief bands, [0,64]; 0 = unknown (1 m).
+    float roughness_albedo_limit;    // Maximum |correlation| of varied roughness with blurred luminance, [0,1]; 1 is off.
+    float substrate_relief;          // Flat preset: deterministic cosmetic paint/film substrate relief strength, [0,1]; the
+                                     // artwork is unchanged. 0 keeps a flat graphic flat.
 } PBRLabRecipe;
 
 typedef struct PBRLabMap {
@@ -119,6 +127,11 @@ typedef struct PBRLabDerivationInfo {
     float learned_detail_correlation;// Correlation of learned and albedo relief in the 3..8 px band (0 without a guide).
     int32_t detail_polarity;         // Sign applied to albedo-derived fine relief (+1 bright raised).
     float height_wrap_seam_ratio;    // Mean opposite-edge height step / mean adjacent step (about 1 = seamless).
+    // Added in 1.5.0.
+    float mid_relief_share_before;   // Share of the rms slope in the 4-30 mm band before the floor (0 when not measured).
+    float mid_relief_share_after;    // The same after the floor (equal to before when the floor was not needed).
+    float roughness_albedo_correlation_before; // Correlation of varied roughness with blurred luminance.
+    float roughness_albedo_correlation_after;
 } PBRLabDerivationInfo;
 
 // Added in 1.4.0. Wrap-seam measures of linear-light luminance (see docs/DERIVATION.md).

@@ -16,6 +16,10 @@ import tempfile
 import zlib
 
 
+V15_RECIPE = ("mid_relief_share", "tile_metres", "roughness_albedo_limit", "substrate_relief")
+V15_RELIEF = ("mid_relief_share_before", "mid_relief_share_after", "roughness_albedo_correlation_before",
+              "roughness_albedo_correlation_after")
+
 def chunk(name: bytes, content: bytes) -> bytes:
     body = name + content
     return struct.pack(">I", len(content)) + body + struct.pack(">I", zlib.crc32(body))
@@ -148,7 +152,7 @@ def main() -> None:
         assert manifest["maps"]["normal"]["pixel_format"] == "rgba8_linear_png"
         assert "orm" in manifest["maps"] and "bent_normal" in manifest["maps"]
         # 1.3.0: estimated height is range-normalized and the manifest records the depth it spans.
-        assert manifest["algorithm_version"] == "1.4.0"
+        assert manifest["algorithm_version"] == "1.5.0"
         assert manifest["recipe"]["albedo_repair"] == "off" and "albedo_repair" not in manifest
         relief = manifest["relief"]
         assert relief["height_span_tile_widths"] > 0 and relief["rms_slope"] > 0
@@ -678,6 +682,21 @@ def main() -> None:
         forge(lambda m: m["relief"].update(detail_polarity=0))
         forge(lambda m: m["relief"].update(learned_form_share=2))
         forge(lambda m: m["relief"].pop("height_wrap_seam_ratio"))
+        # 1.5.0 fields: range-checked, all-or-none in relief, and only from 1.5.0 on.
+        assert all(key in good["recipe"] for key in V15_RECIPE) and all(key in good["relief"] for key in V15_RELIEF)
+        forge(lambda m: m["recipe"].update(mid_relief_share=.95))
+        forge(lambda m: m["recipe"].update(roughness_albedo_limit=-.1))
+        forge(lambda m: m["recipe"].update(tile_metres=float("nan")))
+        forge(lambda m: m["relief"].pop("mid_relief_share_after"))
+        forge(lambda m: m["relief"].update(roughness_albedo_correlation_after=1.5))
+        forge(lambda m: m.update(algorithm_version="1.4.0"))
+        app_style = json.loads(json.dumps(good))  # Absent 1.5.0 fields mean the preset defaults.
+        for key in V15_RECIPE:
+            app_style["recipe"].pop(key)
+        for key in V15_RELIEF:
+            app_style["relief"].pop(key)
+        (forged_bundle / "manifest.json").write_text(json.dumps(app_style))
+        run(cli, "--validate", str(forged_bundle))
         (forged_bundle / "manifest.json").write_text("[1, 2]")
         run(cli, "--validate", str(forged_bundle), expect_success=False)
         upper = json.loads(json.dumps(good))
@@ -688,8 +707,10 @@ def main() -> None:
         legacy = json.loads(json.dumps(good))
         legacy["algorithm_version"] = "1.0.0"
         legacy.pop("normal_convention")
-        for key in ("normal_strength", "normal_y_down", "ao_strength", "albedo_equalize", "seamless_blend"):
+        for key in ("normal_strength", "normal_y_down", "ao_strength", "albedo_equalize", "seamless_blend") + V15_RECIPE:
             legacy["recipe"].pop(key)
+        for key in V15_RELIEF:
+            legacy["relief"].pop(key)
         (forged_bundle / "manifest.json").write_text(json.dumps(legacy))
         legacy_result = run(cli, "--validate", str(forged_bundle))
         assert "green-down" in legacy_result.stderr

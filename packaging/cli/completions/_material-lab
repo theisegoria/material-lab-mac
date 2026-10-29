@@ -21,6 +21,10 @@ _arguments -s \
   '--normal-strength[normal intensity 0..16]:value:' \
   '--roughness[roughness prior 0..1]:value:' \
   '--roughness-variation[roughness variation 0..1]:value:' \
+  '--roughness-albedo-limit[max roughness/brightness correlation 0..1]:value:' \
+  '--mid-relief-share[4-30 mm relief floor 0..0.8]:value:' \
+  '--tile-metres[physical tile width in metres]:value:' \
+  '--substrate-relief[flat preset surface unevenness 0..1]:value:' \
   '--ao-radius[occlusion radius in pixels]:value:' \
   '--ao-strength[occlusion depth 0..4]:value:' \
   '--equalize[remove lighting 0..1]:value:' \

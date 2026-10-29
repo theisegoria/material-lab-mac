@@ -414,6 +414,7 @@ enum MaterialBundle {
             ]
         }
         let recipe = material.recipe
+        let coreDefaults = PBRLabDefaultRecipe(recipe.preset.cValue)
         let manifest: [String: Any] = [
             "schema_version": 1,
             "bundle_kind": "pbr-material-bundle",
@@ -455,7 +456,12 @@ enum MaterialBundle {
                 "seamless_blend": tidy(recipe.seamlessBlend),
                 "seamless_mode": recipe.seamlessMode.rawValue,
                 "albedo_repair": (material.repair?.mode ?? .off).rawValue,
-                "guide_normal_weight": tidy(material.guide == nil ? 0 : recipe.guideNormalWeight)
+                "guide_normal_weight": tidy(material.guide == nil ? 0 : recipe.guideNormalWeight),
+                // 1.5.0 relief and roughness controls: the app derives with the core's preset defaults.
+                "mid_relief_share": tidy(coreDefaults.mid_relief_share),
+                "tile_metres": tidy(coreDefaults.tile_metres),
+                "roughness_albedo_limit": tidy(coreDefaults.roughness_albedo_limit),
+                "substrate_relief": tidy(coreDefaults.substrate_relief)
             ],
             "normal_convention": recipe.normalConvention,
             "maps": mapManifest,
@@ -470,7 +476,11 @@ enum MaterialBundle {
                 "learned_form_share": tidy(material.relief.learnedFormShare),
                 "learned_detail_correlation": tidy(material.relief.learnedDetailCorrelation),
                 "detail_polarity": material.relief.detailPolarity,
-                "height_wrap_seam_ratio": tidy(material.relief.heightWrapSeamRatio)
+                "height_wrap_seam_ratio": tidy(material.relief.heightWrapSeamRatio),
+                "mid_relief_share_before": tidy(material.relief.midReliefShareBefore),
+                "mid_relief_share_after": tidy(material.relief.midReliefShareAfter),
+                "roughness_albedo_correlation_before": tidy(material.relief.roughnessAlbedoCorrelationBefore),
+                "roughness_albedo_correlation_after": tidy(material.relief.roughnessAlbedoCorrelationAfter)
             ] as [String: Any],
             "estimation_notice": "Geometry and reflectance maps are estimates, not measured surface properties.",
             "runtime_admitted": false

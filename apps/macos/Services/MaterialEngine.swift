@@ -385,7 +385,10 @@ enum MaterialEngine {
             relief: MaterialRelief(
                 heightSpanTileWidths: geometryInfo.height_span_tile_widths, rmsSlope: geometryInfo.rms_slope,
                 learnedFormShare: geometryInfo.learned_form_share, learnedDetailCorrelation: geometryInfo.learned_detail_correlation,
-                detailPolarity: Int(geometryInfo.detail_polarity), heightWrapSeamRatio: geometryInfo.height_wrap_seam_ratio
+                detailPolarity: Int(geometryInfo.detail_polarity), heightWrapSeamRatio: geometryInfo.height_wrap_seam_ratio,
+                midReliefShareBefore: geometryInfo.mid_relief_share_before, midReliefShareAfter: geometryInfo.mid_relief_share_after,
+                roughnessAlbedoCorrelationBefore: geometryInfo.roughness_albedo_correlation_before,
+                roughnessAlbedoCorrelationAfter: geometryInfo.roughness_albedo_correlation_after
             ),
             warnings: warnings,
             previews: previews,
