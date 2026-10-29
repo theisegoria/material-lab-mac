@@ -14,7 +14,7 @@ more, on your Mac with no account and nothing uploaded.
 - **Live 3D preview** with lighting environments, tiling and side-by-side compare.
 
 ## Download
-Get **MaterialLab-1.3.1-macOS.dmg** from [Releases](https://github.com/theisegoria/material-lab-mac/releases/latest)
+Get **MaterialLab-1.4.0-macOS.dmg** from [Releases](https://github.com/theisegoria/material-lab-mac/releases/latest)
 and drag Material Lab to Applications.
 
 Requires macOS 27 on Apple silicon. The app is signed with a Developer ID but not notarized. The first time, right-click it in Applications and choose **Open**, then **Open** again.
