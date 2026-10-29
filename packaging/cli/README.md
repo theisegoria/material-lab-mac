@@ -9,7 +9,7 @@ Turn a photograph into an editable set of game-ready PBR texture maps, from the 
 - **Seamless tiling.** `--repair-albedo auto` rebuilds the photo so it repeats on both axes, cutting along the least visible seam instead of blurring the edges.
 - **39 material presets.** Start from a tuned recipe: brick, cobblestones, concrete, plaster, tile, wood planks, bark, soil, gravel, grass, denim, leather, brushed and rusted steel, copper, plastic and more (`--list-presets`).
 - **Bring your own maps.** Start from a hand-painted albedo (`--authored`) and drop in your own height, normal, roughness, AO or metalness maps; Material Lab fills in the rest and keeps everything consistent.
-- **Clean materials.** Remove uneven lighting (`--equalize`), physically based ambient occlusion, roughness that follows the surface's texture, and metalness only when you assign it.
+- **Clean materials.** Remove uneven lighting (`--equalize`), physically based ambient occlusion, roughness that follows the surface's texture rather than its paint colour, relief that still reads from a few metres away (seams, fasteners, chips and dents), and metalness only when you assign it.
 - **Export anywhere.** glTF, USDZ, MaterialX, Unreal, Unity (URP, Built-in and HDRP), Godot, Blender, Substance 3D, Roblox and Minecraft (LabPBR), with OpenGL or DirectX normals.
 - **Built for pipelines.** Catalog batches with `--jobs`, JSON reports, watch folders, recipe files, and recipes saved in the Material Lab Mac app.
 - **Inspect anything.** `--info`, `--contact-sheet` and `--diff` for any bundle.
