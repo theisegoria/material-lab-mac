@@ -56,7 +56,7 @@ constexpr const char* kTools = R"JSON([
 {"name":"inspect_material","description":"Describe a .pbrmaterial bundle: recipe, maps, provenance, seam and relief measures.","inputSchema":{"type":"object","required":["bundle"],"properties":{"bundle":{"type":"string"}}}},
 {"name":"validate_material","description":"Strictly validate a .pbrmaterial bundle (manifest, hashes, PNG structure) or a .pbrcapture file.","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}},
 {"name":"diff_materials","description":"Compare two bundles: per-map mean and max difference, PSNR, and recipe changes.","inputSchema":{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"string"}}}},
-{"name":"preview_material","description":"Return an image of every map in a bundle (a labelled contact sheet) so you can see the result.","inputSchema":{"type":"object","required":["bundle"],"properties":{"bundle":{"type":"string"}}}}
+{"name":"preview_material","description":"Return an image of a bundle so you can see the result: every map as a labelled contact sheet (view maps, the default), or a lit render on a sphere and a flat 2 x 2 tiling (view lit), which shows relief, gloss and any tiling seam.","inputSchema":{"type":"object","required":["bundle"],"properties":{"bundle":{"type":"string"},"view":{"type":"string","enum":["maps","lit"]}}}}
 ])JSON";
 
 struct ToolError : std::runtime_error { using std::runtime_error::runtime_error; };
@@ -335,7 +335,10 @@ private:
         const fs::path bundle = readable(args, @"bundle");
         const fs::path sheet = fs::path(str(NSTemporaryDirectory())) / ("material-lab-preview-" + str([NSUUID UUID].UUIDString) + ".png");
         struct Cleanup { fs::path path; ~Cleanup() { std::error_code ignored; fs::remove(path, ignored); } } cleanup{sheet};
-        mustRun({"--contact-sheet", bundle.string(), "--output", sheet.string()});
+        NSString* view = text(args, @"view") ?: @"maps";
+        const bool lit = [view isEqualToString:@"lit"];
+        if (!lit && ![view isEqualToString:@"maps"]) throw ToolError("view must be maps or lit");
+        mustRun({lit ? "--preview" : "--contact-sheet", bundle.string(), "--output", sheet.string()});
         // JPEG keeps the image small enough to hand to a model.
         NSData* png = [NSData dataWithContentsOfFile:ns(sheet.string())];
         CGImageSourceRef source = png ? CGImageSourceCreateWithData((__bridge CFDataRef)png, nullptr) : nullptr;
@@ -352,8 +355,9 @@ private:
         if (source) CFRelease(source);
         if (!ok) throw ToolError("could not encode the preview image");
         return @[@{@"type": @"image", @"data": [jpeg base64EncodedStringWithOptions:0], @"mimeType": @"image/jpeg"},
-                 @{@"type": @"text", @"text": ns("Every map of " + bundle.filename().string() +
-                     ", in manifest order. Height and data maps are shown as encoded.")}];
+                 @{@"type": @"text", @"text": ns(lit
+                     ? bundle.filename().string() + " lit: a sphere wrapped 4 x 2 (key light upper left) and a flat 2 x 2 tiling under a raking light. No displacement."
+                     : "Every map of " + bundle.filename().string() + ", in manifest order. Height and data maps are shown as encoded.")}];
     }
 
     NSArray* dispatch(NSString* name, NSDictionary* args) const {

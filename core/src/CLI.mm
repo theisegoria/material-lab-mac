@@ -235,7 +235,7 @@ struct Options {
     bool includeUnreviewed = false, keepGoing = false;
     double preUpscaleTimeout = 600;
     // Bundle tools (src/tools): each takes validated bundles.
-    fs::path infoBundle, contactSheetBundle, exportBundle;
+    fs::path infoBundle, contactSheetBundle, exportBundle, previewBundle;
     std::vector<fs::path> diffBundles;
     std::string exportFormat;
     bool json = false, listPresets = false, listFormats = false;
@@ -246,7 +246,7 @@ struct Options {
     std::string materialPreset;
     std::vector<std::string> alsoExport;
     int jobs = 1;
-    bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty(); }
+    bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty() || !previewBundle.empty(); }
 };
 PBRLabPreset parsePreset(const std::string& s) {
     if (s == "flat") return PBRLabPresetFlat;
@@ -331,6 +331,7 @@ constexpr const char* kUsage =
     "  --watch DIR --output DIR  derive every image dropped into DIR until interrupted\n"
     "Bundle tools (each validates its bundles first):\n"
     "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
+    "  --preview BUNDLE --output PREVIEW.png   a lit render: a sphere and a flat 2 x 2 tiling\n"
     "  --export BUNDLE --format FORMAT --output PATH   (--list-formats [--json] describes each) FORMAT: glb, usdz,\n"
     "    materialx, unreal, unity (URP/Built-in), unity-hdrp, godot, blender, substance, roblox, minecraft-labpbr\n"
     "Learned geometry (see man material-lab):\n"
@@ -572,6 +573,7 @@ Options parse(int argc, const char** argv) {
         }
         else if (flag == "--info") o.infoBundle = value();
         else if (flag == "--contact-sheet") o.contactSheetBundle = value();
+        else if (flag == "--preview") o.previewBundle = value();
         else if (flag == "--diff") { o.diffBundles.push_back(value()); o.diffBundles.push_back(value()); }
         else if (flag == "--export") o.exportBundle = value();
         else if (flag == "--format") o.exportFormat = value();
@@ -628,10 +630,11 @@ Options parse(int argc, const char** argv) {
     if (o.listPresets || o.listFormats) {
         // Lists and exits; no other options apply.
     } else if (o.usesTool()) {
-        const int tools = !o.infoBundle.empty() + !o.contactSheetBundle.empty() + !o.exportBundle.empty() + !o.diffBundles.empty();
+        const int tools = !o.infoBundle.empty() + !o.contactSheetBundle.empty() + !o.exportBundle.empty() + !o.diffBundles.empty() + !o.previewBundle.empty();
         if (tools != 1 || !o.input.empty() || !o.catalog.empty() || !o.validate.empty())
-            throw std::runtime_error("use one of --info, --contact-sheet, --diff or --export at a time, without derive options");
+            throw std::runtime_error("use one of --info, --contact-sheet, --preview, --diff or --export at a time, without derive options");
         if (!o.contactSheetBundle.empty() && o.output.empty()) throw std::runtime_error("--contact-sheet needs --output SHEET.png");
+        if (!o.previewBundle.empty() && o.output.empty()) throw std::runtime_error("--preview needs --output PREVIEW.png");
         if (!o.exportBundle.empty() && (o.output.empty() || o.exportFormat.empty()))
             throw std::runtime_error("--export needs --format and --output");
     } else if (!o.validate.empty()) {
@@ -1901,6 +1904,7 @@ int run(int argc, const char** argv) {
         if (!options.infoBundle.empty()) return mltools::info(checked(options.infoBundle), options.json);
         if (!options.contactSheetBundle.empty())
             return mltools::contactSheet(checked(options.contactSheetBundle), options.output);
+        if (!options.previewBundle.empty()) return mltools::preview(checked(options.previewBundle), options.output);
         if (!options.diffBundles.empty())
             return mltools::diff(checked(options.diffBundles[0]), checked(options.diffBundles[1]), options.json);
         return mltools::exportBundle(checked(options.exportBundle), options.exportFormat, options.output);

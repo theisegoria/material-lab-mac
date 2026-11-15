@@ -105,6 +105,9 @@ def main():
         preview = client.ok("preview_material", {"bundle": str(bundle)})
         assert preview[0]["type"] == "image" and preview[0]["mimeType"] == "image/jpeg"
         assert base64.b64decode(preview[0]["data"])[:2] == b"\xff\xd8"
+        lit = client.ok("preview_material", {"bundle": str(bundle), "view": "lit"})
+        assert base64.b64decode(lit[0]["data"])[:2] == b"\xff\xd8" and lit[0]["data"] != preview[0]["data"]
+        client.refused("preview_material", {"bundle": str(bundle), "view": "x-ray"}, "maps or lit")
         assert not list(pathlib.Path(tempfile.gettempdir()).glob("material-lab-preview-*"))
 
         client.ok("export_material", {"bundle": str(bundle), "format": "unreal", "output": str(root / "ue")})

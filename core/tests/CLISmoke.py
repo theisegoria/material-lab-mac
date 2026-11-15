@@ -449,6 +449,20 @@ def main() -> None:
         run(cli, "--contact-sheet", str(tool_a), "--output", str(sheet))
         width, height, bpp, rows = read_png(sheet)
         assert width > 400 and height > 300 and bpp == 4
+        # --preview: a deterministic lit render; a DirectX-normal bundle of the same recipe lights the same way.
+        lit_a, lit_a2, lit_b = root / "lit-a.png", root / "lit-a2.png", root / "lit-b.png"
+        run(cli, "--preview", str(tool_a), "--output", str(lit_a))
+        run(cli, "--preview", str(tool_a), "--output", str(lit_a2))
+        run(cli, "--preview", str(tool_b), "--output", str(lit_b))
+        assert lit_a.read_bytes() == lit_a2.read_bytes()
+        width, height, bpp, rows_a = read_png(lit_a)
+        assert (width, height, bpp) == (1352, 688, 4)
+        rows_b = read_png(lit_b)[3]
+        centre = rows_a[height // 2][(24 + 320) * 4:(24 + 320) * 4 + 3]
+        assert max(centre) > 40, centre  # The sphere is lit.
+        worst = max(abs(x - y) for ra, rb in zip(rows_a, rows_b) for x, y in zip(ra, rb))
+        assert worst <= 6, worst
+        run(cli, "--preview", str(tool_a), expect_success=False)
         same = json.loads(run(cli, "--diff", str(tool_a), str(tool_a), "--json").stdout)
         assert same["identical"] is True
         changed = json.loads(run(cli, "--diff", str(tool_a), str(tool_b), "--json").stdout)

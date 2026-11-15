@@ -23,6 +23,8 @@ struct Raster {
 int info(const fs::path& bundle, bool json);
 // --contact-sheet: one labelled PNG of every map (height and data maps shown as encoded).
 int contactSheet(const fs::path& bundle, const fs::path& output);
+// --preview: a lit render (a sphere and a flat 2 x 2 tiling) from the bundle's maps; CPU, deterministic.
+int preview(const fs::path& bundle, const fs::path& output);
 // --diff: per-map mean and max absolute difference and PSNR, plus recipe differences.
 int diff(const fs::path& a, const fs::path& b, bool json);
 // --export: one of exportFormats(), written to `output` (a file or folder per format).
