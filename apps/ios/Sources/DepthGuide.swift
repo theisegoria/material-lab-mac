@@ -16,6 +16,10 @@ struct DepthCapture: Sendable, Equatable {
     let orientation: UInt32
     /// True for LiDAR / time-of-flight style absolute depth; false for relative (disparity-derived) depth.
     let isAbsolute: Bool
+    /// Per-pixel confidence from frame averaging (DepthStack; 255 = every frame agreed), nil for a single frame.
+    var confidence: [UInt8]? = nil
+    /// Depth frames averaged into `depth` (1 = the photo's own depth map).
+    var frames = 1
 
     /// Reads depth embedded in a photo file (auxiliary depth or disparity data), or nil when there is none.
     static func read(from data: Data) -> DepthCapture? {
@@ -108,7 +112,30 @@ enum DepthGuide {
 
     /// Guide normals at `size`² for the crop `quad`, or nil when too little of the crop has depth.
     static func normals(_ capture: DepthCapture, quad: PerspectiveQuad, size: Int, grid: Int = 96) -> Result? {
-        guard size >= 2, grid >= 8 else { return nil }
+        guard size >= 2, let surface = surfacePoints(capture, quad: quad, grid: grid) else { return nil }
+        let filled = surface.points, validFraction = surface.validFraction
+        // Plane fit (least squares through the centroid) and its tangent frame.
+        let plane = fitPlane(filled)
+        let normal = plane.normal, residual = plane.residual
+        var along = SIMD3<Float>.zero, down = SIMD3<Float>.zero
+        for j in 0..<grid {
+            for i in 0..<(grid - 1) { along += filled[j * grid + i + 1] - filled[j * grid + i] }
+        }
+        for j in 0..<(grid - 1) {
+            for i in 0..<grid { down += filled[(j + 1) * grid + i] - filled[j * grid + i] }
+        }
+        let tangent = simd_normalize(along - simd_dot(along, normal) * normal)
+        var up = simd_normalize(simd_cross(normal, tangent))
+        if simd_dot(up, down) > 0 { up = -up }   // +Y points up the crop (against increasing v).
+        return encodeNormals(filled, grid: grid, size: size, normal: normal, tangent: tangent, up: up,
+                             validFraction: validFraction, residual: residual)
+    }
+
+    /// The crop back-projected to 3D (metres, camera frame) on a grid, holes filled and smoothed: LiDAR depth is coarse
+    /// and noisy, so this carries form, not texture. Nil when less than 60 % of the crop has depth.
+    static func surfacePoints(_ capture: DepthCapture, quad: PerspectiveQuad, grid: Int, smoothing: Int = 3)
+        -> (points: [SIMD3<Float>], validFraction: Double)? {
+        guard grid >= 8 else { return nil }
         let homography = SquareToQuad(quad)
         // 1. 3D points on a grid over the corrected crop.
         var points = [SIMD3<Float>?](repeating: nil, count: grid * grid)
@@ -126,31 +153,29 @@ enum DepthGuide {
         }
         let validFraction = Double(valid) / Double(grid * grid)
         guard validFraction >= 0.6 else { return nil }
-        // 2. Fill holes from neighbours, then smooth: LiDAR depth is coarse and centimetre-noisy, so the guide
-        //    carries form, not texture (the photo supplies the fine detail).
         var filled = fillHoles(points, grid: grid)
-        for _ in 0..<3 { filled = boxBlur(filled, grid: grid) }
-        // 3. Plane fit (least squares through the centroid) and its tangent frame.
-        let centroid = filled.reduce(SIMD3<Float>.zero, +) / Float(filled.count)
+        for _ in 0..<smoothing { filled = boxBlur(filled, grid: grid) }
+        return (filled, validFraction)
+    }
+
+    /// Least-squares plane through the points: its camera-facing normal, centroid and rms residual (metres).
+    static func fitPlane(_ points: [SIMD3<Float>]) -> (normal: SIMD3<Float>, centroid: SIMD3<Float>, residual: Float) {
+        let centroid = points.reduce(SIMD3<Float>.zero, +) / Float(points.count)
         var covariance = simd_float3x3()
-        for p in filled {
+        for p in points {
             let d = p - centroid
             covariance += simd_float3x3(columns: (d * d.x, d * d.y, d * d.z))
         }
         var normal = smallestEigenvector(covariance)
         if simd_dot(normal, -centroid) < 0 { normal = -normal }   // Face the camera.
-        var along = SIMD3<Float>.zero, down = SIMD3<Float>.zero
-        for j in 0..<grid {
-            for i in 0..<(grid - 1) { along += filled[j * grid + i + 1] - filled[j * grid + i] }
-        }
-        for j in 0..<(grid - 1) {
-            for i in 0..<grid { down += filled[(j + 1) * grid + i] - filled[j * grid + i] }
-        }
-        let tangent = simd_normalize(along - simd_dot(along, normal) * normal)
-        var up = simd_normalize(simd_cross(normal, tangent))
-        if simd_dot(up, down) > 0 { up = -up }   // +Y points up the crop (against increasing v).
-        let residual = sqrt(filled.map { pow(simd_dot($0 - centroid, normal), 2) }.reduce(0, +) / Float(filled.count))
-        // 4. Per-cell normals from central differences, in the tangent frame.
+        let residual = sqrt(points.map { pow(simd_dot($0 - centroid, normal), 2) }.reduce(0, +) / Float(points.count))
+        return (normal, centroid, residual)
+    }
+
+    private static func encodeNormals(_ filled: [SIMD3<Float>], grid: Int, size: Int, normal: SIMD3<Float>,
+                                      tangent: SIMD3<Float>, up: SIMD3<Float>, validFraction: Double,
+                                      residual: Float) -> Result {
+        // Per-cell normals from central differences, in the tangent frame.
         var tangentNormals = [SIMD3<Float>](repeating: SIMD3(0, 0, 1), count: grid * grid)
         for j in 0..<grid {
             for i in 0..<grid {

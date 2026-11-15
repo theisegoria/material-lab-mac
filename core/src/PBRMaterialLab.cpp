@@ -34,6 +34,10 @@ constexpr float kCorrelationLow = 5.2f, kCorrelationHigh = 13.9f; // sigma 3..8 
 constexpr double kPolarityConfidence = 0.1;    // |correlation| needed before the learned field sets the detail sign.
 constexpr double kFormGain = 3.0;              // Learned form share = gain x learned rms slope / target, capped.
 constexpr double kMaxFormShare = 0.7;
+// Measured guide form: wavelengths up to tile/4 are kept (the caller has removed the surface plane), and albedo detail
+// keeps at least this fraction of the target slope even when the measured form alone exceeds it.
+constexpr float kMeasuredFormCutFraction = 0.25f;
+constexpr double kMeasuredMinDetailFraction = 0.35;
 constexpr float kAOExaggeration = 3.0f;        // GTAO depth relative to the normal-map surface at ao_strength 1.
 constexpr float kCavityGain = 1.5f;            // Curvature (reference pixels of depth) to cavity/convexity.
 constexpr float kRoughnessSpread = 0.25f;      // Roughness standard deviation at roughness_variation 1.
@@ -1000,7 +1004,9 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                 checkpoint(progress, context, .24f);
                 // Learned form: the band between the crossover and a fifth of the tile. Scene-trained estimators
                 // add tile-scale bowls and tilt below that band and are blurred above it.
-                const int formRadius = std::max(4, static_cast<int>(std::lround(static_cast<float>(width) * kFormCutFraction)));
+                const bool measured = input->guide_normals_measured != 0;
+                const int formRadius = std::max(4, static_cast<int>(std::lround(static_cast<float>(width) *
+                                                                                 (measured ? kMeasuredFormCutFraction : kFormCutFraction))));
                 auto lowest = smoothBlur(learned, width, height, formRadius, tiled);
                 std::vector<float> band(count);
                 for (size_t i = 0; i < count; ++i) band[i] = learned[i] - lowest[i];
@@ -1032,6 +1038,21 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     const float formScale = share > 0 ? static_cast<float>(std::sqrt(share) / formRms) : 0.0f;
                     const float detailScale = detailRms > 1e-9 ? static_cast<float>(std::sqrt(1.0 - share) / detailRms) * detailSign : 0.0f;
                     const float heuristicScale = static_cast<float>(polarity / signalRms);
+                    if (measured) {
+                        // Measured form keeps its own slope (pixels of depth per pixel = the surface tangent) and its
+                        // own sign; the photo's detail fills in the rest of the target slope beneath it.
+                        const double detailTarget = std::sqrt(std::max(static_cast<double>(target) * target - formRms * formRms,
+                                                                       std::pow(kMeasuredMinDetailFraction * target, 2.0)));
+                        const float scaledDetail = detailRms > 1e-9 ? static_cast<float>(detailTarget / detailRms) * detailSign : 0.0f;
+                        for (size_t i = 0; i < count; ++i)
+                            geometry[i] = (1.0f - guideWeight) * heuristicScale * target * signal[i] +
+                                          guideWeight * (form[i] + polarity * scaledDetail * detail[i]);
+                        const double formEnergy = formRms * formRms;
+                        info.learned_form_share = static_cast<float>(formEnergy / std::max(formEnergy + detailTarget * detailTarget, 1e-18)) * guideWeight;
+                        info.learned_detail_correlation = static_cast<float>(correlation);
+                        info.detail_polarity = static_cast<int32_t>(guideWeight >= .5f ? detailSign * polarity : polarity);
+                        info.measured_form_rms_slope = static_cast<float>(formRms);
+                    } else {
                     // height_polarity -1 inverts the learned relief too (1.4.0): the learned field decides the
                     // direction, the recipe can still flip it.
                     std::vector<float> mixed(count);
@@ -1044,10 +1065,14 @@ extern "C" PBRLabResult *PBRLabDerive(const PBRLabInput *input, const PBRLabReci
                     info.learned_form_share = static_cast<float>(share) * guideWeight;
                     info.learned_detail_correlation = static_cast<float>(correlation);
                     info.detail_polarity = static_cast<int32_t>(guideWeight >= .5f ? detailSign * polarity : polarity);
+                    }
                 } else {
                     // No albedo relief (flat preset): the learned band alone, in the estimator's own units.
-                    for (size_t i = 0; i < count; ++i) geometry[i] = guideWeight * polarity * band[i];
+                    // Measured form is real geometry: the recipe's polarity describes the photo, not the surface.
+                    const float sign = measured ? 1.0f : polarity;
+                    for (size_t i = 0; i < count; ++i) geometry[i] = guideWeight * sign * band[i];
                     info.learned_form_share = guideWeight;
+                    if (measured) info.measured_form_rms_slope = static_cast<float>(rmsSlope(band, width, height, tiled));
                 }
             } else if (hasSignal) {
                 const float gain = static_cast<float>(polarity * target / signalRms);

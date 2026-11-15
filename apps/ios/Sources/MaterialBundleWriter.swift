@@ -72,7 +72,8 @@ enum MaterialBundleWriter {
             "albedo_repair": (material.repair?.mode ?? .off).rawValue,
             "guide_normal_weight": tidy(learned ? recipe.guideNormalWeight : 0),
             "mid_relief_share": tidy(recipe.midReliefShare.clamped(to: MaterialRecipe.midReliefShareRange)),
-            "tile_metres": tidy(recipe.tileMetres.clamped(to: MaterialRecipe.tileMetresRange)),
+            // The tile size the core used: the recipe's, or the LiDAR-measured crop width when the recipe left it 0.
+            "tile_metres": tidy((material.measuredTileMetres ?? recipe.tileMetres).clamped(to: MaterialRecipe.tileMetresRange)),
             "roughness_albedo_limit": tidy(recipe.roughnessAlbedoLimit.clamped(to: 0...1)),
             "substrate_relief": tidy(recipe.substrateRelief.clamped(to: 0...1))
         ]
@@ -131,6 +132,25 @@ enum MaterialBundleWriter {
                     (role.rawValue, ["file": map.name, "sha256": map.sha256])
                 })
             }
+        }
+        if let depth = material.depthMeasurement {
+            var section: [String: Any] = [
+                "source": "lidar",
+                "frames_averaged": depth.frames,
+                "mean_confidence": tidy(depth.meanConfidence),
+                "valid_fraction": tidy(Float(depth.validFraction)),
+                "crop_width_m": tidy(depth.widthMetres),
+                "crop_height_m": tidy(depth.heightMetres),
+                "plane_residual_m": tidy(depth.planeResidual),
+                "tile_metres_from_depth": material.measuredTileMetres != nil,
+                "measured_form": material.measuredGuide
+            ]
+            if let relief = material.relief {
+                let tile = material.measuredTileMetres ?? recipe.tileMetres
+                if tile > 0 { section["height_span_mm"] = tidy(relief.heightSpanTileWidths * tile * 1000) }
+                if material.measuredGuide { section["measured_form_rms_slope"] = tidy(relief.measuredFormRmsSlope) }
+            }
+            manifest["depth"] = section
         }
         if learned, let guide = material.guideNormals {
             manifest["guide_normals"] = [

@@ -164,14 +164,14 @@ final class CaptureStore {
     func receiveCamera(_ result: CameraCapture) async -> Bool {
         await receive(origin: .camera, data: result.primaryData, fallback: result.fallbackData,
                       confidence: result.confidence, constantColorRequested: result.constantColorRequested,
-                      centerConfidence: result.centerConfidence, capturedAt: result.capturedAt)
+                      centerConfidence: result.centerConfidence, capturedAt: result.capturedAt, depth: result.depth)
     }
 
     /// Decodes and analyzes the photo off the main actor, then makes it the current capture.
     @discardableResult
     func receive(origin: SourceImage.Origin, data: Data, fallback: Data? = nil,
                  confidence: ConfidenceMap? = nil, constantColorRequested: Bool = false,
-                 centerConfidence: Float? = nil, capturedAt: Date = Date()) async -> Bool {
+                 centerConfidence: Float? = nil, capturedAt: Date = Date(), depth: DepthCapture? = nil) async -> Bool {
         isImporting = true
         defer { isImporting = false }
         do {
@@ -179,7 +179,7 @@ final class CaptureStore {
                 let image = try SourceImage(origin: origin, data: data, fallback: fallback,
                                             confidence: confidence,
                                             constantColorRequested: constantColorRequested,
-                                            centerConfidence: centerConfidence, capturedAt: capturedAt)
+                                            centerConfidence: centerConfidence, capturedAt: capturedAt, depth: depth)
                 return (image, RectangleDetector.detect(in: image.displayImage))
             }.value
             install(image, crop: detected ?? .centeredSquare(for: image.size),
@@ -338,7 +338,8 @@ final class CaptureStore {
         let revision = inputRevision
         // Until learned normals exist for this crop the preview stays analytic; inference runs alongside.
         let authored = authored
-        let depth = recipe.depthGeometry ? source.depth : nil
+        // Depth also measures the tile size, so it is passed even when it does not guide the geometry.
+        let depth = source.depth
         let wantsLearned = recipe.guideNormalWeight > 0 && !authored.hasGeometry && learnedModel != nil
         let guide: GuideSource? = wantsLearned ? currentLearnedField().map(GuideSource.field) : nil
         if wantsLearned && guide == nil { startLearnedInference() }
@@ -396,7 +397,8 @@ final class CaptureStore {
         let revision = inputRevision
         let geometry = geometryKey
         let authored = authored
-        let depth = recipe.depthGeometry ? source.depth : nil
+        // Depth also measures the tile size, so it is passed even when it does not guide the geometry.
+        let depth = source.depth
         var guide: GuideSource?
         if recipe.guideNormalWeight > 0 && learnedModel != nil {
             // Reuse the preview's inference only when it ran at this resolution's working size (the tiling contract).
@@ -569,6 +571,12 @@ final class CaptureStore {
 
     /// Whether the current photo carries depth (LiDAR or dual-camera) for the depth-geometry option.
     var sourceHasDepth: Bool { source?.depth != nil }
+
+    /// The crop measured on the surface from LiDAR depth (its real width sets Tile size when that is 0).
+    var depthMeasurement: DepthMeasurement? {
+        guard let depth = source?.depth, !authored.handMadeAlbedo else { return nil }
+        return DepthGuide.measure(depth, quad: crop)
+    }
 
     /// Turns photo-depth geometry on or off; turning it on gives the guide full weight if it had none.
     func setDepthGeometry(_ on: Bool) {
@@ -761,6 +769,8 @@ final class CapturePersistence: Sendable {
     private var primaryURL: URL { directory.appending(path: "primary.image") }
     private var fallbackURL: URL { directory.appending(path: "fallback.image") }
     private var confidenceURL: URL { directory.appending(path: "confidence.r8") }
+    /// Averaged LiDAR depth (DepthCapture.encoded); the photo itself embeds only one depth frame.
+    private var depthURL: URL { directory.appending(path: "depth.mld") }
     private var stateURL: URL { directory.appending(path: "state.json") }
     private func authoredURL(_ role: AuthoredMaps.Role) -> URL { directory.appending(path: "authored-\(role.rawValue).image") }
 
@@ -778,6 +788,11 @@ final class CapturePersistence: Sendable {
                 try confidence.pixels.write(to: confidenceURL, options: [.atomic, .completeFileProtectionUnlessOpen])
             } else {
                 try? FileManager.default.removeItem(at: confidenceURL)
+            }
+            if let depth = source.depth, depth.frames > 1 {
+                try depth.encoded().write(to: depthURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+            } else {
+                try? FileManager.default.removeItem(at: depthURL)
             }
         } catch {
             clear()
@@ -815,7 +830,8 @@ final class CapturePersistence: Sendable {
                                             confidence: confidence,
                                             constantColorRequested: state.constantColorRequested,
                                             centerConfidence: state.centerConfidence.map(Float.init),
-                                            capturedAt: state.capturedAt, id: state.id) else {
+                                            capturedAt: state.capturedAt, id: state.id,
+                                            depth: (try? Data(contentsOf: depthURL)).flatMap(DepthCapture.init(encoded:))) else {
             clear()
             return nil
         }

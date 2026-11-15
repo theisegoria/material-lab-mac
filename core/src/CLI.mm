@@ -1069,7 +1069,8 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
                       authoredNormal.empty() ? nullptr : authoredNormal.data(), authoredNormal.empty() ? 0 : static_cast<size_t>(image.width) * 4,
                       authoredRoughness.empty() ? nullptr : authoredRoughness.data(), authoredRoughness.empty() ? 0 : image.width,
                       authoredAO.empty() ? nullptr : authoredAO.data(), authoredAO.empty() ? 0 : image.width,
-                      authoredMetal.empty() ? nullptr : authoredMetal.data(), authoredMetal.empty() ? 0 : image.width};
+                      authoredMetal.empty() ? nullptr : authoredMetal.data(), authoredMetal.empty() ? 0 : image.width,
+                      0 /* guide_normals_measured: CLI guides are learned or external estimates */};
     char error[256]{};
     std::unique_ptr<PBRLabResult, decltype(&PBRLabFreeResult)> result(
         PBRLabDerive(&input, &derivationRecipe, progressCallback, nullptr, error, sizeof(error)), &PBRLabFreeResult);

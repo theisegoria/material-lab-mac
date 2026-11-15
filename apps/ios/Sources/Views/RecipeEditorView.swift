@@ -85,7 +85,7 @@ struct RecipeEditorView: View {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("LiDAR depth")
-                                    Text("Uses the depth this photo was captured with to shape the surface, blended with learned geometry when both are on.")
+                                    Text("Shapes the surface from the depth measured with this photo, at its real depth. With learned geometry on as well, LiDAR gives the large-scale form and learned geometry the finer detail.")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -126,6 +126,16 @@ struct RecipeEditorView: View {
                 Section {
                     RecipeSlider(title: String(localized: "Tile size"), symbol: "ruler", value: $store.recipe.tileMetres,
                                  range: 0...8, step: 0.05, format: "%.2f m", baseline: store.baselineRecipe.tileMetres)
+                    if let measured = store.depthMeasurement {
+                        let metres = measured.widthMetres.formatted(.number.precision(.fractionLength(2)))
+                        Label(store.recipe.tileMetres > 0
+                              ? String(localized: "LiDAR measured this crop as \(metres) m wide. Set Tile size to 0 to use it.")
+                              : String(localized: "Using the LiDAR measurement: \(metres) m wide."),
+                              systemImage: "dot.radiowaves.left.and.right")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("measured-tile-size")
+                    }
                     if store.recipe.preset == .flat {
                         RecipeSlider(title: String(localized: "Surface unevenness"), symbol: "water.waves",
                                      value: $store.recipe.substrateRelief,

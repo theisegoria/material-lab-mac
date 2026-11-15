@@ -97,6 +97,8 @@ struct CameraCapture: Sendable {
     let constantColorRequested: Bool
     let centerConfidence: Float
     let capturedAt: Date
+    /// Averaged LiDAR depth from the frames streamed just before the shutter (DepthStack), when there were any.
+    var depth: DepthCapture? = nil
 }
 
 /// Live exposure reading from sparse luma samples of the preview stream.
@@ -107,7 +109,7 @@ struct ExposureReading: Equatable, Sendable {
 
 /// All mutable capture state is confined to `queue`; callbacks are delivered on the main queue.
 final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCaptureVideoDataOutputSampleBufferDelegate,
-                              @unchecked Sendable {
+                              AVCaptureDepthDataOutputDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     var onCapture: ((Result<CameraCapture, Error>) -> Void)?
     var onReady: ((Result<Bool, Error>) -> Void)?
@@ -126,6 +128,13 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private var frameCounter = 0
+    /// LiDAR depth streamed while framing (DepthStack); the stack is confined to `depthQueue`.
+    private let depthOutput = AVCaptureDepthDataOutput()
+    private let depthQueue = DispatchQueue(label: "io.materiallab.capture.depth", qos: .utility)
+    private var depthStack = DepthStack()
+    private var depthStreaming = false
+    /// Depth frames snapshotted when a depth photo was requested, keyed by its settings' uniqueID (on `queue`).
+    private var pendingDepthFrames: [Int64: [DepthCapture]] = [:]
 
     /// Per-request accumulation keyed by `AVCaptureResolvedPhotoSettings.uniqueID`.
     private struct InFlight {
@@ -202,6 +211,9 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
                 settings.isDepthDataDeliveryEnabled = true
                 settings.isDepthDataFiltered = true
                 settings.embedsDepthDataInPhoto = true
+                // The second of depth before the shutter, while the phone was held still for the shot.
+                let frames = self.depthQueue.sync { self.depthStack.frames }
+                if !frames.isEmpty { self.pendingDepthFrames[settings.uniqueID] = frames }
             }
             settings.maxPhotoDimensions = self.photoOutput.maxPhotoDimensions
             settings.photoQualityPrioritization = self.photoOutput.maxPhotoQualityPrioritization
@@ -306,7 +318,45 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         if photoOutput.isDepthDataDeliverySupported {
             photoOutput.isDepthDataDeliveryEnabled = true
         }
+        // Stream LiDAR depth too, unfiltered (the stack does its own averaging), so a depth photo carries the mean of
+        // the frames before the shutter. Off until the depth toggle turns it on.
+        if camera.deviceType == .builtInLiDARDepthCamera, session.canAddOutput(depthOutput) {
+            session.addOutput(depthOutput)
+            depthOutput.isFilteringEnabled = false
+            depthOutput.alwaysDiscardsLateDepthData = true
+            depthOutput.setDelegate(self, callbackQueue: depthQueue)
+            depthOutput.connection(with: .depthData)?.isEnabled = depthStreaming
+        }
         session.commitConfiguration()
+    }
+
+    /// Streams LiDAR depth for averaging while the depth toggle is on; off, the stack is emptied.
+    func setDepthStreaming(_ enabled: Bool) {
+        queue.async {
+            self.depthStreaming = enabled
+            self.depthOutput.connection(with: .depthData)?.isEnabled = enabled
+            if !enabled { self.depthQueue.async { self.depthStack.removeAll() } }
+        }
+    }
+
+    func depthDataOutput(_ output: AVCaptureDepthDataOutput, didOutput depthData: AVDepthData, timestamp: CMTime,
+                         connection: AVCaptureConnection) {
+        guard depthData.depthDataAccuracy == .absolute, let frame = DepthCapture.frame(depthData) else { return }
+        depthStack.add(frame)
+    }
+
+    /// Averages the frames snapshotted for a depth photo, oriented as the photo; nil when none were streamed.
+    private static func averagedDepth(_ frames: [DepthCapture]?, photo: Data) -> DepthCapture? {
+        guard let frames, !frames.isEmpty else { return nil }
+        let orientation = DepthCapture.read(from: photo)?.orientation ?? exifOrientation(photo)
+        return DepthStack.average(frames, orientation: orientation)
+    }
+
+    private static func exifOrientation(_ data: Data) -> UInt32 {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, CGImageSourceGetPrimaryImageIndex(source), nil)
+                as? [CFString: Any] else { return 1 }
+        return (properties[kCGImagePropertyOrientation] as? NSNumber)?.uint32Value ?? 1
     }
 
     // MARK: Photo delegate — hop to `queue` so state is never touched concurrently.
@@ -343,13 +393,15 @@ final class CameraController: NSObject, AVCapturePhotoCaptureDelegate, AVCapture
         queue.async {
             let state = self.inFlight.removeValue(forKey: id)
             let constantColor = self.requested.removeValue(forKey: id) ?? false
+            let depthFrames = self.pendingDepthFrames.removeValue(forKey: id)
             self.rawRequests.remove(id)
             let result: Result<CameraCapture, Error>
             if let primary = state?.primaryData {
                 // A usable primary photo wins over a failed fallback delivery.
                 result = .success(CameraCapture(primaryData: primary, fallbackData: state?.fallbackData,
                                                 confidence: state?.confidence, constantColorRequested: constantColor,
-                                                centerConfidence: state?.centerConfidence ?? 0, capturedAt: Date()))
+                                                centerConfidence: state?.centerConfidence ?? 0, capturedAt: Date(),
+                                                depth: Self.averagedDepth(depthFrames, photo: primary)))
             } else if let failure = error ?? state?.error {
                 result = .failure(failure)
             } else {

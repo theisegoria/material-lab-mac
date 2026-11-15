@@ -1873,6 +1873,16 @@
         }
       }
     },
+    "LiDAR measured this crop as %@ m wide. Set Tile size to 0 to use it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LiDARでこの範囲の幅は%@ mと計測されました。使うにはタイルの実寸を0にしてください。"
+          }
+        }
+      }
+    },
     "Library": {
       "localizations": {
         "ja": {
@@ -3231,6 +3241,16 @@
         }
       }
     },
+    "Shapes the surface from the depth measured with this photo, at its real depth. With learned geometry on as well, LiDAR gives the large-scale form and learned geometry the finer detail.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真と一緒に計測した深度から、実際の深さで表面の形状を作ります。学習ジオメトリもオンの場合は、大きな形状をLiDARが、細かなディテールを学習ジオメトリが担当します。"
+          }
+        }
+      }
+    },
     "Slate": {
       "extractionState": "manual",
       "localizations": {
@@ -3860,12 +3880,12 @@
         }
       }
     },
-    "Uses the depth this photo was captured with to shape the surface, blended with learned geometry when both are on.": {
+    "Using the LiDAR measurement: %@ m wide.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "撮影時に記録した深度で表面の形状を作ります。学習ジオメトリもオンのときは両方を合成します。"
+            "value": "LiDARの計測値を使用中:幅%@ m。"
           }
         }
       }

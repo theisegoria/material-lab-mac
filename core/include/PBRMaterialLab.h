@@ -65,6 +65,10 @@ typedef struct PBRLabInput {
     size_t authored_ao_row_bytes;
     const uint8_t *authored_metalness_r8;
     size_t authored_metalness_row_bytes;
+    // Nonzero when the guide normals are measured surface slopes (e.g. back-projected LiDAR depth) rather than a
+    // learned estimate: the guide's form then keeps its measured amplitude down to a quarter of the tile, and only
+    // the albedo detail is scaled to the preset's target slope (see docs/DERIVATION.md, "Measured form").
+    uint32_t guide_normals_measured;
 } PBRLabInput;
 
 typedef struct PBRLabRecipe {
@@ -132,6 +136,8 @@ typedef struct PBRLabDerivationInfo {
     float mid_relief_share_after;    // The same after the floor (equal to before when the floor was not needed).
     float roughness_albedo_correlation_before; // Correlation of varied roughness with blurred luminance.
     float roughness_albedo_correlation_after;
+    // Measured guide form (PBRLabInput.guide_normals_measured): its rms slope, kept as measured (0 otherwise).
+    float measured_form_rms_slope;
 } PBRLabDerivationInfo;
 
 // Added in 1.4.0. Wrap-seam measures of linear-light luminance (see docs/DERIVATION.md).

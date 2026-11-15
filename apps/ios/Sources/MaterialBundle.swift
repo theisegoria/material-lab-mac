@@ -210,14 +210,15 @@ struct SourceImage: @unchecked Sendable {
     let constantColorRequested: Bool
     let constantColorCenterConfidence: Double?
     let capturedAt: Date
-    /// Depth embedded in the photo (LiDAR or dual-camera), if any; feeds the depth-geometry option.
+    /// Averaged LiDAR depth streamed before the shutter, else the depth embedded in the photo (LiDAR or
+    /// dual-camera), if any; feeds the depth-geometry option and the measured tile size.
     let depth: DepthCapture?
 
     var size: CGSize { CGSize(width: image.width, height: image.height) }
 
     init(origin: Origin, data: Data, fallback: Data? = nil, confidence: ConfidenceMap? = nil,
          constantColorRequested: Bool = false, centerConfidence: Float? = nil,
-         capturedAt: Date = Date(), id: UUID = UUID()) throws {
+         capturedAt: Date = Date(), id: UUID = UUID(), depth: DepthCapture? = nil) throws {
         guard data.count <= Self.maximumImportBytes else { throw CaptureError.importTooLarge }
         let decoded = try Self.decode(data, maxPixels: Self.maximumWorkingPixels)
         self.id = id
@@ -243,7 +244,7 @@ struct SourceImage: @unchecked Sendable {
             self.constantColorCenterConfidence = nil
         }
         self.capturedAt = capturedAt
-        self.depth = DepthCapture.read(from: data)
+        self.depth = depth ?? DepthCapture.read(from: data)
     }
 
     struct Decoded {

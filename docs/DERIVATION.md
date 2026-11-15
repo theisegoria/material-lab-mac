@@ -116,6 +116,23 @@ Single-image SVBRDF estimators lead the state of the art in *quality*: ControlMa
 
 Alternatives that are use-restricted or unclear are avoided without legal review: Stable Diffusion-derived normal and delight models (OpenRAIL++ lineage), DSINE, non-commercial Depth Anything variants, and Marigold weights.
 
+## Measured form (LiDAR depth)
+
+`PBRLabInput.guide_normals_measured` marks guide normals as measured surface slopes (back-projected depth) rather than a learned estimate. The algorithm version is unchanged: without the flag, output is identical to 1.5.0.
+
+- The form band keeps wavelengths up to a quarter of the tile (instead of a twentieth). The caller has already removed the surface plane.
+- The form keeps its measured slope and its own sign. It is not rescaled to the preset's target slope, and `height_polarity` does not flip it.
+- Albedo detail is scaled to fill the rest of the target slope, `sqrt(max(target² − form², (0.35·target)²))`, so the photo always adds some fine detail.
+- `PBRLabDerivationInfo.measured_form_rms_slope` reports the measured form's rms slope.
+
+On iPhone, Material Capture streams unfiltered LiDAR depth while the user frames the shot. When the shutter is pressed it averages the frames of the preceding second (`DepthStack`):
+
+- Frames more than 12 mm (mean) away from the newest one are dropped as taken before the phone settled.
+- Each pixel takes a median-centred robust mean of its readings.
+- Confidence falls with how few frames saw the pixel and how far the readings scatter beyond the expected noise (4 mm + 0.5 % of range). Pixels below 0.3 confidence become holes.
+
+The averaged depth is stored beside the capture (`depth.mld`), because re-embedding edited depth in the photo would drop the camera calibration. With learned geometry on as well, slopes below the depth's resolution come from MoGe-2 and the rest from LiDAR. The crop's real width and height come from straight-line fits along the grid rows and columns of the back-projected crop. That width is the tile size whenever the recipe's own Tile size is 0. Bundles record all of this in a top-level `depth` section, including `height_span_mm`.
+
 ## Scope of validation
 
 Core tests always run with assertions, including Release builds. They check:

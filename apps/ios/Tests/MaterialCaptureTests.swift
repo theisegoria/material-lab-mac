@@ -2,6 +2,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import AppIntents
 import AVFoundation
+import simd
 import XCTest
 @testable import MaterialCapture
 
@@ -552,6 +553,154 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertLessThan(rotated[38 * 64 + 32].y, -0.05, "The lower flank faces down")
         // A crop with no usable depth is refused.
         XCTAssertNil(DepthGuide.normals(syntheticDepth { _, _ in .nan }, quad: square, size: 64))
+    }
+
+    func testDepthStackAveragesSteadyFramesAndRejectsMotionAndScatter() throws {
+        var seed: UInt32 = 7
+        func noise() -> Float { seed = seed &* 1664525 &+ 1013904223; return Float(seed >> 8) / Float(1 << 24) - 0.5 }
+        // Three frames before the phone settled (wall 10 cm further), then nine steady frames of a wall at 0.5 m with
+        // ±6 mm noise. Columns 0-15 are seen in only two steady frames; columns 16-31 scatter by ±5 cm.
+        var stack = DepthStack()
+        var single: DepthCapture?
+        for k in 0..<12 {
+            let frame = syntheticDepth { x, _ in
+                if k < 3 { return 0.6 + 0.012 * noise() }
+                if x < 16 { return k < 5 ? 0.5 : .nan }
+                if x < 32 { return 0.5 + 0.1 * noise() }
+                return 0.5 + 0.012 * noise()
+            }
+            stack.add(frame)
+            if k == 11 { single = frame }
+        }
+        XCTAssertEqual(DepthStack.steadyFrames(stack.frames).count, 9, "Frames from before the phone settled are dropped")
+        let averaged = try XCTUnwrap(DepthStack.average(stack.frames, orientation: 6))
+        XCTAssertEqual(averaged.frames, 9)
+        XCTAssertEqual(averaged.orientation, 6)
+        let w = averaged.width
+        func rms(_ capture: DepthCapture) -> Float {
+            var sum: Float = 0, n: Float = 0
+            for y in 0..<capture.height { for x in 64..<192 { let z = capture.depth[y * w + x]; sum += (z - 0.5) * (z - 0.5); n += 1 } }
+            return sqrt(sum / n)
+        }
+        let single1 = try XCTUnwrap(single)
+        XCTAssertLessThan(rms(averaged), 0.45 * rms(single1), "Averaging nine frames lowers the noise")
+        XCTAssertTrue(averaged.depth[100 * w + 5].isNaN, "Seen in too few frames")
+        XCTAssertTrue(averaged.depth[100 * w + 20].isNaN, "Readings scatter more than LiDAR noise")
+        XCTAssertGreaterThan(try XCTUnwrap(averaged.confidence)[100 * w + 120], 150)
+        XCTAssertGreaterThan(averaged.meanConfidence, 0.6)
+        // The sidecar file round-trips exactly.
+        let decoded = try XCTUnwrap(DepthCapture(encoded: averaged.encoded()))
+        XCTAssertEqual(decoded.width, averaged.width)
+        XCTAssertEqual(decoded.frames, 9)
+        XCTAssertEqual(decoded.confidence, averaged.confidence)
+        XCTAssertEqual(decoded.fx, averaged.fx)
+        XCTAssertTrue(zip(decoded.depth, averaged.depth).allSatisfy { $0 == $1 || ($0.isNaN && $1.isNaN) })
+        XCTAssertNil(DepthCapture(encoded: Data("nope".utf8)))
+    }
+
+    func testDepthMeasuresTheCropOnTheSurface() throws {
+        // A fronto-parallel wall 0.5 m away: a crop spanning p pixels of a 200 px focal length is 0.5 · p / 200 m wide.
+        let size = CGSize(width: 256, height: 192)
+        let quad = PerspectiveQuad.centeredSquare(for: size)
+        let measured = try XCTUnwrap(DepthGuide.measure(syntheticDepth { _, _ in 0.5 }, quad: quad))
+        let expectedWidth = Float((quad.topRight.x - quad.topLeft.x) * size.width) * 0.5 / 200
+        let expectedHeight = Float((quad.bottomLeft.y - quad.topLeft.y) * size.height) * 0.5 / 200
+        XCTAssertEqual(measured.widthMetres, expectedWidth, accuracy: expectedWidth * 0.03)
+        XCTAssertEqual(measured.heightMetres, expectedHeight, accuracy: expectedHeight * 0.03)
+        XCTAssertLessThan(measured.planeResidual, 0.001)
+        // Twice as far, twice as wide; relative (disparity) depth measures nothing.
+        let far = try XCTUnwrap(DepthGuide.measure(syntheticDepth { _, _ in 1.0 }, quad: quad))
+        XCTAssertEqual(far.widthMetres / measured.widthMetres, 2, accuracy: 0.05)
+        let relative = DepthCapture(width: 256, height: 192, depth: [Float](repeating: 1, count: 256 * 192),
+                                    fx: 200, fy: 200, cx: 128, cy: 96, orientation: 1, isAbsolute: false)
+        XCTAssertNil(DepthGuide.measure(relative, quad: quad))
+    }
+
+    func testSplitBandsTakesFormFromDepthAndDetailFromLearned() throws {
+        let n = 64
+        func normals(_ gx: (Int) -> Float) -> [UInt8] {
+            var out = [UInt8](repeating: 255, count: n * n * 4)
+            for y in 0..<n { for x in 0..<n {
+                let v = simd_normalize(SIMD3<Float>(-gx(x), 0, 1)), o = (y * n + x) * 4
+                out[o] = DepthGuide.encodeUnit(v.x); out[o + 1] = DepthGuide.encodeUnit(v.y); out[o + 2] = DepthGuide.encodeUnit(v.z)
+            } }
+            return out
+        }
+        let k = 2 * Float.pi / Float(n)
+        let depth = normals { 0.25 * sinf(k * Float($0)) }                                   // measured form
+        let learned = normals { -0.3 * cosf(k * Float($0)) + 0.15 * sinf(Float.pi / 2 * Float($0)) } // wrong form + 4 px detail
+        let combined = DepthGuide.splitBands(low: depth, high: learned, size: n)
+        let gx: [Float] = (0..<(n * n)).map {
+            let nx = Float(combined[$0 * 4]) / 127.5 - 1, nz = Float(combined[$0 * 4 + 2]) / 127.5 - 1
+            return -nx / nz
+        }
+        let low = DepthGuide.blur(gx, size: n, radius: max(2, n / 64))
+        var formError: Float = 0, detailCorrelation: Float = 0, detailEnergy: Float = 0
+        let row = 32 * n
+        for x in 8..<(n - 8) {
+            formError = max(formError, abs(low[row + x] - 0.25 * sinf(k * Float(x))))
+            let detail = gx[row + x] - low[row + x], expected = sinf(Float.pi / 2 * Float(x))
+            detailCorrelation += detail * expected; detailEnergy += expected * expected
+        }
+        XCTAssertLessThan(formError, 0.06, "Large-scale form follows the measured depth, not the learned field")
+        XCTAssertGreaterThan(detailCorrelation / detailEnergy, 0.05, "Fine detail comes from the learned field")
+    }
+
+    @MainActor
+    func testAveragedLiDARDepthGivesMeasuredFormTileSizeAndPersists() async throws {
+        // A 512² photo with averaged LiDAR depth (as the camera's stack delivers): a wall 0.4 m away seen by a 128 px
+        // focal length over a 128² map, so the whole frame is 0.4 m wide, with a horizontal ridge 8 mm high.
+        let w = 128
+        var depth = [Float](repeating: 0, count: w * w)
+        for y in 0..<w { for x in 0..<w { depth[y * w + x] = 0.4 - 0.008 * expf(-powf((Float(y) - 64) / 10, 2)) + 0 * Float(x) } }
+        let lidar = DepthCapture(width: w, height: w, depth: depth, fx: 128, fy: 128, cx: 64, cy: 64, orientation: 1,
+                                 isAbsolute: true, confidence: [UInt8](repeating: 230, count: w * w), frames: 9)
+        let root = FileManager.default.temporaryDirectory.appending(path: "lidar-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = CaptureStore(libraryDirectory: root)
+        // Settle the learned model first: its arrival mid-derivation would mark the result stale.
+        await store.refreshLearnedModel()
+        let received = await store.receive(origin: .camera, data: try XCTUnwrap(syntheticBricks(size: 512).pngData()), depth: lidar)
+        XCTAssertTrue(received, store.errorMessage ?? "Import failed")
+        XCTAssertTrue(store.sourceHasDepth)
+        let measured = try XCTUnwrap(store.depthMeasurement, "Absolute depth measures the crop")
+        let quad = store.crop
+        let expected = Float(quad.topRight.x - quad.topLeft.x) * 0.4
+        XCTAssertEqual(measured.widthMetres, expected, accuracy: expected * 0.04)
+        store.semanticLabel = "LiDAR ridge"
+        store.resolution = 512
+        store.recipe = MaterialRecipe(preset: .stone)
+        XCTAssertEqual(store.recipe.tileMetres, 0)
+        store.setDepthGeometry(true)
+        await store.derive()
+        let derived = try XCTUnwrap(store.derived, store.errorMessage ?? "Derivation failed")
+        XCTAssertTrue(derived.measuredGuide)
+        XCTAssertEqual(try XCTUnwrap(derived.measuredTileMetres), measured.widthMetres, accuracy: 1e-4)
+        XCTAssertGreaterThan(try XCTUnwrap(derived.relief).measuredFormRmsSlope, 0)
+        let savedTargets = ExportTargetPreference.load()
+        defer { ExportTargetPreference.save(savedTargets) }
+        store.exportTargets = []
+        let folder = try await store.makeMaterialExport()
+        let manifestData = try Data(contentsOf: folder.appending(path: "lidar-ridge.pbrmaterial/manifest.json"))
+        let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+        let section = try XCTUnwrap(manifest["depth"] as? [String: Any])
+        XCTAssertEqual(section["frames_averaged"] as? Int, 9)
+        XCTAssertEqual(section["tile_metres_from_depth"] as? Bool, true)
+        XCTAssertEqual(section["measured_form"] as? Bool, true)
+        XCTAssertGreaterThan(section["height_span_mm"] as? Double ?? 0, 0)
+        let recipe = try XCTUnwrap(manifest["recipe"] as? [String: Any])
+        XCTAssertEqual(recipe["tile_metres"] as? Double ?? 0, Double(measured.widthMetres), accuracy: 1e-3)
+        if let host = ProcessInfo.processInfo.environment["EXPORT_DIR"], !host.isEmpty {
+            let destination = URL(fileURLWithPath: host).appending(path: "lidar-" + folder.lastPathComponent)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: folder, to: destination)
+        }
+        // The averaged depth is kept beside the capture and comes back on reopen.
+        try await Task.sleep(for: .seconds(1.2))
+        let reopened = CaptureStore(libraryDirectory: root)
+        await reopened.restore()
+        XCTAssertEqual(reopened.source?.depth?.frames, 9)
+        XCTAssertNotNil(reopened.depthMeasurement)
     }
 
     /// A JPEG of `image` with an embedded DepthFloat32 map (as the LiDAR camera writes with embedsDepthDataInPhoto).

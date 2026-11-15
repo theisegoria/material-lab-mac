@@ -410,6 +410,8 @@ struct ReliefDiagnostics: Sendable, Equatable {
     let learnedDetailCorrelation: Float
     let detailPolarity: Int
     let heightWrapSeamRatio: Float
+    /// Rms slope of measured (LiDAR) form kept as measured; 0 without one.
+    var measuredFormRmsSlope: Float = 0
     // Core 1.5.0: the 4–30 mm relief share and the roughness/luminance correlation, before and after correction.
     var midReliefShareBefore: Float = 0
     var midReliefShareAfter: Float = 0
@@ -457,6 +459,12 @@ struct DerivedMaterial: @unchecked Sendable {
     var repairDigests: RepairDigests? = nil
     /// Artist-made inputs used by this derivation.
     var authored = AuthoredMaps()
+    /// What LiDAR depth measured about the crop, when the photo had absolute depth.
+    var depthMeasurement: DepthMeasurement? = nil
+    /// Tile size the core used when it came from `depthMeasurement` (the recipe's own value was 0).
+    var measuredTileMetres: Float? = nil
+    /// The guide normals were measured slopes (PBRLabInput.guide_normals_measured).
+    var measuredGuide = false
 }
 
 /// Where a derivation gets learned guide normals when `recipe.guideNormalWeight > 0`.
@@ -547,10 +555,17 @@ enum MaterialProcessor {
             }
             guideNormals = learnedField?.guide(size: resolution)
         }
-        // Photo depth (LiDAR): its normals guide the form, blended evenly with learned geometry when both exist.
+        // Absolute (LiDAR) depth measures the crop; its width is the tile size unless the recipe sets one.
+        let measurement = authored.handMadeAlbedo ? nil : depth.flatMap { DepthGuide.measure($0, quad: quad) }
+        // Photo depth: LiDAR depth is measured geometry, so it supplies the form at its real slope with learned detail
+        // above the depth's resolution; relative (disparity) depth is blended evenly with learned geometry instead.
+        var measuredGuide = false
         if recipe.depthGeometry, recipe.guideNormalWeight > 0, !authored.hasGeometry, let depth,
            let depthNormals = DepthGuide.normals(depth, quad: quad, size: resolution) {
-            let combined = guideNormals.map { DepthGuide.blend($0.rgba8, depthNormals.rgba8, weightB: 0.5) } ?? depthNormals.rgba8
+            measuredGuide = depth.isAbsolute
+            let combined = depth.isAbsolute
+                ? guideNormals.map { DepthGuide.splitBands(low: depthNormals.rgba8, high: $0.rgba8, size: resolution) } ?? depthNormals.rgba8
+                : guideNormals.map { DepthGuide.blend($0.rgba8, depthNormals.rgba8, weightB: 0.5) } ?? depthNormals.rgba8
             let hash = SHA256.hash(data: combined).map { String(format: "%02x", $0) }.joined()
             let learned = guideNormals?.provenance
             let provenance = GuideNormalsProvenance(
@@ -560,13 +575,20 @@ enum MaterialProcessor {
                 modelFile: learned?.modelFile ?? (depth.isAbsolute ? "lidar-depth" : "photo-disparity"),
                 computeUnits: learned?.computeUnits ?? "cpu_only",
                 workResolution: learned?.workResolution ?? resolution, tiles: learned?.tiles ?? 0,
-                tiling: learned?.tiling ?? "depth_plane_fit_v1", normalsSHA256: hash)
+                tiling: learned == nil ? "depth_plane_fit_v1"
+                    : depth.isAbsolute ? "depth_form_learned_detail_v1" : (learned?.tiling ?? "depth_plane_fit_v1"),
+                normalsSHA256: hash)
             guideNormals = GuideNormals(rgba8: combined, size: resolution, provenance: provenance)
         }
         if control?.isCancelled == true { throw CaptureError.cancelled }
         let authoredPixels = try authored.decoded(size: resolution)
         var cRecipe = recipe.cValue
         if guideNormals == nil { cRecipe.guide_normal_weight = 0 }
+        var measuredTileMetres: Float?
+        if recipe.tileMetres <= 0, let measurement {
+            measuredTileMetres = min(64, max(0.01, measurement.widthMetres))
+            cRecipe.tile_metres = measuredTileMetres!
+        }
         if repair != nil {
             cRecipe.albedo_equalize = 0
             cRecipe.seamless_blend = 0
@@ -607,6 +629,7 @@ enum MaterialProcessor {
                 input.authored_ao_row_bytes = authoredPixels.ao == nil ? 0 : resolution
                 input.authored_metalness_r8 = UnsafePointer(authoredPixels.metalness?.baseAddress)
                 input.authored_metalness_row_bytes = authoredPixels.metalness == nil ? 0 : resolution
+                input.guide_normals_measured = measuredGuide && guideNormals != nil ? 1 : 0
                 let result: OpaquePointer? = { () -> OpaquePointer? in
                     guard let guideNormals else {
                         return PBRLabDerive(&input, &cRecipe, callback, context, &error, error.count)
@@ -632,6 +655,7 @@ enum MaterialProcessor {
                                            learnedDetailCorrelation: info.learned_detail_correlation,
                                            detailPolarity: Int(info.detail_polarity),
                                            heightWrapSeamRatio: info.height_wrap_seam_ratio,
+                                           measuredFormRmsSlope: info.measured_form_rms_slope,
                                            midReliefShareBefore: info.mid_relief_share_before,
                                            midReliefShareAfter: info.mid_relief_share_after,
                                            roughnessAlbedoCorrelationBefore: info.roughness_albedo_correlation_before,
@@ -673,7 +697,8 @@ enum MaterialProcessor {
                                relief: relief,
                                repairDigests: repair == nil || preview ? nil
                                    : RepairDigests(sourceRGBA8: Self.sha256(correctedRGBA), repairedRGBA8: Self.sha256(rgba)),
-                               authored: authored)
+                               authored: authored, depthMeasurement: measurement,
+                               measuredTileMetres: measuredTileMetres, measuredGuide: measuredGuide)
     }
 
     static func sha256(_ bytes: [UInt8]) -> String {

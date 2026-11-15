@@ -12,6 +12,7 @@
 		04C33F97DEFDAEC924CE7D71 /* AuthoredMaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452A596EB164DCE14C051001 /* AuthoredMaps.swift */; };
 		09A555B0F9F00ACDF5BDF7F7 /* Export.mm in Sources */ = {isa = PBXBuildFile; fileRef = D8F9E6C54DD962BC2E5511AA /* Export.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
 		0B852323449B9BD488E0065A /* IntentEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99C9C3DE3865D5CB0F5EBC46 /* IntentEntities.swift */; };
+		0D049C784FFF2C6367192F88 /* DepthStack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8E374E7942BF7FE277D86E /* DepthStack.swift */; };
 		0EA5072CD72F4EAF1992577B /* ContinuedDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */; };
 		11D96EC161961751BF8D93F1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70BF352744C7DECF3AB1BF3A /* CameraController.swift */; };
 		19B6EB116AEE13E57E8497D3 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */; };
@@ -91,6 +92,7 @@
 		53E9719A4A5E50F92DECA138 /* CaptureHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureHomeView.swift; sourceTree = "<group>"; };
 		64FCE7C462B6F8300C4CE47A /* PairingScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingScanner.swift; sourceTree = "<group>"; };
 		68024DE266D55F1A6FCCDE76 /* MaterialIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialIntents.swift; sourceTree = "<group>"; };
+		6B8E374E7942BF7FE277D86E /* DepthStack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DepthStack.swift; sourceTree = "<group>"; };
 		7029F50A6835EBD510C37453 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
 		70BF352744C7DECF3AB1BF3A /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		76A9CA3C3478BEE39BEF4BDE /* MaterialCapture.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MaterialCapture.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -219,6 +221,7 @@
 				103EE2A60187EB25A163CA98 /* CaptureStore.swift */,
 				86FAD1EA287CBE2B57F2C4C9 /* ContinuedDerivation.swift */,
 				82171C1201CC793933FE5A94 /* DepthGuide.swift */,
+				6B8E374E7942BF7FE277D86E /* DepthStack.swift */,
 				394C796B0AA342616ED7AAFC /* FlashPairAlbedo.swift */,
 				519A027C3D145DF71CF7626D /* Info.plist */,
 				FDEF30BB0AA2A1B31F497E54 /* LearnedNormalEstimator.swift */,
@@ -449,6 +452,7 @@
 				0EA5072CD72F4EAF1992577B /* ContinuedDerivation.swift in Sources */,
 				CA78AFBF6846FC75F590B990 /* CropEditorView.swift in Sources */,
 				9FD414858D2BD962C11E59E8 /* DepthGuide.swift in Sources */,
+				0D049C784FFF2C6367192F88 /* DepthStack.swift in Sources */,
 				09A555B0F9F00ACDF5BDF7F7 /* Export.mm in Sources */,
 				F9B0D5E73D388C6F5EF72D06 /* ExportAPI.mm in Sources */,
 				A5512AB50A2E1C9D71D26F8D /* ExportTargets.swift in Sources */,

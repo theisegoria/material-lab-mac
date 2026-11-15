@@ -782,6 +782,51 @@ int main() {
             assert(!PBRLabDerive(&pin, &bad, nullptr, nullptr, why, sizeof(why)));
         }
     }
+    // Measured guide form (LiDAR): keeps its real slope whatever the preset target; a learned guide follows the target.
+    {
+        constexpr unsigned m = 256;
+        constexpr double wavelength = 64, slope = .12;              // rms gradient magnitude of the measured surface
+        const double amplitude = slope * wavelength / (2 * M_PI);    // pixels of depth
+        std::vector<uint8_t> guide(m * m * 4, 255), grain(m * m * 4, 255);
+        uint32_t seed = 99;
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            const double k = 2 * M_PI / wavelength;
+            const double hx = amplitude * k * std::cos(k * x), hy = amplitude * k * std::cos(k * y);
+            // Core contract: dh/dx = -nx/nz, dh/dy = ny/nz (+Y green-up, image y down).
+            double nx = -hx, ny = hy, nz = 1, len = std::sqrt(nx * nx + ny * ny + nz * nz);
+            size_t i = (y * m + x) * 4;
+            guide[i] = static_cast<uint8_t>(std::lround((nx / len + 1) * 127.5));
+            guide[i + 1] = static_cast<uint8_t>(std::lround((ny / len + 1) * 127.5));
+            guide[i + 2] = static_cast<uint8_t>(std::lround((nz / len + 1) * 127.5));
+            seed = seed * 1664525u + 1013904223u;
+            grain[i] = grain[i + 1] = grain[i + 2] = static_cast<uint8_t>(120 + ((seed >> 24) & 31));
+        }
+        auto run = [&](bool measured, float strengthScale) {
+            auto r = PBRLabDefaultRecipe(PBRLabPresetStone);
+            r.guide_normal_weight = 1;
+            r.height_strength *= strengthScale;
+            PBRLabInput in{grain.data(), m * 4, nullptr, 0, nullptr, 0, m, m, guide.data(), m * 4};
+            in.guide_normals_measured = measured ? 1 : 0;
+            char err[256]{};
+            auto* result = PBRLabDerive(&in, &r, nullptr, nullptr, err, sizeof(err));
+            if (!result) std::cerr << err << '\n';
+            assert(result);
+            auto info = PBRLabGetDerivationInfo(result);
+            PBRLabFreeResult(result);
+            return info;
+        };
+        auto measuredFull = run(true, 1), measuredLow = run(true, .25f), learnedFull = run(false, 1), learnedLow = run(false, .25f);
+        std::cout << "measured form: rms " << measuredFull.measured_form_rms_slope << " (true " << slope << "), surface "
+                  << measuredFull.rms_slope << " / " << measuredLow.rms_slope << " at 1x / 0.25x strength; learned "
+                  << learnedFull.rms_slope << " / " << learnedLow.rms_slope << "\n";
+        assert(measuredFull.measured_form_rms_slope > .09f && measuredFull.measured_form_rms_slope < .14f);
+        assert(std::fabs(measuredLow.measured_form_rms_slope - measuredFull.measured_form_rms_slope) < 1e-4f);
+        assert(learnedFull.measured_form_rms_slope == 0);
+        // At a quarter of the target the measured surface still carries its real slope; the learned one shrinks.
+        assert(measuredLow.rms_slope > .9f * measuredFull.measured_form_rms_slope);
+        assert(learnedLow.rms_slope < .4f * learnedFull.rms_slope);
+        assert(measuredLow.rms_slope > 1.3f * learnedLow.rms_slope);
+    }
     PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n, nullptr, 0};
     char error[64]{};
     assert(!PBRLabDerive(&in, &recipe, stop, nullptr, error, sizeof(error)));
