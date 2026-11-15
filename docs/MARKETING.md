@@ -34,6 +34,8 @@ Every claim below is implemented and tested in the current build. Claims that ca
 
 Photograph a surface, and Material Lab builds the whole material: albedo, 16-bit height, normal, roughness, ambient occlusion, and cavity, convexity, slope and edge masks, plus an optional bent normal and packed ORM. A 1K material takes about a tenth of a second on Apple silicon, and every slider updates the maps live.
 
+**Tuned for how games see surfaces.** Tell Material Lab how big the surface is, and relief is sized in real millimetres. It keeps seams, chips and fasteners readable from a few metres away, and stops dark paint from reading as rough.
+
 **Start from a material, not a blank slate.** Choose from 39 tuned materials (red brick, cobblestones, polished marble, concrete, stucco, glazed tile, wood planks, tree bark, gravel, moss, denim, leather, brushed and rusted steel, copper, plastic and more), then refine. Basic mode shows the controls most materials need; Advanced shows every parameter. A dot marks anything you've changed, and a double-click resets it.
 
 **Geometry that reads the right way round.** Learned geometry runs Microsoft's MoGe-2 normal estimator on the Neural Engine and fuses it with the photo's own detail, so mortar reads as recessed between bricks and grout sits below the tiles, even when the joints are paler than the surface.
@@ -89,6 +91,7 @@ Point your iPhone at a wall, floor, rug or rock and turn it into a PBR material 
 - A relit view and a 3D sphere, cube or tile.
 - **AR Quick Look** to place the material on a real wall.
 - 39 starting materials, learned geometry on the Neural Engine, seamless albedo repair, and your own maps from Photos or Files.
+- Fine tuning for real-world tile size, mid-scale relief and how far roughness follows colour.
 - Big derivations keep running in the background if you switch apps.
 
 **Export straight to your engine.** Save the bundle plus glTF, USDZ, MaterialX, Unreal, Unity, Godot, Blender, Substance, Roblox or Minecraft files to Files. You can also send the capture to Material Lab on your Mac over an encrypted, approved local link.
@@ -112,8 +115,9 @@ The same engine for pipelines:
 - `--export` / `--also-export` to all 11 formats.
 - Catalog batches with `--jobs` and JSON `--report`s.
 - `--watch` folders.
-- `--info`, `--contact-sheet` and `--diff` for inspection.
+- `--info`, `--contact-sheet`, `--diff` and a lit `--preview` render.
 - A strict `--validate` for every bundle.
+- **An MCP server** (`material-lab mcp`): Claude and other AI agents can derive, look at and export materials for you. `claude mcp add material-lab -- material-lab mcp`.
 
 Apple silicon, macOS 15 or later.
 

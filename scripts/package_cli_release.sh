@@ -60,6 +60,9 @@ ln -s "$stage/bin/material-lab" "$scratch/brew/bin/material-lab"
   --input "$scratch/in.png" --output "$scratch/out" --preset stone "${learned_flag[@]}" --also-export glb >/dev/null)
 "$stage/bin/material-lab" --validate "$scratch/out.pbrmaterial" >/dev/null
 "$stage/bin/material-lab" --info "$scratch/out.pbrmaterial" | grep -q "Material Lab bundle"
+"$stage/bin/material-lab" --preview "$scratch/out.pbrmaterial" --output "$scratch/preview.png" >/dev/null
+# The MCP server, from the packaged binary.
+python3 "$repo_root/core/tests/MCPSmoke.py" "$stage/bin/material-lab"
 
 tar -C "$dist" -czf "$dist/$name.tar.gz" "$name"
 (cd "$dist" && shasum -a 256 "$name.tar.gz" | tee "$name.tar.gz.sha256")
