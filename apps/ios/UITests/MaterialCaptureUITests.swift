@@ -10,7 +10,8 @@ final class MaterialCaptureUITests: XCTestCase {
     private func label(_ english: String) -> String {
         guard japanese else { return english }
         return ["Photos": "写真", "Relit": "ライティング", "Tiled": "タイル", "Compare": "比較", "Map": "マップ",
-                "Normal": "ノーマル", "Height": "高さ", "Albedo": "アルベド", "Cancel": "キャンセル", "Done": "完了"][english] ?? english
+                "Normal": "ノーマル", "Height": "高さ", "Albedo": "アルベド", "Cancel": "キャンセル", "Done": "完了",
+                "Tile size": "タイルの実寸"][english] ?? english
     }
 
     private func launchFresh() -> XCUIApplication {
@@ -315,7 +316,26 @@ final class MaterialCaptureUITests: XCTestCase {
         while !(yourMaps.exists && yourMaps.isHittable) && swipes < 8 { app.swipeUp(velocity: .slow); swipes += 1 }
         app.swipeUp(velocity: .slow)
         shot("10-your-maps", settle: 1, top: false)
-        for _ in 0..<8 { app.swipeDown(velocity: .slow) }
+        // Fine tuning (1.5.0): tile size, mid-scale relief and follow colour.
+        // Expand the recipe sheet to full height so the whole section fits.
+        let recipeBar = app.navigationBars["Recipe"]
+        if recipeBar.exists {
+            recipeBar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)),
+                       withVelocity: .slow, thenHoldForDuration: 0.4)
+        }
+        // Recipe rows are sliders labelled with their titles.
+        let tileSize = app.sliders[label("Tile size")]
+        swipes = 0
+        while !(tileSize.exists && tileSize.isHittable) && swipes < 10 { app.swipeUp(velocity: .slow); swipes += 1 }
+        // Bring the Tile size row up under the sheet's header, so the section header and all three rows show.
+        if tileSize.isHittable {
+            let from = tileSize.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.4)
+        }
+        shot("13-fine-tuning", settle: 1, top: false)
+        for _ in 0..<14 { app.swipeDown(velocity: .slow) }
         app.buttons["recipe-done"].tap()
         shot("01-albedo", settle: 4)
 
@@ -349,8 +369,14 @@ final class MaterialCaptureUITests: XCTestCase {
         export.tap()
         XCTAssertTrue(app.switches["export-target-glb"].waitForExistence(timeout: 10))
         shot("11-export", settle: 2, top: false)
-        app.buttons[label("Cancel")].firstMatch.tap()
-        let macTab = app.tabBars.buttons["Mac"]
+        // Close the export sheet (its close button, else a swipe down).
+        let cancel = app.buttons[label("Cancel")].firstMatch
+        if cancel.exists && cancel.isHittable { cancel.tap() } else { app.swipeDown(velocity: .fast) }
+        if app.switches["export-target-glb"].waitForExistence(timeout: 2) { app.swipeDown(velocity: .fast) }
+        // The tab bar is a floating glass bar: find its Mac tab by label, whatever element type it is.
+        // Scrolling collapses the tab bar to the current tab; back at the top it shows every tab.
+        toTop()
+        let macTab = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Mac'")).firstMatch
         XCTAssertTrue(macTab.waitForExistence(timeout: 10))
         macTab.tap()
         shot("12-mac", top: false)
