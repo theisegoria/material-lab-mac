@@ -63,6 +63,7 @@ _arguments -s \
   '--include-unreviewed[include unreviewed catalog items]' \
   '--info[describe a bundle]:bundle:_files -/' \
   '--contact-sheet[one image of every map]:bundle:_files -/' \
+  '--preview[a lit render of a bundle]:bundle:_files -/' \
   '--diff[compare two bundles]:bundle:_files -/:bundle:_files -/' \
   '--export[export a bundle]:bundle:_files -/' \
   "--format[export format]:format:(${formats})" \

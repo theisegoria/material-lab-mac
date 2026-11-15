@@ -1,4 +1,4 @@
-.Dd October 6, 2026
+.Dd November 16, 2026
 .Dt MATERIAL-LAB 1
 .Os macOS
 .Sh NAME
@@ -18,7 +18,10 @@
 .Fl -watch Ar folder
 .Fl -output Ar folder
 .Nm
-.Fl -info | -contact-sheet | -export | -diff Ar bundle ...
+.Fl -info | -contact-sheet | -preview | -export | -diff Ar bundle ...
+.Nm
+.Cm mcp
+.Op Fl -root Ar folder ...
 .Nm
 .Fl -validate Ar bundle
 .Sh DESCRIPTION
@@ -169,6 +172,10 @@ Each tool validates its bundles first.
 Print the label, recipe, maps, seam measures, relief and learned-geometry provenance.
 .It Fl -contact-sheet Ar bundle Fl -output Ar sheet.png
 Write one labelled image of every map.
+.It Fl -preview Ar bundle Fl -output Ar preview.png
+Write a lit render: the material on a sphere, and a flat 2 x 2 tiling under a raking light that shows
+relief and any seam.
+Rendered on the CPU, so the image is the same on every Mac.
 .It Fl -diff Ar bundle_a bundle_b Op Fl -json
 Compare recipes and maps (mean and maximum difference, PSNR).
 .It Fl -export Ar bundle Fl -format Ar format Fl -output Ar path
@@ -233,6 +240,35 @@ Inspect a result:
 .Bd -literal -offset indent
 material-lab --info wall.pbrmaterial
 material-lab --contact-sheet wall.pbrmaterial --output wall.png
+material-lab --preview wall.pbrmaterial --output wall-lit.png
+.Ed
+.Sh MCP SERVER
+.Nm
+.Cm mcp
+runs a Model Context Protocol server on standard input and output, so Claude and other agents can use
+Material Lab directly.
+It offers eight tools:
+.Cm list_presets ,
+.Cm list_formats ,
+.Cm derive_material ,
+.Cm preview_material
+(returns an image of the maps, or a lit render),
+.Cm inspect_material ,
+.Cm validate_material ,
+.Cm diff_materials
+and
+.Cm export_material .
+.Pp
+The server never overwrites anything: an output path that exists is refused.
+With one or more
+.Fl -root Ar folder
+options, every path the tools read or write must be inside those folders.
+Without them, the tools read any image you name and write only inside the client's workspace roots, your
+home folder or a temporary folder.
+.Pp
+Add it to Claude Code:
+.Bd -literal -offset indent
+claude mcp add material-lab -- material-lab mcp
 .Ed
 .Sh PRIVACY
 Everything runs locally.
