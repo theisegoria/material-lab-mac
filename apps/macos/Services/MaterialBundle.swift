@@ -242,6 +242,13 @@ enum MaterialBundle {
         recipe.normalStrength = number("normal_strength") ?? recipe.normalStrength
         recipe.aoStrength = number("ao_strength") ?? recipe.aoStrength
         recipe.guideNormalWeight = number("guide_normal_weight") ?? 0
+        func bounded(_ key: String, _ range: ClosedRange<Float>, _ current: Float) -> Float {
+            number(key).map { min(range.upperBound, max(range.lowerBound, $0)) } ?? current
+        }
+        recipe.tileMetres = bounded("tile_metres", MaterialRecipe.Range.tileMetres, recipe.tileMetres)
+        recipe.midReliefShare = bounded("mid_relief_share", MaterialRecipe.Range.midReliefShare, recipe.midReliefShare)
+        recipe.roughnessAlbedoLimit = bounded("roughness_albedo_limit", MaterialRecipe.Range.unit, recipe.roughnessAlbedoLimit)
+        recipe.substrateRelief = bounded("substrate_relief", MaterialRecipe.Range.unit, recipe.substrateRelief)
         recipe.assignedMetalness = number("assigned_metalness") ?? 0
         recipe.assignedMetalnessEnabled = raw["assigned_metalness_enabled"] as? Bool ?? false
         recipe.bentNormalEnabled = raw["bent_normal_enabled"] as? Bool ?? false
@@ -284,6 +291,10 @@ enum MaterialBundle {
         recipe.seamlessMode = (raw["seamlessMode"] as? String).flatMap(SeamlessMode.init(rawValue:)) ?? .blend
         recipe.guideNormalWeight = number("guideNormalWeight", MaterialRecipe.Range.guideNormalWeight) ?? recipe.guideNormalWeight
         recipe.albedoRepair = (raw["albedoRepair"] as? String).flatMap(AlbedoRepair.init(rawValue:)) ?? .off
+        recipe.tileMetres = number("tileMetres", MaterialRecipe.Range.tileMetres) ?? recipe.tileMetres
+        recipe.midReliefShare = number("midReliefShare", MaterialRecipe.Range.midReliefShare) ?? recipe.midReliefShare
+        recipe.roughnessAlbedoLimit = number("roughnessAlbedoLimit", MaterialRecipe.Range.unit) ?? recipe.roughnessAlbedoLimit
+        recipe.substrateRelief = number("substrateRelief", MaterialRecipe.Range.unit) ?? recipe.substrateRelief
         if let polarity = raw["heightPolarity"] as? Int, polarity == 1 || polarity == -1 {
             recipe.heightPolarity = Int32(polarity)
         }
@@ -414,7 +425,6 @@ enum MaterialBundle {
             ]
         }
         let recipe = material.recipe
-        let coreDefaults = PBRLabDefaultRecipe(recipe.preset.cValue)
         let manifest: [String: Any] = [
             "schema_version": 1,
             "bundle_kind": "pbr-material-bundle",
@@ -457,11 +467,10 @@ enum MaterialBundle {
                 "seamless_mode": recipe.seamlessMode.rawValue,
                 "albedo_repair": (material.repair?.mode ?? .off).rawValue,
                 "guide_normal_weight": tidy(material.guide == nil ? 0 : recipe.guideNormalWeight),
-                // 1.5.0 relief and roughness controls: the app derives with the core's preset defaults.
-                "mid_relief_share": tidy(coreDefaults.mid_relief_share),
-                "tile_metres": tidy(coreDefaults.tile_metres),
-                "roughness_albedo_limit": tidy(coreDefaults.roughness_albedo_limit),
-                "substrate_relief": tidy(coreDefaults.substrate_relief)
+                "mid_relief_share": tidy(recipe.midReliefShare),
+                "tile_metres": tidy(recipe.tileMetres),
+                "roughness_albedo_limit": tidy(recipe.roughnessAlbedoLimit),
+                "substrate_relief": tidy(recipe.substrateRelief)
             ],
             "normal_convention": recipe.normalConvention,
             "maps": mapManifest,

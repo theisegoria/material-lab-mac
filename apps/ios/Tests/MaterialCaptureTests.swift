@@ -344,6 +344,9 @@ final class MaterialCaptureTests: XCTestCase {
         store.recipe.albedoRepair = .auto
         store.recipe.bentNormal = true
         if store.learnedModel != nil { store.recipe.guideNormalWeight = 1 }
+        store.recipe.tileMetres = 2
+        store.recipe.midReliefShare = 0.5
+        store.recipe.roughnessAlbedoLimit = 0.3
         XCTAssertEqual(store.recipe.materialPreset, "red-brick")
         XCTAssertEqual(store.recipe.preset, .stone)
         XCTAssertEqual(store.recipe.roughnessBase, library.recipe.roughness_base)
@@ -359,7 +362,15 @@ final class MaterialCaptureTests: XCTestCase {
         let recipe = try XCTUnwrap(manifest["recipe"] as? [String: Any])
         XCTAssertEqual(recipe["material_preset"] as? String, "red-brick")
         XCTAssertEqual(recipe["preset"] as? String, "stone")
-        XCTAssertNotNil(manifest["relief"])
+        XCTAssertEqual(recipe["tile_metres"] as? Double, 2)
+        XCTAssertEqual(recipe["mid_relief_share"] as? Double, 0.5)
+        XCTAssertEqual(recipe["roughness_albedo_limit"] as? Double, 0.3)
+        XCTAssertEqual(recipe["substrate_relief"] as? Double, 0)
+        let relief = try XCTUnwrap(manifest["relief"] as? [String: Any])
+        for key in ["mid_relief_share_before", "mid_relief_share_after", "roughness_albedo_correlation_before",
+                    "roughness_albedo_correlation_after"] {
+            XCTAssertNotNil(relief[key] as? Double, key)
+        }
         XCTAssertNotNil(manifest["albedo_repair"])
         XCTAssertEqual((manifest["maps"] as? [String: Any])?.count, 10, "Nine required maps plus the bent normal")
         for target in ExportTarget.all {
@@ -832,6 +843,37 @@ final class MaterialCaptureTests: XCTestCase {
         XCTAssertEqual(tiled.passes, 18)
         XCTAssertEqual(tiled.contract, "wrap_padded_rot180_detilted_v2")
         XCTAssertEqual(LearnedNormalEstimator.tilingPlan(size: 256, wrap: false)?.tiles, 1)
+    }
+
+    func testFineTuningDefaultsRoundTripAndReachTheCore() throws {
+        // Defaults come from the prior: the mid-scale floor is off for flat and on elsewhere.
+        let flat = MaterialRecipe(preset: .flat), stone = MaterialRecipe(preset: .stone)
+        XCTAssertEqual(flat.midReliefShare, 0)
+        XCTAssertEqual(stone.midReliefShare, stone.cValue.mid_relief_share)
+        XCTAssertGreaterThan(stone.midReliefShare, 0)
+        XCTAssertGreaterThan(stone.roughnessAlbedoLimit, 0)
+        var recipe = stone
+        recipe.tileMetres = 3.5
+        recipe.midReliefShare = 0.6
+        recipe.roughnessAlbedoLimit = 0.2
+        recipe.substrateRelief = 0.4
+        let decoded = try JSONDecoder().decode(MaterialRecipe.self, from: try JSONEncoder().encode(recipe))
+        XCTAssertEqual(decoded, recipe)
+        XCTAssertEqual(recipe.cValue.tile_metres, 3.5)
+        XCTAssertEqual(recipe.cValue.mid_relief_share, 0.6, accuracy: 1e-6)
+        XCTAssertEqual(recipe.cValue.roughness_albedo_limit, 0.2, accuracy: 1e-6)
+        XCTAssertEqual(recipe.cValue.substrate_relief, 0.4, accuracy: 1e-6)
+        // Out-of-range values are clamped to what the core accepts.
+        recipe.tileMetres = 500
+        recipe.midReliefShare = 2
+        XCTAssertEqual(recipe.cValue.tile_metres, 64)
+        XCTAssertEqual(recipe.cValue.mid_relief_share, 0.8, accuracy: 1e-6)
+        // Recipes saved before core 1.5.0 take the prior's defaults.
+        let legacy = Data(#"{"preset":"stone","heightStrength":0.2,"heightPolarity":1,"roughnessBase":0.7,"roughnessVariation":0.1,"aoRadiusPixels":10,"tileWrap":true,"bentNormal":false}"#.utf8)
+        let old = try JSONDecoder().decode(MaterialRecipe.self, from: legacy)
+        XCTAssertEqual(old.midReliefShare, stone.midReliefShare)
+        XCTAssertEqual(old.roughnessAlbedoLimit, stone.roughnessAlbedoLimit)
+        XCTAssertEqual(old.tileMetres, 0)
     }
 
     func testRecipeGuideNormalWeightRoundTripsAndSurvivesPresetChange() throws {

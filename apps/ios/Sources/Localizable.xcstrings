@@ -1371,6 +1371,16 @@
         }
       }
     },
+    "Fine tuning": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "微調整"
+          }
+        }
+      }
+    },
     "Flash": {
       "localizations": {
         "ja": {
@@ -1398,6 +1408,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "フラット／塗装"
+          }
+        }
+      }
+    },
+    "Follow colour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色への追従"
           }
         }
       }
@@ -2138,6 +2158,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "微細表面の散乱。0が光沢、1がつや消し。"
+          }
+        }
+      }
+    },
+    "Mid-scale relief": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中スケールの凹凸"
           }
         }
       }
@@ -3384,6 +3414,16 @@
         }
       }
     },
+    "Surface unevenness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表面の微細な凹凸"
+          }
+        }
+      }
+    },
     "SurfaceAppearance colour, normal, roughness and metalness maps (at most 1024²).": {
       "extractionState": "manual",
       "localizations": {
@@ -3608,6 +3648,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "タイル"
+          }
+        }
+      }
+    },
+    "Tile size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイルの実寸"
+          }
+        }
+      }
+    },
+    "Tile size is the real width of the surface in the photo (0 = unknown, treated as 1 m), so relief is sized physically. Mid-scale relief keeps seams, chips and fasteners readable from a few metres away. Follow colour limits how far roughness tracks brightness, so dark paint does not read as rough.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイルの実寸は写真に写っている面の実際の幅です(0は不明で、1 mとして扱います)。凹凸を実寸に合わせます。中スケールの凹凸は、継ぎ目・欠け・留め具が数メートル離れても読み取れるようにします。色への追従は、ラフネスが明るさに追従する度合いを制限し、暗い塗装が粗く見えるのを防ぎます。"
           }
         }
       }

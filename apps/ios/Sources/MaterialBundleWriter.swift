@@ -70,7 +70,11 @@ enum MaterialBundleWriter {
             "seamless_blend": tidy(recipe.seamlessBlend),
             "seamless_mode": recipe.seamlessMode.rawValue,
             "albedo_repair": (material.repair?.mode ?? .off).rawValue,
-            "guide_normal_weight": tidy(learned ? recipe.guideNormalWeight : 0)
+            "guide_normal_weight": tidy(learned ? recipe.guideNormalWeight : 0),
+            "mid_relief_share": tidy(recipe.midReliefShare.clamped(to: MaterialRecipe.midReliefShareRange)),
+            "tile_metres": tidy(recipe.tileMetres.clamped(to: MaterialRecipe.tileMetresRange)),
+            "roughness_albedo_limit": tidy(recipe.roughnessAlbedoLimit.clamped(to: 0...1)),
+            "substrate_relief": tidy(recipe.substrateRelief.clamped(to: 0...1))
         ]
         if let preset = recipe.materialPreset { recipeManifest["material_preset"] = preset }
         if let mask = material.authored.maps[.reliefMask] {
@@ -111,7 +115,11 @@ enum MaterialBundleWriter {
                 "learned_form_share": tidy(relief.learnedFormShare),
                 "learned_detail_correlation": tidy(relief.learnedDetailCorrelation),
                 "detail_polarity": relief.detailPolarity,
-                "height_wrap_seam_ratio": tidy(relief.heightWrapSeamRatio)
+                "height_wrap_seam_ratio": tidy(relief.heightWrapSeamRatio),
+                "mid_relief_share_before": tidy(relief.midReliefShareBefore),
+                "mid_relief_share_after": tidy(relief.midReliefShareAfter),
+                "roughness_albedo_correlation_before": tidy(relief.roughnessAlbedoCorrelationBefore),
+                "roughness_albedo_correlation_after": tidy(relief.roughnessAlbedoCorrelationAfter)
             ] as [String: Any],
             "estimation_notice": "Geometry and reflectance maps are estimates, not measured surface properties.",
             "runtime_admitted": false

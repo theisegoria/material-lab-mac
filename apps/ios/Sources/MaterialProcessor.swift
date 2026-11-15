@@ -84,6 +84,15 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     var materialPreset: String?
     /// Use the photo's depth (LiDAR on Pro iPhones) as a geometry guide, blended with learned geometry when both exist.
     var depthGeometry = false
+    // Core 1.5.0; defaults come from the relief prior.
+    /// Physical width of the tile in metres; 0 = unknown (treated as 1 m).
+    var tileMetres: Float = 0
+    /// Minimum share of the relief carried by 4–30 mm features (seams, chips, fasteners).
+    var midReliefShare: Float = 0
+    /// How far roughness may follow the albedo's brightness; 1 = no limit.
+    var roughnessAlbedoLimit: Float = 0.45
+    /// Flat prior only: fine unevenness of a painted or coated surface.
+    var substrateRelief: Float = 0
 
     /// Whether the core changes the albedo pixels (delighting, edge treatment or repair).
     var conditionsAlbedo: Bool { albedoEqualize > 0 || seamlessBlend > 0 || albedoRepair != .off }
@@ -95,6 +104,8 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
     static let aoStrengthRange: ClosedRange<Float> = 0...4
     static let albedoEqualizeRange: ClosedRange<Float> = 0...1
     static let seamlessBlendRange: ClosedRange<Float> = 0...0.45
+    static let tileMetresRange: ClosedRange<Float> = 0...64
+    static let midReliefShareRange: ClosedRange<Float> = 0...0.8
 
     init(preset: MaterialPreset) {
         let defaults = PBRLabDefaultRecipe(preset.cValue)
@@ -113,6 +124,10 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         albedoEqualize = defaults.albedo_equalize
         seamlessBlend = defaults.seamless_blend
         seamlessMode = defaults.seamless_mode == 1 ? .cut : .blend
+        tileMetres = defaults.tile_metres
+        midReliefShare = defaults.mid_relief_share
+        roughnessAlbedoLimit = defaults.roughness_albedo_limit
+        substrateRelief = defaults.substrate_relief
     }
 
     /// A library preset's recipe (its prior plus tuned values), keeping the caller's export, tiling, lighting-cleanup
@@ -151,7 +166,7 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         case preset, heightStrength, heightPolarity, roughnessBase, roughnessVariation, aoRadiusPixels
         case tileWrap, assignedMetalness, bentNormal, normalStrength, normalYDown, aoStrength
         case albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair, materialPreset
-        case depthGeometry
+        case depthGeometry, tileMetres, midReliefShare, roughnessAlbedoLimit, substrateRelief
     }
 
     init(from decoder: Decoder) throws {
@@ -177,6 +192,15 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         albedoRepair = try c.decodeIfPresent(AlbedoRepair.self, forKey: .albedoRepair) ?? .off
         materialPreset = LibraryPreset.named(try c.decodeIfPresent(String.self, forKey: .materialPreset))?.id
         depthGeometry = try c.decodeIfPresent(Bool.self, forKey: .depthGeometry) ?? false
+        // Recipes saved before core 1.5.0 keep the prior's defaults.
+        func bounded(_ key: CodingKeys, _ current: Float, _ range: ClosedRange<Float>) throws -> Float {
+            guard let value = try c.decodeIfPresent(Float.self, forKey: key), value.isFinite else { return current }
+            return value.clamped(to: range)
+        }
+        tileMetres = try bounded(.tileMetres, tileMetres, Self.tileMetresRange)
+        midReliefShare = try bounded(.midReliefShare, midReliefShare, Self.midReliefShareRange)
+        roughnessAlbedoLimit = try bounded(.roughnessAlbedoLimit, roughnessAlbedoLimit, 0...1)
+        substrateRelief = try bounded(.substrateRelief, substrateRelief, 0...1)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -200,6 +224,10 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         try c.encode(albedoRepair, forKey: .albedoRepair)
         try c.encodeIfPresent(materialPreset, forKey: .materialPreset)
         if depthGeometry { try c.encode(depthGeometry, forKey: .depthGeometry) }
+        try c.encode(tileMetres, forKey: .tileMetres)
+        try c.encode(midReliefShare, forKey: .midReliefShare)
+        try c.encode(roughnessAlbedoLimit, forKey: .roughnessAlbedoLimit)
+        try c.encode(substrateRelief, forKey: .substrateRelief)
     }
 
     var cValue: PBRLabRecipe {
@@ -220,6 +248,10 @@ struct MaterialRecipe: Codable, Equatable, Sendable {
         value.seamless_blend = seamlessBlend.clamped(to: Self.seamlessBlendRange)
         value.seamless_mode = seamlessMode.cValue
         value.albedo_repair = albedoRepair.cValue
+        value.tile_metres = tileMetres.clamped(to: Self.tileMetresRange)
+        value.mid_relief_share = midReliefShare.clamped(to: Self.midReliefShareRange)
+        value.roughness_albedo_limit = roughnessAlbedoLimit.clamped(to: 0...1)
+        value.substrate_relief = substrateRelief.clamped(to: 0...1)
         if albedoRepair != .off { value.tile_wrap = 1 }
         // MaterialProcessor zeroes this when no guide normals accompany the derivation.
         value.guide_normal_weight = guideNormalWeight.clamped(to: 0...1)
@@ -378,6 +410,11 @@ struct ReliefDiagnostics: Sendable, Equatable {
     let learnedDetailCorrelation: Float
     let detailPolarity: Int
     let heightWrapSeamRatio: Float
+    // Core 1.5.0: the 4–30 mm relief share and the roughness/luminance correlation, before and after correction.
+    var midReliefShareBefore: Float = 0
+    var midReliefShareAfter: Float = 0
+    var roughnessAlbedoCorrelationBefore: Float = 0
+    var roughnessAlbedoCorrelationAfter: Float = 0
 }
 
 /// SHA-256 of the straight RGBA8 albedo before and after repair (manifest `albedo_repair`).
@@ -594,7 +631,11 @@ enum MaterialProcessor {
                                            learnedFormShare: info.learned_form_share,
                                            learnedDetailCorrelation: info.learned_detail_correlation,
                                            detailPolarity: Int(info.detail_polarity),
-                                           heightWrapSeamRatio: info.height_wrap_seam_ratio)
+                                           heightWrapSeamRatio: info.height_wrap_seam_ratio,
+                                           midReliefShareBefore: info.mid_relief_share_before,
+                                           midReliefShareAfter: info.mid_relief_share_after,
+                                           roughnessAlbedoCorrelationBefore: info.roughness_albedo_correlation_before,
+                                           roughnessAlbedoCorrelationAfter: info.roughness_albedo_correlation_after)
                 for (index, kind) in MaterialMapKind.allCases.enumerated() {
                     if control?.report(0.85 + 0.15 * Double(index) / Double(MaterialMapKind.allCases.count)) == false {
                         throw CaptureError.cancelled

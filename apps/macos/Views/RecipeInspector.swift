@@ -77,6 +77,19 @@ struct RecipeInspector: View {
                                  range: MaterialRecipe.Range.normalStrength, digits: 2, baseline: base.normalStrength,
                                  sliderRange: 0...4,
                                  help: String(localized: "Multiplies the tangent normal gradient; 1 is neutral. Type up to 16."))
+                    ParameterRow(title: String(localized: "Tile size"), value: $store.recipe.tileMetres,
+                                 range: MaterialRecipe.Range.tileMetres, digits: 2, baseline: base.tileMetres,
+                                 sliderRange: 0...8, unit: "m",
+                                 help: String(localized: "Real width of the tile in metres, so relief is sized physically. 0 means unknown (treated as 1 m). Type up to 64."))
+                    if store.recipe.preset == .flat {
+                        ParameterRow(title: String(localized: "Surface unevenness"), value: $store.recipe.substrateRelief,
+                                     range: MaterialRecipe.Range.unit, digits: 2, baseline: base.substrateRelief,
+                                     help: String(localized: "Adds the fine unevenness of a painted or coated surface. Flat prior only; off with learned geometry."))
+                    } else {
+                        ParameterRow(title: String(localized: "Mid-scale relief"), value: $store.recipe.midReliefShare,
+                                     range: MaterialRecipe.Range.midReliefShare, digits: 2, baseline: base.midReliefShare,
+                                     help: String(localized: "Minimum share of the relief carried by 4–30 mm features (seams, chips, fasteners), so it still reads from a few metres away. 0 turns the floor off."))
+                    }
                 }
                 LearnedGeometryRow(store: store, learned: store.learned)
                 if advanced {
@@ -90,7 +103,8 @@ struct RecipeInspector: View {
                 )
                 }
             } header: {
-                SectionHeader(title: String(localized: "Relief"), modified: modified(\.heightStrength, \.normalStrength) ||
+                SectionHeader(title: String(localized: "Relief"), modified: modified(\.heightStrength, \.normalStrength, \.tileMetres,
+                                                                  \.midReliefShare, \.substrateRelief) ||
                               store.recipe.heightPolarity != base.heightPolarity)
             }
 
@@ -135,6 +149,9 @@ struct RecipeInspector: View {
                     ParameterRow(title: String(localized: "Roughness variation"), value: $store.recipe.roughnessVariation,
                                  range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessVariation,
                                  help: String(localized: "Restrained height-driven variation."))
+                    ParameterRow(title: String(localized: "Follow colour"), value: $store.recipe.roughnessAlbedoLimit,
+                                 range: MaterialRecipe.Range.unit, digits: 2, baseline: base.roughnessAlbedoLimit,
+                                 help: String(localized: "How far roughness may follow the albedo's brightness. Lower values stop dark paint reading as rough; 1 removes the limit."))
                 }
                 ParameterRow(title: String(localized: "Remove baked lighting"), value: $store.recipe.albedoEqualize,
                              range: MaterialRecipe.Range.albedoEqualize, digits: 2, baseline: base.albedoEqualize,
@@ -146,7 +163,7 @@ struct RecipeInspector: View {
                                  help: String(localized: "An artist decision, never inferred from color."))
                 }
             } header: {
-                SectionHeader(title: String(localized: "Surface"), modified: modified(\.roughnessBase, \.roughnessVariation, \.albedoEqualize,
+                SectionHeader(title: String(localized: "Surface"), modified: modified(\.roughnessBase, \.roughnessVariation, \.roughnessAlbedoLimit, \.albedoEqualize,
                                                                    \.assignedMetalness) ||
                               store.recipe.assignedMetalnessEnabled != base.assignedMetalnessEnabled)
             }

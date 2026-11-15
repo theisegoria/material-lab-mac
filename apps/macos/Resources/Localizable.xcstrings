@@ -297,6 +297,16 @@
         }
       }
     },
+    "Adds the fine unevenness of a painted or coated surface. Flat prior only; off with learned geometry.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "塗装やコーティングされた表面の微細な凹凸を加えます。フラットの事前設定のみ。学習ジオメトリ使用時は無効です。"
+          }
+        }
+      }
+    },
     "Advanced": {
       "localizations": {
         "ja": {
@@ -1598,6 +1608,16 @@
         }
       }
     },
+    "Follow colour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色への追従"
+          }
+        }
+      }
+    },
     "Galvanized steel": {
       "extractionState": "manual",
       "localizations": {
@@ -1860,6 +1880,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ソース画像のピクセル単位での水平線探索半径。"
+          }
+        }
+      }
+    },
+    "How far roughness may follow the albedo's brightness. Lower values stop dark paint reading as rough; 1 removes the limit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラフネスがアルベドの明るさにどこまで追従するか。値を下げると、暗い塗装が粗く見えるのを防ぎます。1で制限なし。"
           }
         }
       }
@@ -2417,6 +2447,16 @@
         }
       }
     },
+    "Mid-scale relief": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中スケールの凹凸"
+          }
+        }
+      }
+    },
     "Minecraft (LabPBR)": {
       "extractionState": "manual",
       "localizations": {
@@ -2424,6 +2464,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Minecraft（LabPBR）"
+          }
+        }
+      }
+    },
+    "Minimum share of the relief carried by 4–30 mm features (seams, chips, fasteners), so it still reads from a few metres away. 0 turns the floor off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4〜30 mmの形状(継ぎ目、欠け、留め具)が凹凸に占める最小の割合。数メートル離れても凹凸が読み取れます。0で無効になります。"
           }
         }
       }
@@ -3098,6 +3148,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "準備完了"
+          }
+        }
+      }
+    },
+    "Real width of the tile in metres, so relief is sized physically. 0 means unknown (treated as 1 m). Type up to 64.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイルの実際の幅(メートル)。凹凸を実寸に合わせます。0は不明(1 mとして扱います)。64まで入力できます。"
           }
         }
       }
@@ -4057,6 +4117,16 @@
         }
       }
     },
+    "Surface unevenness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表面の微細な凹凸"
+          }
+        }
+      }
+    },
     "SurfaceAppearance colour, normal, roughness and metalness maps (at most 1024²).": {
       "extractionState": "manual",
       "localizations": {
@@ -4201,6 +4271,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "タイル"
+          }
+        }
+      }
+    },
+    "Tile size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイルの実寸"
           }
         }
       }

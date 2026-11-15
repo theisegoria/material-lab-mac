@@ -65,9 +65,18 @@ enum SnapshotHarness {
                 }
             }
         }
+        // "tileMetres,midReliefShare,roughnessAlbedoLimit,substrateRelief": the 1.5.0 fine-tuning controls.
+        if let values = environment["MATERIAL_LAB_SNAPSHOT_FINE_TUNING"]?.split(separator: ",").compactMap({ Float($0) }),
+           values.count == 4 {
+            store.recipe.tileMetres = values[0]
+            store.recipe.midReliefShare = values[1]
+            store.recipe.roughnessAlbedoLimit = values[2]
+            store.recipe.substrateRelief = values[3]
+        }
         if let bundlePath = environment["MATERIAL_LAB_SNAPSHOT_OPEN_BUNDLE"] {
             store.openMaterialBundle(URL(fileURLWithPath: bundlePath))
             let r = store.recipe
+            print("open-bundle fine tuning:", r.tileMetres, r.midReliefShare, r.roughnessAlbedoLimit, r.substrateRelief)
             print("open-bundle:", store.selectedSource?.semanticLabel ?? "-", r.materialPreset ?? "-", r.preset.rawValue,
                   r.roughnessBase, r.assignedMetalnessEnabled, r.albedoRepair.rawValue)
         }

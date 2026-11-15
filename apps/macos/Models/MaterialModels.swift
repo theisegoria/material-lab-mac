@@ -101,6 +101,15 @@ struct MaterialRecipe: Equatable, Sendable {
     var roughnessMapURL: URL? = nil
     var aoMapURL: URL? = nil
     var metalnessMapURL: URL? = nil
+    // Algorithm 1.5.0. Defaults come from the relief prior (MaterialEngine.defaultRecipe).
+    /// Physical width of the tile in metres; 0 = unknown (treated as 1 m).
+    var tileMetres: Float = 0
+    /// Minimum share of the relief carried by 4–30 mm features (seams, chips, fasteners).
+    var midReliefShare: Float = 0
+    /// How far roughness may follow the albedo's brightness; 1 = no limit.
+    var roughnessAlbedoLimit: Float = 0.45
+    /// Flat prior only: fine unevenness of a painted or coated surface.
+    var substrateRelief: Float = 0
 
     /// Authored height or normals supply the geometry, so learned inference is skipped.
     var hasAuthoredGeometry: Bool { heightOverrideURL != nil || normalMapURL != nil }
@@ -129,6 +138,9 @@ struct MaterialRecipe: Equatable, Sendable {
         static let albedoEqualize: ClosedRange<Float> = 0...1
         static let seamlessBlend: ClosedRange<Float> = 0...0.45
         static let guideNormalWeight: ClosedRange<Float> = 0...1
+        static let tileMetres: ClosedRange<Float> = 0...64
+        static let midReliefShare: ClosedRange<Float> = 0...0.8
+        static let unit: ClosedRange<Float> = 0...1
     }
 
     var normalConvention: String { normalYDown ? "-Y" : "+Y" }
@@ -152,6 +164,7 @@ extension MaterialRecipe: Codable {
         case aoStrength, albedoEqualize, seamlessBlend, guideNormalWeight, seamlessMode, albedoRepair
         case reliefMaskPath, heightOverridePath, materialPreset
         case authoredAlbedo, normalMapPath, normalMapDirectX, roughnessMapPath, aoMapPath, metalnessMapPath
+        case tileMetres, midReliefShare, roughnessAlbedoLimit, substrateRelief
     }
 
     init(from decoder: Decoder) throws {
@@ -191,6 +204,14 @@ extension MaterialRecipe: Codable {
         roughnessMapURL = existing(.roughnessMapPath)
         aoMapURL = existing(.aoMapPath)
         metalnessMapURL = existing(.metalnessMapPath)
+        func clamped(_ key: CodingKeys, _ current: Float, _ range: ClosedRange<Float>) -> Float {
+            let next = value(key, current)
+            return next.isFinite ? min(range.upperBound, max(range.lowerBound, next)) : current
+        }
+        tileMetres = clamped(.tileMetres, tileMetres, Range.tileMetres)
+        midReliefShare = clamped(.midReliefShare, midReliefShare, Range.midReliefShare)
+        roughnessAlbedoLimit = clamped(.roughnessAlbedoLimit, roughnessAlbedoLimit, Range.unit)
+        substrateRelief = clamped(.substrateRelief, substrateRelief, Range.unit)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -222,6 +243,10 @@ extension MaterialRecipe: Codable {
         try c.encodeIfPresent(roughnessMapURL?.path, forKey: .roughnessMapPath)
         try c.encodeIfPresent(aoMapURL?.path, forKey: .aoMapPath)
         try c.encodeIfPresent(metalnessMapURL?.path, forKey: .metalnessMapPath)
+        try c.encode(tileMetres, forKey: .tileMetres)
+        try c.encode(midReliefShare, forKey: .midReliefShare)
+        try c.encode(roughnessAlbedoLimit, forKey: .roughnessAlbedoLimit)
+        try c.encode(substrateRelief, forKey: .substrateRelief)
     }
 }
 

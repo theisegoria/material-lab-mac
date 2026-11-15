@@ -124,6 +124,27 @@ struct RecipeEditorView: View {
                 }
 
                 Section {
+                    RecipeSlider(title: String(localized: "Tile size"), symbol: "ruler", value: $store.recipe.tileMetres,
+                                 range: 0...8, step: 0.05, format: "%.2f m", baseline: store.baselineRecipe.tileMetres)
+                    if store.recipe.preset == .flat {
+                        RecipeSlider(title: String(localized: "Surface unevenness"), symbol: "water.waves",
+                                     value: $store.recipe.substrateRelief,
+                                     range: 0...1, step: 0.01, baseline: store.baselineRecipe.substrateRelief)
+                    } else {
+                        RecipeSlider(title: String(localized: "Mid-scale relief"), symbol: "square.grid.3x3.topleft.filled",
+                                     value: $store.recipe.midReliefShare,
+                                     range: MaterialRecipe.midReliefShareRange, step: 0.01, baseline: store.baselineRecipe.midReliefShare)
+                    }
+                    RecipeSlider(title: String(localized: "Follow colour"), symbol: "circle.lefthalf.striped.horizontal",
+                                 value: $store.recipe.roughnessAlbedoLimit,
+                                 range: 0...1, step: 0.01, baseline: store.baselineRecipe.roughnessAlbedoLimit)
+                } header: {
+                    Text("Fine tuning")
+                } footer: {
+                    Text("Tile size is the real width of the surface in the photo (0 = unknown, treated as 1 m), so relief is sized physically. Mid-scale relief keeps seams, chips and fasteners readable from a few metres away. Follow colour limits how far roughness tracks brightness, so dark paint does not read as rough.")
+                }
+
+                Section {
                     RecipeSlider(title: String(localized: "Remove lighting"), symbol: "sun.max.trianglebadge.exclamationmark",
                                  value: $store.recipe.albedoEqualize,
                                  range: MaterialRecipe.albedoEqualizeRange, step: 0.01, format: "%.0f%%", percent: true, baseline: store.baselineRecipe.albedoEqualize)

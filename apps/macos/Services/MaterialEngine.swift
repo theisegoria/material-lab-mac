@@ -109,7 +109,7 @@ enum MaterialEngine {
 
     static func defaultRecipe(for preset: MaterialPreset) -> MaterialRecipe {
         let native = PBRLabDefaultRecipe(preset.cValue)
-        return MaterialRecipe(
+        var recipe = MaterialRecipe(
             preset: preset,
             heightStrength: native.height_strength,
             heightPolarity: native.height_polarity,
@@ -131,6 +131,11 @@ enum MaterialEngine {
             reliefMaskURL: nil,
             heightOverrideURL: nil
         )
+        recipe.tileMetres = native.tile_metres
+        recipe.midReliefShare = native.mid_relief_share
+        recipe.roughnessAlbedoLimit = native.roughness_albedo_limit
+        recipe.substrateRelief = native.substrate_relief
+        return recipe
     }
 
     /// `learnedCoarse` derives with a quick single-tile learned field unless the full one is already cached
@@ -232,6 +237,10 @@ enum MaterialEngine {
         nativeRecipe.seamless_blend = recipe.seamlessBlend
         nativeRecipe.seamless_mode = recipe.seamlessMode.cValue
         nativeRecipe.guide_normal_weight = guide == nil ? 0 : recipe.guideNormalWeight
+        nativeRecipe.tile_metres = recipe.tileMetres
+        nativeRecipe.mid_relief_share = recipe.midReliefShare
+        nativeRecipe.roughness_albedo_limit = recipe.roughnessAlbedoLimit
+        nativeRecipe.substrate_relief = recipe.substrateRelief
         if repair != nil {
             // The pixels are already conditioned; a repaired albedo always tiles.
             nativeRecipe.albedo_equalize = 0
