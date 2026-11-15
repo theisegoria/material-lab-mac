@@ -10,6 +10,7 @@
 #include "PBRMaterialLab.h"
 #include "PNGWriter.hpp"
 #include "tools/Tools.hpp"
+#include "tools/MCPServer.hpp"
 #include "PBRLabExport.h"
 #include <algorithm>
 #include <array>
@@ -304,6 +305,7 @@ constexpr const char* kUsage =
     "material-lab --input IMAGE --output BUNDLE_DIR [--label TEXT --id ID] [recipe flags]\n"
     "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed] [--keep-going]\n"
     "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
+    "material-lab mcp [--root DIR]...   Model Context Protocol server on stdio (for Claude and other agents)\n"
     "Recipe flags (--preset applies first, wherever it appears):\n"
     "  --preset NAME  a material preset (red-brick, wood-planks, rusted-steel... see --list-presets [--json])\n"
     "    or a relief prior: flat|stone|fabric|organic|coated-metal|bare-metal\n"
@@ -1934,9 +1936,59 @@ int run(int argc, const char** argv) {
     for (const auto& exported : result.exports) std::cout << exported << '\n';
     return 0;
 }
+// One CLI run inside the MCP server: output captured, every failure turned into an exit code.
+int runCaptured(const char* argv0, const std::vector<std::string>& arguments, std::string& out, std::string& err) {
+    std::vector<const char*> argv{argv0};
+    for (const auto& argument : arguments) argv.push_back(argument.c_str());
+    std::ostringstream capturedOut, capturedErr;
+    std::streambuf* savedOut = std::cout.rdbuf(capturedOut.rdbuf());
+    std::streambuf* savedErr = std::cerr.rdbuf(capturedErr.rdbuf());
+    int code = 1;
+    @autoreleasepool {
+        @try {
+            try {
+                code = run(static_cast<int>(argv.size()), argv.data());
+            } catch (const std::exception& e) {
+                std::cerr << "material-lab: " << e.what() << '\n';
+            }
+        } @catch (NSException* exception) {
+            std::cerr << "material-lab: internal error: " << str(exception.name) << ": " << str(exception.reason) << '\n';
+        }
+    }
+    std::cout.rdbuf(savedOut);
+    std::cerr.rdbuf(savedErr);
+    out = capturedOut.str();
+    err = capturedErr.str();
+    return code;
+}
+
+// material-lab mcp [--root DIR]...
+int serveMCP(int argc, const char** argv) {
+    std::vector<std::string> roots;
+    for (int i = 2; i < argc; ++i) {
+        const std::string flag = argv[i];
+        if (flag == "--root" && i + 1 < argc) roots.emplace_back(argv[++i]);
+        else throw std::runtime_error("usage: material-lab mcp [--root DIR]...");
+    }
+    const char* argv0 = argv[0];
+    return mlmcp::serve(roots, [argv0](const std::vector<std::string>& arguments, std::string& out, std::string& err) {
+        return runCaptured(argv0, arguments, out, err);
+    }, kCLIVersion);
+}
 } // namespace
 
 int main(int argc, const char** argv) {
+    if (argc >= 2 && std::string(argv[1]) == "mcp") {
+        // No signal handlers: an interrupt ends the server.
+        @autoreleasepool {
+            try {
+                return serveMCP(argc, argv);
+            } catch (const std::exception& e) {
+                std::cerr << "material-lab: " << e.what() << '\n';
+                return 1;
+            }
+        }
+    }
     installSignalHandlers();
     @autoreleasepool {
         @try {
