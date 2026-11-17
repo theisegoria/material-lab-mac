@@ -86,7 +86,10 @@ final class WatchFolderService {
     func setPaused(_ paused: Bool) {
         guard state == .watching || state == .paused else { return }
         state = paused ? .paused : .watching
-        if !paused { scan() }
+        if !paused {
+            scan()
+            folderChanged()
+        }
     }
 
     func stop() {
