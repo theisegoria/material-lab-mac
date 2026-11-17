@@ -68,7 +68,7 @@ bool encodePNG(const PBRLabMap& map, std::vector<uint8_t>& png, std::string& err
     const size_t bpp = height ? 2 : 4;
     const size_t widthBytes = static_cast<size_t>(map.width) * bpp;
     if (!map.pixels || !map.width || !map.height || map.row_bytes < widthBytes ||
-        map.byte_count < map.row_bytes * map.height || map.width > 4096 || map.height > 4096) {
+        map.byte_count < map.row_bytes * map.height || map.width > 8192 || map.height > 8192) {
         error = "invalid map layout"; return false;
     }
     std::vector<uint8_t> raw;

@@ -5,6 +5,7 @@ import hashlib
 import os
 import uuid
 import json
+import math
 import signal
 import time
 import shutil
@@ -78,6 +79,23 @@ def rgb_png(path: pathlib.Path, pixel) -> None:
             rows.extend(pixel(x, y))
     png = bytearray(b"\x89PNG\r\n\x1a\n")
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(rows))
+    png += chunk(b"IEND", b"")
+    path.write_bytes(png)
+
+
+def textured_png(path: pathlib.Path, n: int = 32, tint=(1.0, 0.95, 0.9), phase: float = 0.0) -> None:
+    """A tileable n x n RGBA8 sRGB texture with relief-like detail."""
+    rows = bytearray()
+    for y in range(n):
+        rows.append(0)
+        for x in range(n):
+            a = 0.5 + 0.25 * math.sin(2 * math.pi * (2 * x / n + phase)) * math.cos(2 * math.pi * 3 * y / n) \
+                + 0.15 * math.sin(2 * math.pi * (5 * x + 7 * y) / n)
+            rows.extend(tuple(max(0, min(255, int(255 * a * t))) for t in tint) + (255,))
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 8, 6, 0, 0, 0))
+    png += chunk(b"sRGB", b"\x00")
     png += chunk(b"IDAT", zlib.compress(rows))
     png += chunk(b"IEND", b"")
     path.write_bytes(png)
@@ -788,6 +806,69 @@ def main() -> None:
         going = catalog_run(mixed, "--keep-going", expect_success=False, output="going")
         assert (catalog_root / "going" / "fine.pbrmaterial").is_dir()
         assert "derived 1 material bundles, 1 failed" in going.stdout
+
+        # Composed bundles (CLI 1.4.0): layers, variants and larger tiles, validated and traceable to their sources.
+        compose = root / "compose"
+        compose.mkdir()
+        textured_png(compose / "stone.png")
+        textured_png(compose / "moss.png", tint=(0.45, 0.8, 0.35), phase=0.3)
+        run(cli, "--input", str(compose / "stone.png"), "--output", str(compose / "stone"), "--preset", "stone")
+        run(cli, "--input", str(compose / "moss.png"), "--output", str(compose / "moss"), "--preset", "organic", "--metalness", "0.3")
+        base, top = compose / "stone.pbrmaterial", compose / "moss.pbrmaterial"
+        def composed(path):
+            run(cli, "--validate", str(path))
+            return json.loads((path / "manifest.json").read_text())
+        printed = run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "height", "--invert",
+                      "--output", str(compose / "mossy"), "--label", "mossy stone").stdout.strip()
+        assert printed == str(compose / "mossy.pbrmaterial")
+        layered = composed(compose / "mossy.pbrmaterial")
+        assert layered["source"]["source_kind"] == "derived_bundle" and layered["semantic_label"] == "mossy stone"
+        assert layered["source"]["sha256"] == hashlib.sha256((base / "manifest.json").read_bytes()).hexdigest()
+        assert layered["layers"]["top"]["manifest_sha256"] == hashlib.sha256((top / "manifest.json").read_bytes()).hexdigest()
+        assert layered["layers"]["mask"] == {"type": "height", "threshold": 0.5, "softness": layered["layers"]["mask"]["softness"], "invert": True}
+        assert layered["recipe"]["assigned_metalness_enabled"] and "orm" in layered["maps"]
+        assert layered["maps"]["albedo"]["provenance"] == "layer_blend_albedo"
+        assert layered["maps"]["normal"]["provenance"] == "derived_from_composed_height"
+        for name in ("noise-a", "noise-b"):
+            run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "noise", "--seed", "4", "--scale", "2",
+                "--output", str(compose / name))
+        assert (compose / "noise-a.pbrmaterial" / "albedo.png").read_bytes() == (compose / "noise-b.pbrmaterial" / "albedo.png").read_bytes()
+        gray_png(compose / "paint.png", lambda x, y: 255 if x < 8 else 0)
+        painted = run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", str(compose / "paint.png"),
+                      "--normal-blend", "reoriented", "--output", str(compose / "painted")).stdout.strip()
+        painted_manifest = composed(pathlib.Path(painted))
+        assert painted_manifest["layers"]["mask"]["sha256"] == hashlib.sha256((compose / "paint.png").read_bytes()).hexdigest()
+        # A 16 px painted mask over 32 px maps: the mask is resampled, the top (same size) is not.
+        assert painted_manifest["layers"]["top_resampled"] is False and painted_manifest["layers"]["mask"]["size_px"] == 16
+        run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "slope", "--output", str(compose / "mossy"),
+            expect_success=False)  # never overwrites
+        run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "cloudy", "--output", str(compose / "x"),
+            expect_success=False)
+        run(cli, "layer", "--base", str(base), "--top", str(compose / "missing.pbrmaterial"), "--mask", "slope",
+            "--output", str(compose / "x"), expect_success=False)
+        # Variants: deterministic per seed, different across seeds; the drawn shifts are recorded.
+        for name, seed in (("v7", "7"), ("v7b", "7"), ("v8", "8")):
+            run(cli, "--input", str(base), "--variant", seed, "--output", str(compose / name))
+        assert (compose / "v7.pbrmaterial" / "normal.png").read_bytes() == (compose / "v7b.pbrmaterial" / "normal.png").read_bytes()
+        assert (compose / "v7.pbrmaterial" / "albedo.png").read_bytes() != (compose / "v8.pbrmaterial" / "albedo.png").read_bytes()
+        variant = composed(compose / "v7.pbrmaterial")
+        assert variant["variant"]["seed"] == 7 and abs(variant["variant"]["drawn"]["hue_degrees"]) <= 6
+        # From a photo: derive, vary, then a 2 x 2 tile; only the final bundle remains and the chain is recorded.
+        run(cli, "--input", str(compose / "stone.png"), "--preset", "stone", "--variant", "3", "--large-tile", "2",
+            "--output", str(compose / "big"))
+        big = composed(compose / "big.pbrmaterial")
+        assert big["maps"]["albedo"]["width"] == 64 and big["large_tile"]["tiles"] == 2
+        assert big["source"]["path"] == "intermediate" and big["large_tile"]["source"]["variant"]["seed"] == 3
+        assert big["large_tile"]["source"]["variant"]["source"]["source"]["path"] == "stone.png"
+        assert not [p for p in compose.iterdir() if ".stage-" in p.name]
+        run(cli, "--input", str(base), "--large-tile", "3", "--output", str(compose / "bad"), expect_success=False)
+        run(cli, "--input", str(compose / "stone.png"), "--no-tile", "--large-tile", "2", "--output", str(compose / "bad"),
+            expect_success=False)
+        run(cli, "--input", str(base), "--output", str(compose / "bad"), expect_success=False)  # a bundle input needs an operation
+        tampered = json.loads((compose / "v8.pbrmaterial" / "manifest.json").read_text())
+        tampered["layers"] = layered["layers"]
+        (compose / "v8.pbrmaterial" / "manifest.json").write_text(json.dumps(tampered))
+        run(cli, "--validate", str(compose / "v8.pbrmaterial"), expect_success=False)
     print("Material Lab CLI smoke tests passed")
 
 

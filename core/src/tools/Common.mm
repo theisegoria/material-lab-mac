@@ -6,6 +6,45 @@
 
 namespace mltools {
 
+std::string presetName(PBRLabPreset p) {
+    switch (p) {
+    case PBRLabPresetStone: return "stone";
+    case PBRLabPresetFabric: return "fabric";
+    case PBRLabPresetOrganic: return "organic";
+    case PBRLabPresetCoatedMetal: return "coated-metal";
+    case PBRLabPresetBareMetal: return "bare-metal";
+    default: return "flat";
+    }
+}
+
+// The recipe as written into bundle manifests and by --save-recipe (snake_case).
+NSDictionary* recipeDictionary(const PBRLabRecipe& r) {
+    return @{
+        @"preset": @(presetName(r.preset).c_str()),
+        @"height_strength": @(r.height_strength),
+        @"height_polarity": @(r.height_polarity),
+        @"roughness_base": @(r.roughness_base),
+        @"roughness_variation": @(r.roughness_variation),
+        @"ao_radius_pixels": @(r.ao_radius_pixels),
+        @"tile_wrap": @(r.tile_wrap != 0),
+        @"assigned_metalness_enabled": @(r.assigned_metalness_enabled != 0),
+        @"assigned_metalness": @(r.assigned_metalness),
+        @"bent_normal_enabled": @(r.bent_normal_enabled != 0),
+        @"normal_strength": @(r.normal_strength),
+        @"normal_y_down": @(r.normal_y_down != 0),
+        @"ao_strength": @(r.ao_strength),
+        @"albedo_equalize": @(r.albedo_equalize),
+        @"seamless_blend": @(r.seamless_blend),
+        @"guide_normal_weight": @(r.guide_normal_weight),
+        @"mid_relief_share": @(r.mid_relief_share),
+        @"tile_metres": @(r.tile_metres),
+        @"roughness_albedo_limit": @(r.roughness_albedo_limit),
+        @"substrate_relief": @(r.substrate_relief),
+        @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
+        @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
+    };
+}
+
 float Raster::at(uint32_t x, uint32_t y, int c) const {
     const size_t index = (static_cast<size_t>(y) * width + x) * channels + c;
     if (bits == 16) return static_cast<float>((bytes[index * 2] << 8) | bytes[index * 2 + 1]) / 65535.0f;

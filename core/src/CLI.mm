@@ -246,6 +246,13 @@ struct Options {
     std::string materialPreset;
     std::vector<std::string> alsoExport;
     int jobs = 1;
+    // Post-derivation operations (Compose.mm): a seeded variant, then a larger tile. --input may then be a bundle.
+    std::optional<uint32_t> variantSeed;
+    float variantStrength = 1;
+    bool variantRotate = false;
+    uint32_t largeTile = 0, largeTileSeed = 1;
+    float largeTilePatch = 0.5f;
+    bool composes() const { return variantSeed.has_value() || largeTile != 0; }
     bool usesTool() const { return !infoBundle.empty() || !contactSheetBundle.empty() || !exportBundle.empty() || !diffBundles.empty() || !previewBundle.empty(); }
 };
 PBRLabPreset parsePreset(const std::string& s) {
@@ -257,16 +264,7 @@ PBRLabPreset parsePreset(const std::string& s) {
     if (s == "bare-metal") return PBRLabPresetBareMetal;
     throw std::runtime_error("unknown preset: " + s);
 }
-std::string presetName(PBRLabPreset p) {
-    switch (p) {
-    case PBRLabPresetStone: return "stone";
-    case PBRLabPresetFabric: return "fabric";
-    case PBRLabPresetOrganic: return "organic";
-    case PBRLabPresetCoatedMetal: return "coated-metal";
-    case PBRLabPresetBareMetal: return "bare-metal";
-    default: return "flat";
-    }
-}
+using mltools::presetName;
 float number(const std::string& s) {
     size_t parsed = 0;
     float n = 0;
@@ -278,6 +276,11 @@ constexpr const char* kCLIVersion = "1.3.0";
 
 // --learned: the model shipped beside the binary (<prefix>/share/material-lab), the one the Mac app installs,
 // or MATERIAL_LAB_MODEL. Returns an empty path when none is found.
+uint32_t wholeNumber(const std::string& s, const std::string& flag) {
+    const float n = number(s);
+    if (n < 0 || n > 4294967295.0f || n != std::floor(n)) throw std::runtime_error(flag + " must be a whole number 0..4294967295");
+    return static_cast<uint32_t>(n);
+}
 fs::path findLearnedModel(const char* argv0) {
     std::vector<fs::path> candidates;
     if (const char* env = getenv("MATERIAL_LAB_MODEL")) candidates.emplace_back(env);
@@ -306,6 +309,9 @@ constexpr const char* kUsage =
     "material-lab --catalog CATALOG_JSON --output DIR [recipe flags] [--include-unreviewed] [--keep-going]\n"
     "material-lab --validate BUNDLE_DIR_OR_CAPTURE_FILE\n"
     "material-lab mcp [--root DIR]...   Model Context Protocol server on stdio (for Claude and other agents)\n"
+    "material-lab layer --base BUNDLE --top BUNDLE --mask height|slope|noise|MASK_IMAGE --output BUNDLE_DIR\n"
+    "    [--threshold 0..1] [--softness 0..0.5] [--invert] [--seed N --scale 1..64 --contrast 0.1..8 (noise)]\n"
+    "    [--height-blend 0..0.95] [--normal-blend height|reoriented] [--label TEXT --id ID]\n"
     "Recipe flags (--preset applies first, wherever it appears):\n"
     "  --preset NAME  a material preset (red-brick, wood-planks, rusted-steel... see --list-presets [--json])\n"
     "    or a relief prior: flat|stone|fabric|organic|coated-metal|bare-metal\n"
@@ -329,6 +335,11 @@ constexpr const char* kUsage =
     "  --also-export FORMAT,...  export beside each derived bundle (formats as for --export)\n"
     "  --jobs 1..8  parallel catalog items   --report FILE.json  per-item status   --keep-going\n"
     "  --watch DIR --output DIR  derive every image dropped into DIR until interrupted\n"
+    "Variants and larger tiles (after deriving; --input may also be a .pbrmaterial bundle):\n"
+    "  --variant SEED [--variant-strength 0..3] [--variant-rotate]  small seeded hue/value/roughness/relief shifts\n"
+    "    and a tile offset (rotate: also a quarter turn and mirror)\n"
+    "  --large-tile 2|4 [--large-tile-seed N] [--large-tile-patch 0.125..1]  a 2 x 2 or 4 x 4 non-repeating tile\n"
+    "    (histogram-preserving tiling and blending; every map uses the same patches)\n"
     "Bundle tools (each validates its bundles first):\n"
     "  --info BUNDLE [--json]   --contact-sheet BUNDLE --output SHEET.png   --diff BUNDLE_A BUNDLE_B [--json]\n"
     "  --preview BUNDLE --output PREVIEW.png   a lit render: a sphere and a flat 2 x 2 tiling\n"
@@ -412,33 +423,7 @@ PBRLabRecipe recipeFromObject(NSDictionary* r) {
     }
     return recipe;
 }
-// The recipe as written into bundle manifests and by --save-recipe (snake_case).
-NSDictionary* recipeDictionary(const PBRLabRecipe& r) {
-    return @{
-        @"preset": ns(presetName(r.preset)),
-        @"height_strength": @(r.height_strength),
-        @"height_polarity": @(r.height_polarity),
-        @"roughness_base": @(r.roughness_base),
-        @"roughness_variation": @(r.roughness_variation),
-        @"ao_radius_pixels": @(r.ao_radius_pixels),
-        @"tile_wrap": @(r.tile_wrap != 0),
-        @"assigned_metalness_enabled": @(r.assigned_metalness_enabled != 0),
-        @"assigned_metalness": @(r.assigned_metalness),
-        @"bent_normal_enabled": @(r.bent_normal_enabled != 0),
-        @"normal_strength": @(r.normal_strength),
-        @"normal_y_down": @(r.normal_y_down != 0),
-        @"ao_strength": @(r.ao_strength),
-        @"albedo_equalize": @(r.albedo_equalize),
-        @"seamless_blend": @(r.seamless_blend),
-        @"guide_normal_weight": @(r.guide_normal_weight),
-        @"mid_relief_share": @(r.mid_relief_share),
-        @"tile_metres": @(r.tile_metres),
-        @"roughness_albedo_limit": @(r.roughness_albedo_limit),
-        @"substrate_relief": @(r.substrate_relief),
-        @"seamless_mode": r.seamless_mode == 1 ? @"cut" : @"blend",
-        @"albedo_repair": @[@"off", @"blend", @"quilt", @"auto"][r.albedo_repair]
-    };
-}
+using mltools::recipeDictionary;
 // The material-library preset a recipe object names (bundle manifests and --save-recipe use material_preset, the
 // apps materialPreset); empty when none or unknown.
 std::string materialPresetOf(NSDictionary* r) {
@@ -597,6 +582,21 @@ Options parse(int argc, const char** argv) {
                 start = comma + 1;
             }
         }
+        else if (flag == "--variant") o.variantSeed = wholeNumber(value(), flag);
+        else if (flag == "--variant-strength") {
+            o.variantStrength = number(value());
+            if (!(o.variantStrength >= 0 && o.variantStrength <= 3)) throw std::runtime_error("--variant-strength must be 0..3");
+        }
+        else if (flag == "--variant-rotate") o.variantRotate = true;
+        else if (flag == "--large-tile") {
+            o.largeTile = wholeNumber(value(), flag);
+            if (o.largeTile != 2 && o.largeTile != 4) throw std::runtime_error("--large-tile must be 2 or 4");
+        }
+        else if (flag == "--large-tile-seed") o.largeTileSeed = wholeNumber(value(), flag);
+        else if (flag == "--large-tile-patch") {
+            o.largeTilePatch = number(value());
+            if (!(o.largeTilePatch >= .125f && o.largeTilePatch <= 1)) throw std::runtime_error("--large-tile-patch must be 0.125..1");
+        }
         else if (flag == "--help") { std::cout << kUsage; std::exit(0); }
         else throw std::runtime_error("unknown option: " + flag);
     }
@@ -651,6 +651,11 @@ Options parse(int argc, const char** argv) {
             throw std::runtime_error("unknown --also-export format: " + format);
     }
     if (o.jobs > 1 && o.catalog.empty()) throw std::runtime_error("--jobs applies to --catalog batches");
+    if ((o.variantStrength != 1 || o.variantRotate) && !o.variantSeed) throw std::runtime_error("--variant-strength and --variant-rotate need --variant SEED");
+    if ((o.largeTileSeed != 1 || o.largeTilePatch != 0.5f) && !o.largeTile) throw std::runtime_error("--large-tile-seed and --large-tile-patch need --large-tile");
+    if (o.largeTile && o.recipe.tile_wrap == 0) throw std::runtime_error("--large-tile needs a tileable material; it cannot be combined with --no-tile");
+    if (!o.composes() && !o.input.empty() && fs::is_directory(o.input))
+        throw std::runtime_error("a .pbrmaterial --input needs --variant or --large-tile");
     if (o.preUpscaleExec.empty() != o.preUpscaleArgs.empty())
         throw std::runtime_error("pre-upscale executable and repeated arguments must be supplied together");
     if (!o.preUpscaleExec.empty()) {
@@ -985,7 +990,7 @@ std::vector<uint8_t> loadDataMap(const fs::path& path, uint32_t size, DataMap ki
 int progressCallback(float, void*) { return gInterrupted ? 0 : 1; }
 struct ReviewInfo { bool reviewed = false; bool includedByOptIn = false; };
 void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std::string& id,
-               const std::string& label, const Options& options, const ReviewInfo* review = nullptr) {
+               const std::string& label, const Options& options, const ReviewInfo* review = nullptr, bool announce = true) {
     std::error_code ec;
     if (fs::exists(fs::symlink_status(outputPath, ec)))
         throw std::runtime_error("bundle output already exists: " + outputPath.string());
@@ -1201,7 +1206,7 @@ void deriveOne(const fs::path& inputPath, const fs::path& outputPath, const std:
             throw std::runtime_error("bundle output appeared during derivation: " + outputPath.string());
         fs::rename(temp, outputPath);
     } catch (...) { std::error_code ignored; fs::remove_all(temp, ignored); throw; }
-    { std::lock_guard<std::mutex> lock(gOutputMutex); std::cout << outputPath.string() << '\n'; }
+    if (announce) { std::lock_guard<std::mutex> lock(gOutputMutex); std::cout << outputPath.string() << '\n'; }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1311,6 +1316,57 @@ void validateMapPNG(NSData* file, const MapRole& role, const std::string& label,
     CGImageRelease(image);
     if (!matches) throw std::runtime_error("PNG decode disagrees with header: " + label);
     width = info.width; height = info.height;
+}
+// Composed bundles (docs/BUNDLE_FORMAT.md): exactly one operation section naming verifiable sources.
+bool validSourceRecord(id value) {
+    NSDictionary* record = asDictionary(value);
+    return record && nonemptyString(record[@"path"], 4096) && validSHA256String(record[@"manifest_sha256"]);
+}
+void validateComposed(NSDictionary* manifest, NSDictionary* source, uint32_t bundleWidth) {
+    NSDictionary* layers = asDictionary(manifest[@"layers"]);
+    NSDictionary* variant = asDictionary(manifest[@"variant"]);
+    NSDictionary* largeTile = asDictionary(manifest[@"large_tile"]);
+    const int sections = (manifest[@"layers"] != nil) + (manifest[@"variant"] != nil) + (manifest[@"large_tile"] != nil);
+    const bool composed = [asString(source[@"source_kind"]) isEqualToString:@"derived_bundle"];
+    if (!sections && !composed) return;
+    if (sections != 1 || !composed)
+        throw std::runtime_error("a composed bundle needs source_kind \"derived_bundle\" and exactly one of layers, variant, large_tile");
+    if (layers) {
+        NSDictionary* mask = asDictionary(layers[@"mask"]);
+        NSString* type = asString(mask[@"type"]);
+        bool ok = validSourceRecord(layers[@"base"]) && validSourceRecord(layers[@"top"]) && mask &&
+            [@[@"height", @"slope", @"noise", @"image"] containsObject:type ?: @""] &&
+            finiteNumber(mask[@"threshold"], 0, 1) && finiteNumber(mask[@"softness"], 0, .5 + 1e-6) && isBoolean(mask[@"invert"]) &&
+            finiteNumber(layers[@"height_blend"], 0, .95 + 1e-6) &&
+            [@[@"height", @"reoriented"] containsObject:asString(layers[@"normal_blend"]) ?: @""] &&
+            validSHA256String(layers[@"weights_sha256"]) &&
+            sameDigest(source[@"sha256"], asDictionary(layers[@"base"])[@"manifest_sha256"]);
+        if (ok && [type isEqualToString:@"image"]) ok = nonemptyString(mask[@"file"], 4096) && validSHA256String(mask[@"sha256"]);
+        if (ok && [type isEqualToString:@"noise"])
+            ok = finiteNumber(mask[@"seed"], 0, 4294967295.0) && finiteNumber(mask[@"scale"], 1, 64) && finiteNumber(mask[@"contrast"], .1 - 1e-6, 8 + 1e-6);
+        if (!ok) throw std::runtime_error("layers section (base, top, mask, height blend, normal blend, weights hash) is missing or invalid");
+    } else if (variant) {
+        NSDictionary* amounts = asDictionary(variant[@"amounts"]);
+        NSDictionary* drawn = asDictionary(variant[@"drawn"]);
+        NSArray* offset = asArray(drawn[@"offset_px"]);
+        bool ok = validSourceRecord(variant[@"source"]) && finiteNumber(variant[@"seed"], 0, 4294967295.0) && amounts && drawn &&
+            sameDigest(source[@"sha256"], asDictionary(variant[@"source"])[@"manifest_sha256"]) &&
+            finiteNumber(drawn[@"hue_degrees"], -180, 180) && finiteNumber(drawn[@"saturation_scale"], .5 - 1e-6, 1.5 + 1e-6) &&
+            finiteNumber(drawn[@"value_scale"], .5 - 1e-6, 1.5 + 1e-6) && finiteNumber(drawn[@"roughness_offset"], -.5 - 1e-6, .5 + 1e-6) &&
+            finiteNumber(drawn[@"relief_scale"], .1 - 1e-6, 1.9 + 1e-6) && offset.count == 2 &&
+            finiteNumber(offset[0], 0, bundleWidth) && finiteNumber(offset[1], 0, bundleWidth) &&
+            finiteNumber(drawn[@"quarter_turns"], 0, 3) && isBoolean(drawn[@"mirrored"]);
+        if (!ok) throw std::runtime_error("variant section (source, seed, amounts, drawn shifts) is missing or invalid");
+    } else {
+        NSNumber* tiles = asNumber(largeTile[@"tiles"]);
+        bool ok = largeTile && validSourceRecord(largeTile[@"source"]) && tiles && (tiles.intValue == 2 || tiles.intValue == 4) &&
+            sameDigest(source[@"sha256"], asDictionary(largeTile[@"source"])[@"manifest_sha256"]) &&
+            finiteNumber(largeTile[@"seed"], 0, 4294967295.0) && finiteNumber(largeTile[@"patch"], .125 - 1e-6, 1 + 1e-6) &&
+            finiteNumber(largeTile[@"sharpness"], 1 - 1e-6, 16 + 1e-6) &&
+            exactNumber(largeTile[@"source_size_px"], static_cast<double>(bundleWidth / std::max(1, tiles.intValue))) &&
+            bundleWidth % static_cast<uint32_t>(std::max(1, tiles.intValue)) == 0;
+        if (!ok) throw std::runtime_error("large_tile section (source, tiles, seed, patch, sharpness, source size) is missing or invalid");
+    }
 }
 void validate(const fs::path& bundle, bool quiet = false) {
     const fs::path manifestPath = bundle / "manifest.json";
@@ -1435,14 +1491,14 @@ void validate(const fs::path& bundle, bool quiet = false) {
             throw std::runtime_error("map file must be named " + str(name) + ".png");
         if (![record[@"pixel_format"] isEqualToString:@(role.format)])
             throw std::runtime_error("map pixel_format does not match its role: " + str(name));
-        NSData* file = boundedDataAt(bundle / str(filename), 128ull * 1024 * 1024);
+        NSData* file = boundedDataAt(bundle / str(filename), 512ull * 1024 * 1024);
         if (!file) throw std::runtime_error("map file missing, linked, or oversized: " + str(filename));
         if (!sameDigest(ns(hash(file)), record[@"sha256"])) throw std::runtime_error("map SHA-256 mismatch: " + str(filename));
         uint32_t width = 0, height = 0;
         validateMapPNG(file, role, str(filename), width, height);
         if (width != [record[@"width"] doubleValue] || height != [record[@"height"] doubleValue])
             throw std::runtime_error("PNG dimensions do not match manifest: " + str(filename));
-        if (width < 2 || width > 4096 || height != width ||
+        if (width < 2 || width > 8192 || height != width ||
             (bundleWidth && (width != bundleWidth || height != bundleHeight)))
             throw std::runtime_error("map dimensions are inconsistent or out of range");
         bundleWidth = width; bundleHeight = height;
@@ -1495,6 +1551,7 @@ void validate(const fs::path& bundle, bool quiet = false) {
     } else if (source[@"processed_sha256"]) {
         throw std::runtime_error("processed source hash has no pre-upscale provenance");
     }
+    validateComposed(manifest, source, bundleWidth);
     if (!quiet) std::cout << "valid: " << bundle.string() << " (" << maps.count << " maps)\n";
 }
 
@@ -1684,6 +1741,52 @@ std::vector<std::string> alsoExport(const fs::path& bundle, const Options& optio
     return written;
 }
 
+// --variant / --large-tile: derive (unless the input is already a bundle) into a hidden stage beside the output, then
+// apply the variant and the larger tile in that order; only the final bundle remains.
+void composeItem(const fs::path& source, const fs::path& output, const std::string& id, const std::string& label,
+                 const Options& options, const ReviewInfo* review) {
+    std::error_code ec;
+    if (fs::exists(fs::symlink_status(output, ec))) throw std::runtime_error("bundle output already exists: " + output.string());
+    if (!output.parent_path().empty()) fs::create_directories(output.parent_path());
+    std::vector<fs::path> stages;
+    auto stage = [&]() {
+        fs::path path = output.parent_path() / ("." + output.stem().string() + ".stage-" + str([[NSUUID UUID] UUIDString]) + ".pbrmaterial");
+        stages.push_back(path);
+        return path;
+    };
+    try {
+        fs::path current = source;
+        if (fs::is_directory(source)) validate(source, true);
+        else { current = stage(); deriveOne(source, current, id, label, options, review, false); }
+        // The explicit --label/--id name the final bundle; otherwise each operation names its result.
+        const std::string finalLabel = options.label, finalID = options.id.empty() ? std::string() : sanitized(options.id);
+        if (options.variantSeed) {
+            PBRLabVariantParams params = PBRLabDefaultVariantParams(*options.variantSeed);
+            params.hue_degrees = std::min(180.0f, params.hue_degrees * options.variantStrength);
+            params.saturation = std::min(.5f, params.saturation * options.variantStrength);
+            params.value = std::min(.5f, params.value * options.variantStrength);
+            params.roughness = std::min(.5f, params.roughness * options.variantStrength);
+            params.relief = std::min(.9f, params.relief * options.variantStrength);
+            params.rotation = options.variantRotate ? 1 : 0;
+            const fs::path next = options.largeTile ? stage() : output;
+            mltools::variantBundle(current, params, next, options.largeTile ? std::string() : finalLabel,
+                                   options.largeTile ? std::string() : finalID);
+            current = next;
+        }
+        if (options.largeTile) {
+            PBRLabLargeTileParams params = PBRLabDefaultLargeTileParams(options.largeTile, options.largeTileSeed);
+            params.patch = options.largeTilePatch;
+            mltools::largeTileBundle(current, params, output, finalLabel, finalID);
+        }
+        validate(output, true);
+    } catch (...) {
+        for (const auto& path : stages) { std::error_code ignored; fs::remove_all(path, ignored); }
+        throw;
+    }
+    for (const auto& path : stages) { std::error_code ignored; fs::remove_all(path, ignored); }
+    { std::lock_guard<std::mutex> lock(gOutputMutex); std::cout << output.string() << '\n'; }
+}
+
 ItemResult processItem(const fs::path& source, const fs::path& output, const std::string& id, const std::string& label,
                        const Options& options, const ReviewInfo* review) {
     ItemResult result;
@@ -1691,7 +1794,8 @@ ItemResult processItem(const fs::path& source, const fs::path& output, const std
     const auto started = std::chrono::steady_clock::now();
     try {
         @autoreleasepool {
-            deriveOne(source, output, id, label, options, review);
+            if (options.composes()) composeItem(source, output, id, label, options, review);
+            else deriveOne(source, output, id, label, options, review);
             result.exports = alsoExport(output, options);
         }
         result.ok = true;
@@ -1842,7 +1946,66 @@ int watchFolder(const Options& options) {
     return 0;
 }
 
+// material-lab layer --base A --top B --mask height|slope|noise|FILE [params] --output OUT
+int layerCommand(int argc, const char** argv) {
+    fs::path base, top, output, maskFile;
+    std::string maskName, label, id;
+    PBRLabLayerParams params = PBRLabDefaultLayerParams(PBRLabLayerMaskHeight);
+    std::vector<std::function<void(PBRLabLayerParams&)>> overrides;
+    for (int i = 2; i < argc; ++i) {
+        const std::string flag = argv[i];
+        auto value = [&]() -> std::string { if (++i >= argc) throw std::runtime_error("missing value for " + flag); return argv[i]; };
+        auto field = [&](float PBRLabLayerParams::*target) { const float n = number(value()); overrides.push_back([=](PBRLabLayerParams& p) { p.*target = n; }); };
+        if (flag == "--base") base = value();
+        else if (flag == "--top") top = value();
+        else if (flag == "--output") output = value();
+        else if (flag == "--label") label = value();
+        else if (flag == "--id") id = value();
+        else if (flag == "--mask") maskName = value();
+        else if (flag == "--threshold") field(&PBRLabLayerParams::threshold);
+        else if (flag == "--softness") field(&PBRLabLayerParams::softness);
+        else if (flag == "--scale") field(&PBRLabLayerParams::noise_scale);
+        else if (flag == "--contrast") field(&PBRLabLayerParams::noise_contrast);
+        else if (flag == "--height-blend") field(&PBRLabLayerParams::height_blend);
+        else if (flag == "--invert") overrides.push_back([](PBRLabLayerParams& p) { p.invert = 1; });
+        else if (flag == "--seed") {
+            const float n = number(value());
+            if (n < 0 || n > 4294967295.0f || n != std::floor(n)) throw std::runtime_error("--seed must be a whole number 0..4294967295");
+            overrides.push_back([=](PBRLabLayerParams& p) { p.seed = static_cast<uint32_t>(n); });
+        }
+        else if (flag == "--normal-blend") {
+            const std::string mode = value();
+            if (mode != "height" && mode != "reoriented") throw std::runtime_error("--normal-blend must be height or reoriented");
+            overrides.push_back([=](PBRLabLayerParams& p) { p.normal_blend = mode == "reoriented" ? 1 : 0; });
+        }
+        else if (flag == "--help") { std::cout << kUsage; return 0; }
+        else throw std::runtime_error("unknown layer option: " + flag);
+    }
+    if (base.empty() || top.empty() || output.empty() || maskName.empty())
+        throw std::runtime_error("layer needs --base, --top, --mask and --output");
+    // The mask defaults (threshold, softness) depend on its kind; explicit flags then override them.
+    if (maskName == "height") params = PBRLabDefaultLayerParams(PBRLabLayerMaskHeight);
+    else if (maskName == "slope") params = PBRLabDefaultLayerParams(PBRLabLayerMaskSlope);
+    else if (maskName == "noise") params = PBRLabDefaultLayerParams(PBRLabLayerMaskNoise);
+    else {
+        maskFile = maskName;
+        if (!fs::is_regular_file(maskFile)) throw std::runtime_error("--mask must be height, slope, noise or an image file: " + maskName);
+        params = PBRLabDefaultLayerParams(PBRLabLayerMaskImage);
+    }
+    for (auto& apply : overrides) apply(params);
+    for (const auto& bundle : {base, top}) {
+        if (!fs::is_directory(bundle)) throw std::runtime_error("not a .pbrmaterial bundle: " + bundle.string());
+        validate(bundle, true);
+    }
+    if (output.extension() != ".pbrmaterial") output += ".pbrmaterial";
+    mltools::layerBundles(base, top, params, maskFile, output, label, id.empty() ? std::string() : sanitized(id));
+    validate(output, true);
+    std::cout << output.string() << '\n';
+    return 0;
+}
+
 int run(int argc, const char** argv) {
+    if (argc >= 2 && std::string(argv[1]) == "layer") return layerCommand(argc, argv);
     Options options = parse(argc, argv);
     if (options.listFormats) {
         // The apps' table (PBRLabExport.h) must name exactly the exporter's formats, in order.
