@@ -49,9 +49,33 @@ constexpr const char* kTools = R"JSON([
  "normal_map":{"type":"string","description":"Artist-made normal map; also drives height, AO and masks."},
  "normal_map_dx":{"type":"boolean","description":"The normal_map is DirectX (green-down)."},
  "roughness_map":{"type":"string"},"ao_map":{"type":"string"},"metalness_map":{"type":"string"},
+ "resolution":{"type":"integer","enum":[4096,8192],"description":"Derive at 4096 or 8192: a smaller photo is enlarged with the pinned Real-ESRGAN upscaler first (fails clearly when it is not installed). Slow and memory-hungry; 8192 needs a quiet machine."},
+ "upscaler_root":{"type":"string","description":"Pinned Real-ESRGAN vendor project for resolution (else $MATERIAL_LAB_REALESRGAN_ROOT)."},
+ "guide_measured":{"type":"string","description":"Another scanner's tangent normal map, or grey depth map (white = near), used as measured form."},
+ "measured_depth_mm":{"type":"number","description":"Depth that a guide_measured depth map's black..white spans, in mm (needs tile_metres)."},
  "also_export":{"type":"array","items":{"type":"string"},"description":"Formats from list_formats to write beside the bundle."},
  "label":{"type":"string","description":"Human-readable material name."},
  "id":{"type":"string"}}}},
+{"name":"layer_materials","description":"Layer one .pbrmaterial bundle (top: moss, dust, snow, paint...) over another (base) through a mask, and write a new bundle. Albedo, roughness and metalness blend; reliefs blend height-aware; normals, AO and masks are re-derived from the blended relief. The manifest records both sources and the mask.","inputSchema":{"type":"object","required":["base","top","mask","output"],"properties":{
+ "base":{"type":"string"},"top":{"type":"string"},
+ "mask":{"type":"string","description":"height (top where the base is high), slope (where it is steep), noise (seeded tileable fBm), or the absolute path of a painted grey mask image (white = top)."},
+ "threshold":{"type":"number","description":"0..1 (height and noise default 0.5, slope 0.25 = 22.5 degrees)."},
+ "softness":{"type":"number","description":"0..0.5, transition half-width."},
+ "invert":{"type":"boolean","description":"Swap where the top appears (height: in the hollows; slope: on flat ground)."},
+ "seed":{"type":"integer","description":"Noise seed."},"scale":{"type":"number","description":"Noise cells per tile, 1..64."},
+ "contrast":{"type":"number","description":"Noise contrast, 0.1..8."},
+ "height_blend":{"type":"number","description":"0..0.95: let the higher layer win inside the transition (default 0.5)."},
+ "normal_blend":{"type":"string","enum":["height","reoriented"],"description":"Re-derive normals from the blended relief (default) or reoriented-normal blend the two normal maps."},
+ "output":{"type":"string"},"label":{"type":"string"},"id":{"type":"string"}}}},
+{"name":"make_variant","description":"Write a seeded variant of a .pbrmaterial bundle: small deterministic shifts in hue, value, roughness and relief depth plus a tile offset (optionally a quarter turn and mirror), every map re-derived consistently. The same seed always gives the same variant.","inputSchema":{"type":"object","required":["bundle","seed","output"],"properties":{
+ "bundle":{"type":"string"},"seed":{"type":"integer"},
+ "strength":{"type":"number","description":"Scales every shift, 0..3 (default 1: hue 6 degrees, value 6 %, roughness 0.05, relief 15 %)."},
+ "rotate":{"type":"boolean","description":"Also a random quarter turn and mirror."},
+ "output":{"type":"string"},"label":{"type":"string"},"id":{"type":"string"}}}},
+{"name":"large_tile","description":"Synthesise a 2 x 2 or 4 x 4 non-repeating tile from a tileable .pbrmaterial bundle (histogram-preserving tiling and blending, the same patches for every map) and write it as a new bundle. Best for stochastic surfaces (stone, concrete, ground); structured ones (brick, tiles) get scrambled at patch edges.","inputSchema":{"type":"object","required":["bundle","tiles","output"],"properties":{
+ "bundle":{"type":"string"},"tiles":{"type":"integer","enum":[2,4]},"seed":{"type":"integer"},
+ "patch":{"type":"number","description":"Patch size as a fraction of the source tile, 0.125..1 (default 0.5)."},
+ "output":{"type":"string"},"label":{"type":"string"},"id":{"type":"string"}}}},
 {"name":"export_material","description":"Export a .pbrmaterial bundle to one engine or interchange format. glb and usdz write a file; the others write a folder. The output must not exist.","inputSchema":{"type":"object","required":["bundle","format","output"],"properties":{"bundle":{"type":"string"},"format":{"type":"string"},"output":{"type":"string"}}}},
 {"name":"inspect_material","description":"Describe a .pbrmaterial bundle: recipe, maps, provenance, seam and relief measures.","inputSchema":{"type":"object","required":["bundle"],"properties":{"bundle":{"type":"string"}}}},
 {"name":"validate_material","description":"Strictly validate a .pbrmaterial bundle (manifest, hashes, PNG structure) or a .pbrcapture file.","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}},
@@ -156,7 +180,8 @@ private:
                 @"capabilities": @{@"tools": @{}},
                 @"serverInfo": @{@"name": @"material-lab", @"title": @"Material Lab", @"version": ns(version_)},
                 @"instructions": @"Material Lab turns one photo of a surface into a PBR material. Typical flow: list_presets, "
-                                 @"derive_material, preview_material, then export_material. Paths are absolute. Nothing is "
+                                 @"derive_material, preview_material, then export_material. layer_materials, make_variant and "
+                                 @"large_tile build new bundles from derived ones. Paths are absolute. Nothing is "
                                  @"overwritten: choose an output path that does not exist. Maps are estimates from the photo."});
         } else if ([method isEqualToString:@"ping"]) {
             reply(requestID, @{});
@@ -273,7 +298,8 @@ private:
             @"roughness_variation": @"--roughness-variation", @"roughness_albedo_limit": @"--roughness-albedo-limit",
             @"metalness": @"--metalness", @"ao_strength": @"--ao-strength", @"ao_radius": @"--ao-radius",
             @"equalize": @"--equalize", @"tile_metres": @"--tile-metres", @"mid_relief_share": @"--mid-relief-share",
-            @"substrate_relief": @"--substrate-relief"};
+            @"substrate_relief": @"--substrate-relief", @"resolution": @"--resolution",
+            @"measured_depth_mm": @"--measured-depth-mm"};
         static NSDictionary* const strings = @{@"preset": @"--preset", @"repair_albedo": @"--repair-albedo",
             @"seamless_mode": @"--seamless-mode", @"label": @"--label", @"id": @"--id"};
         static NSDictionary* const flags = @{@"learned": @"--learned", @"learned_cpu_only": @"--learned-cpu-only",
@@ -281,7 +307,8 @@ private:
             @"normal_map_dx": @"--normal-map-dx"};
         static NSDictionary* const files = @{@"recipe": @"--recipe", @"height_map": @"--height-map",
             @"normal_map": @"--normal-map", @"roughness_map": @"--roughness-map", @"ao_map": @"--ao-map",
-            @"metalness_map": @"--metalness-map"};
+            @"metalness_map": @"--metalness-map", @"upscaler_root": @"--upscaler-root",
+            @"guide_measured": @"--guide-measured"};
         static NSSet* const other = [NSSet setWithArray:@[@"input", @"output", @"tileable", @"also_export"]];
         for (NSString* key in [args.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
             id value = args[key];
@@ -316,7 +343,11 @@ private:
             }
             if (!joined.empty()) a.insert(a.end(), {"--also-export", joined});
         }
-        const Run run = mustRun(a);
+        return summarize(output, mustRun(a));
+    }
+
+    // A written bundle: its path, any export lines and notes, and --info --json.
+    NSArray* summarize(const fs::path& output, const Run& run) const {
         NSMutableDictionary* summary = [NSMutableDictionary dictionary];
         summary[@"bundle"] = ns(output.string());
         NSMutableArray* exports = [NSMutableArray array];
@@ -329,6 +360,70 @@ private:
         if (parsed) summary[@"material"] = parsed;
         NSData* json = [NSJSONSerialization dataWithJSONObject:summary options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys | NSJSONWritingWithoutEscapingSlashes error:nil];
         return textContent(std::string(static_cast<const char*>(json.bytes), json.length));
+    }
+
+    static std::string numberText(NSDictionary* args, NSString* key, bool integer = false) {
+        id value = args[key];
+        if (![value isKindOfClass:[NSNumber class]] || isBoolean(value) || !std::isfinite([value doubleValue]) ||
+            (integer && [value doubleValue] != std::floor([value doubleValue])))
+            throw ToolError(str(key) + (integer ? " must be a whole number" : " must be a number"));
+        char buffer[40];
+        snprintf(buffer, sizeof buffer, "%.9g", [value doubleValue]);
+        return buffer;
+    }
+    // Shared by the composing tools: numeric and text options, unknown keys refused.
+    void options(NSDictionary* args, NSDictionary* numbers, NSDictionary* integers, NSDictionary* flags, NSSet* handled,
+                 std::vector<std::string>& a) const {
+        for (NSString* key in [args.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+            if (args[key] == [NSNull null] || [handled containsObject:key]) continue;
+            if (NSString* option = numbers[key]) a.insert(a.end(), {str(option), numberText(args, key)});
+            else if (NSString* option = integers[key]) a.insert(a.end(), {str(option), numberText(args, key, true)});
+            else if (NSString* option = flags[key]) { if (flag(args, key, false)) a.push_back(str(option)); }
+            else if ([key isEqualToString:@"label"] || [key isEqualToString:@"id"])
+                a.insert(a.end(), {"--" + str(key), str(text(args, key, true))});
+            else throw ToolError("unknown argument: " + str(key));
+        }
+    }
+    fs::path bundleOutput(NSDictionary* args) const {
+        fs::path output = resolve(text(args, @"output", true), @"output");
+        if (output.extension() != ".pbrmaterial") output += ".pbrmaterial";
+        checkWritable(output, "output");
+        return output;
+    }
+
+    NSArray* layer(NSDictionary* args) const {
+        std::vector<std::string> a{"layer", "--base", readable(args, @"base").string(), "--top", readable(args, @"top").string()};
+        NSString* mask = text(args, @"mask", true);
+        if ([@[@"height", @"slope", @"noise"] containsObject:mask]) a.insert(a.end(), {"--mask", str(mask)});
+        else a.insert(a.end(), {"--mask", readable(args, @"mask").string()});
+        const fs::path output = bundleOutput(args);
+        a.insert(a.end(), {"--output", output.string()});
+        if (NSString* blend = text(args, @"normal_blend")) a.insert(a.end(), {"--normal-blend", str(blend)});
+        options(args, @{@"threshold": @"--threshold", @"softness": @"--softness", @"scale": @"--scale", @"contrast": @"--contrast",
+                        @"height_blend": @"--height-blend"},
+                @{@"seed": @"--seed"}, @{@"invert": @"--invert"},
+                [NSSet setWithArray:@[@"base", @"top", @"mask", @"output", @"normal_blend"]], a);
+        return summarize(output, mustRun(a));
+    }
+    NSArray* variant(NSDictionary* args) const {
+        const fs::path bundle = readable(args, @"bundle");
+        if (!fs::is_directory(bundle)) throw ToolError("bundle must be a .pbrmaterial folder");
+        std::vector<std::string> a{"--input", bundle.string(), "--variant", numberText(args, @"seed", true)};
+        const fs::path output = bundleOutput(args);
+        a.insert(a.end(), {"--output", output.string()});
+        options(args, @{@"strength": @"--variant-strength"}, @{}, @{@"rotate": @"--variant-rotate"},
+                [NSSet setWithArray:@[@"bundle", @"seed", @"output"]], a);
+        return summarize(output, mustRun(a));
+    }
+    NSArray* largeTile(NSDictionary* args) const {
+        const fs::path bundle = readable(args, @"bundle");
+        if (!fs::is_directory(bundle)) throw ToolError("bundle must be a .pbrmaterial folder");
+        std::vector<std::string> a{"--input", bundle.string(), "--large-tile", numberText(args, @"tiles", true)};
+        const fs::path output = bundleOutput(args);
+        a.insert(a.end(), {"--output", output.string()});
+        options(args, @{@"patch": @"--large-tile-patch"}, @{@"seed": @"--large-tile-seed"}, @{},
+                [NSSet setWithArray:@[@"bundle", @"tiles", @"output"]], a);
+        return summarize(output, mustRun(a));
     }
 
     NSArray* preview(NSDictionary* args) const {
@@ -364,6 +459,9 @@ private:
         if ([name isEqualToString:@"list_presets"]) return textContent(trimmed(mustRun({"--list-presets", "--json"}).out));
         if ([name isEqualToString:@"list_formats"]) return textContent(trimmed(mustRun({"--list-formats", "--json"}).out));
         if ([name isEqualToString:@"derive_material"]) return derive(args);
+        if ([name isEqualToString:@"layer_materials"]) return layer(args);
+        if ([name isEqualToString:@"make_variant"]) return variant(args);
+        if ([name isEqualToString:@"large_tile"]) return largeTile(args);
         if ([name isEqualToString:@"export_material"]) {
             const fs::path bundle = readable(args, @"bundle"), output = writable(args, @"output");
             const Run run = mustRun({"--export", bundle.string(), "--format", str(text(args, @"format", true)), "--output", output.string()});
