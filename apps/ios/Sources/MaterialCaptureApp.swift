@@ -11,6 +11,8 @@ struct MaterialCaptureApp: App {
         if ProcessInfo.processInfo.environment["MATERIAL_CAPTURE_RESET"] == "1" {
             try? FileManager.default.removeItem(at: root)
             try? FileManager.default.removeItem(at: CaptureLibrary.legacyDirectory)
+            // UI tests and the marketing tour start clean and without first-run tips.
+            for key in FirstRunTip.allKeys { UserDefaults.standard.set(true, forKey: key) }
         }
         CaptureLibrary(root: root).migrateLegacy()
         _store = State(initialValue: CaptureStore(libraryDirectory: root))

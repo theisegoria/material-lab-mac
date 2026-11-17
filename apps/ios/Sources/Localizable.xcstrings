@@ -71,6 +71,16 @@
         }
       }
     },
+    "%@, changed from default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、デフォルトから変更済み"
+          }
+        }
+      }
+    },
     "%@² ready": {
       "localizations": {
         "ja": {
@@ -128,6 +138,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "4Kにはこのデバイスより多くのメモリが必要です。2Kを使用してください。"
+          }
+        }
+      }
+    },
+    "A dot marks a value changed from the material's default. Long-press a slider to reset it. Undo and Redo are at the top.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点はマテリアルのデフォルトから変更した値を示します。スライダを長押しするとリセットできます。取り消しとやり直しは上部にあります。"
           }
         }
       }
@@ -737,6 +757,16 @@
         }
       }
     },
+    "Capture or import a new surface, or reopen one of your %lld saved materials.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい表面を撮影または読み込むか、保存済みの%lld個のマテリアルを開き直してください。"
+          }
+        }
+      }
+    },
     "Captures RAW and develops it neutrally for truer surface colour. Used when Constant Color is off.": {
       "localizations": {
         "ja": {
@@ -816,6 +846,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "証明書"
+          }
+        }
+      }
+    },
+    "Check your material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを確認しましょう"
           }
         }
       }
@@ -1479,6 +1519,16 @@
         }
       }
     },
+    "Every change updates the preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更するたびにプレビューが更新されます"
+          }
+        }
+      }
+    },
     "Every map plus its manifest. Always included; opens in Material Lab on the Mac.": {
       "localizations": {
         "ja": {
@@ -1678,6 +1728,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "色への追従"
+          }
+        }
+      }
+    },
+    "For the best maps, shoot straight on in soft, even light, without glare.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "きれいなマップを作るには、柔らかく均一な光の下で、反射を避けて正面から撮影してください。"
           }
         }
       }
@@ -3152,6 +3212,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "写真"
+          }
+        }
+      }
+    },
+    "Pick a map below the preview, try 3D to see the relief, then name the material and export or share it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューの下でマップを選び、3Dで起伏を確かめてから、マテリアルに名前を付けて書き出すか共有しましょう。"
           }
         }
       }

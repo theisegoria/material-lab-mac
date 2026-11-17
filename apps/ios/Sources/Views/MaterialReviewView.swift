@@ -71,7 +71,12 @@ struct MaterialReviewView: View {
                 ContentUnavailableView {
                     Label("No Material Yet", systemImage: "camera.macro")
                 } description: {
-                    Text("Capture a flat, evenly lit surface or import a photo to derive PBR maps on this iPhone.")
+                    if store.libraryEntries.isEmpty {
+                        Text("Capture a flat, evenly lit surface or import a photo to derive PBR maps on this iPhone.")
+                    } else {
+                        Text("Capture or import a new surface, or reopen one of your \(store.libraryEntries.count) saved materials.")
+                    }
+                    Text("For the best maps, shoot straight on in soft, even light, without glare.")
                 } actions: {
                     Button("Open Camera", systemImage: "camera") { selectTab(.capture) }
                         .buttonStyle(.glassProminent)
@@ -157,6 +162,9 @@ struct MaterialReviewView: View {
                     MapChips(material: material, selection: $selectedMap)
                         .padding(.horizontal, -16)
                 }
+                FirstRunTip(key: "review.hintDismissed", symbol: "sparkles",
+                            title: "Check your material",
+                            message: "Pick a map below the preview, try 3D to see the relief, then name the material and export or share it.")
                 identityCard
                 cropCard(source)
                 recipeCard
@@ -490,9 +498,9 @@ struct Card<Content: View>: View {
                 .accessibilityAddTraits(.isHeader)
             content
         }
-        .padding(16)
+        .padding(GlassCardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 22))
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassCardStyle.cornerRadius))
     }
 }
 

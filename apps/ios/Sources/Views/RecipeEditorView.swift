@@ -13,6 +13,13 @@ struct RecipeEditorView: View {
         NavigationStack {
             Form {
                 Section {
+                    FirstRunTip(key: "recipe.hintDismissed", symbol: "slider.horizontal.3",
+                                title: "Every change updates the preview",
+                                message: "A dot marks a value changed from the material's default. Long-press a slider to reset it. Undo and Redo are at the top.")
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                Section {
                     NavigationLink {
                         MaterialPresetPicker(store: store)
                     } label: {
@@ -296,7 +303,7 @@ struct RecipeSlider: View {
             }
             Slider(value: $value, in: range, step: step)
                 .accessibilityLabel(title)
-                .accessibilityValue(display)
+                .accessibilityValue(isModified ? String(localized: "\(display), changed from default") : display)
         }
         .contextMenu {
             if let baseline, isModified {

@@ -63,9 +63,9 @@ struct LitPreviewControls: View {
                 .accessibilityIdentifier("preview-reset")
             }
         }
-        .padding(16)
+        .padding(GlassCardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassCardStyle.cornerRadius))
     }
 }
 

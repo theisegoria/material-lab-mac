@@ -9,7 +9,6 @@ struct LibraryView: View {
     @State private var filter: LibrarySmartFilter = .all
     @AppStorage("library.sort") private var sortRaw = LibrarySort.modified.rawValue
     @AppStorage("library.layout") private var layoutRaw = Layout.grid.rawValue
-    @AppStorage("library.hintDismissed") private var hintDismissed = false
     @State private var pendingDelete: CaptureLibrary.Entry?
     @State private var taggingEntry: CaptureLibrary.Entry?
     @State private var newCollectionMembers: [UUID]?
@@ -24,7 +23,11 @@ struct LibraryView: View {
     private var layout: Layout { Layout(rawValue: layoutRaw) ?? .grid }
     private var query: LibraryQuery { LibraryQuery(search: search, filter: filter, sort: sort) }
     private var results: [CaptureLibrary.Entry] { query.apply(to: store.libraryEntries, catalog: store.catalog) }
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 14)]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Two or more columns normally; one wide column at accessibility text sizes so titles stay readable.
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: dynamicTypeSize.isAccessibilitySize ? 280 : 150), spacing: 14)]
+    }
 
     var body: some View {
         NavigationStack {
@@ -106,12 +109,10 @@ struct LibraryView: View {
     private var library: some View {
         VStack(spacing: 0) {
             LibraryFilterBar(store: store, filter: $filter)
-            if !hintDismissed {
-                FirstRunHint(dismiss: { withAnimation(.snappy) { hintDismissed = true } })
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            FirstRunTip(key: "library.hintDismissed", symbol: "hand.tap", title: "Organise your materials",
+                        message: "Long-press a material to favourite it, add tags or put it in a collection. Search finds names, categories and tags.")
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             if results.isEmpty {
                 emptyResults
                     .frame(maxHeight: .infinity)
@@ -360,43 +361,6 @@ private struct LibraryFilterBar: View {
     }
 }
 
-// MARK: - First-run hint
-
-private struct FirstRunHint: View {
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "hand.tap")
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .padding(.top, 12)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Organise your materials")
-                    .font(.subheadline.weight(.semibold))
-                Text("Long-press a material to favourite it, add tags or put it in a collection. Search finds names, categories and tags.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 12)
-            Spacer(minLength: 0)
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.footnote.weight(.semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .accessibilityLabel("Dismiss tip")
-        }
-        .padding(.leading, 14)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
-    }
-}
-
 // MARK: - Cells
 
 private struct LibraryThumbnail: View {
@@ -462,7 +426,7 @@ private struct LibraryCell: View {
             LibraryThumbnail(entry: entry)
                 .frame(maxWidth: .infinity)
                 .aspectRatio(1, contentMode: .fit)
-                .clipShape(.rect(cornerRadius: 18))
+                .clipShape(.rect(cornerRadius: GlassCardStyle.cornerRadius - 4))
                 .overlay(alignment: .topTrailing) {
                     if isCurrent {
                         Image(systemName: "checkmark.circle.fill")
