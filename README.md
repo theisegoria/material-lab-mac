@@ -25,7 +25,12 @@ The method is documented in [docs/DERIVATION.md](docs/DERIVATION.md), the learne
 
 ## Download
 
-The macOS app ships as a signed `.dmg` on the [Releases](../../releases) page, with the learned-geometry model built in. It is signed with a Developer ID but not yet notarized, so the first launch needs a confirmation in System Settings › Privacy & Security.
+Get the Mac app's DMG from [Releases](https://github.com/theisegoria/material-lab-mac/releases/latest) and drag
+Material Lab to Applications; the learned-geometry model is built in. Requires macOS 27 on Apple silicon. Releases
+are signed with a Developer ID but not notarized: the first time, right-click the app in Applications and choose
+**Open**, then **Open** again. The command-line tool is also packaged on its own at
+[theisegoria/material-lab-cli](https://github.com/theisegoria/material-lab-cli). The iPhone app's source is here
+too; build it from source as shown below.
 
 ## Build from source
 
