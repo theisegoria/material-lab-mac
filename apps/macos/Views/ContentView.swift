@@ -82,6 +82,8 @@ struct ContentView: View {
     @ViewBuilder
     private var detail: some View {
         switch store.destination {
+        case .library(let filter):
+            LibraryHomeView(store: store, filter: filter)
         case .source(let id):
             if let source = store.sources.first(where: { $0.id == id }) {
                 MaterialWorkspace(store: store, source: source)

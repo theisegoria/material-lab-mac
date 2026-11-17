@@ -23,6 +23,14 @@ struct MaterialWorkspace: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                store.navigate(to: .library(.all))
+            } label: {
+                Label("Library", systemImage: "square.grid.2x2")
+            }
+            .help("Back to the material library")
+        }
         ToolbarItem(placement: .principal) {
             Picker("View", selection: $store.canvasMode) {
                 ForEach(CanvasMode.allCases) { mode in
