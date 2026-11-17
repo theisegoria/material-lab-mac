@@ -116,6 +116,11 @@ final class MaterialLabStore {
     var library = LibraryMetadata()
     /// Materials selected in the library grid.
     var librarySelection: Set<String> = []
+    /// Watch folder: new photos are derived with a saved recipe and exported through the batch queue.
+    var watchSettings = WatchFolderSettings.load() {
+        didSet { watchSettings.save() }
+    }
+    let watch = WatchFolderService()
     let link = LocalLinkService()
     let learned = LearnedModelStore()
 
@@ -229,6 +234,7 @@ final class MaterialLabStore {
             if let first = sources.first { selectSource(first.id) }
             // The library grid is home; the first material is selected (and derived) behind it.
             destination = .library(.all)
+            startWatchingFromPreferences()
         } catch {
             alert = MaterialAlert(message: error.localizedDescription)
         }

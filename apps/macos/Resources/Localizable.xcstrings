@@ -793,6 +793,26 @@
         }
       }
     },
+    "Batch Queue and Watch Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バッチキューと監視フォルダ…"
+          }
+        }
+      }
+    },
+    "Batch export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一括書き出し"
+          }
+        }
+      }
+    },
     "Before and after comparison": {
       "localizations": {
         "ja": {
@@ -894,6 +914,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "ヘアライン仕上げの鋼"
+          }
+        }
+      }
+    },
+    "Bundle + %lld formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドル＋%lld個のフォーマット"
+          }
+        }
+      }
+    },
+    "Bundle only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルのみ"
           }
         }
       }
@@ -1052,12 +1092,32 @@
         }
       }
     },
+    "Change Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを変更…"
+          }
+        }
+      }
+    },
     "Changed from the material's defaults": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "マテリアルの既定値から変更されています"
+          }
+        }
+      }
+    },
+    "Choose Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを選択…"
           }
         }
       }
@@ -1078,6 +1138,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "MoGe2Normals.mlpackage（またはコンパイル済みの.mlmodelc）を選択してください。一度だけコンパイルされ、~/Library/Application Support/Material Lab/Models に保存されます。"
+          }
+        }
+      }
+    },
+    "Choose Where Watched Photos Export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダの写真の書き出し先を選択"
+          }
+        }
+      }
+    },
+    "Choose a Folder to Watch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視するフォルダを選択"
           }
         }
       }
@@ -1440,6 +1520,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "拒否"
+          }
+        }
+      }
+    },
+    "Default (Flat)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルト（フラット）"
           }
         }
       }
@@ -1851,6 +1941,16 @@
         }
       }
     },
+    "Export Here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに書き出す"
+          }
+        }
+      }
+    },
     "Export Material": {
       "localizations": {
         "ja": {
@@ -1907,6 +2007,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "書き出し済み"
+          }
+        }
+      }
+    },
+    "Exports to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し先：%@"
           }
         }
       }
@@ -2000,6 +2110,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "色への追従"
+          }
+        }
+      }
+    },
+    "Formats written beside each bundle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各バンドルと一緒に書き出すフォーマット"
           }
         }
       }
@@ -2564,6 +2684,16 @@
         }
       }
     },
+    "Library selection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリの選択項目"
+          }
+        }
+      }
+    },
     "Licences": {
       "localizations": {
         "ja": {
@@ -2994,6 +3124,16 @@
         }
       }
     },
+    "More": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        }
+      }
+    },
     "Moss": {
       "extractionState": "manual",
       "localizations": {
@@ -3091,6 +3231,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "新規コレクション…"
+          }
+        }
+      }
+    },
+    "New photos added to a folder are derived with a saved recipe and exported automatically.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダに追加した新しい写真を、保存したレシピで自動的に生成して書き出します。"
+          }
+        }
+      }
+    },
+    "New photos added to this folder are derived and exported automatically.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフォルダに追加した新しい写真は自動的に生成され、書き出されます。"
           }
         }
       }
@@ -3214,6 +3374,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未送信"
+          }
+        }
+      }
+    },
+    "Not watching": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視していません"
           }
         }
       }
@@ -3446,6 +3616,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "塗装漆喰"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止"
+          }
+        }
+      }
+    },
+    "Paused · new photos wait until you resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中・新しい写真は再開まで待機します"
           }
         }
       }
@@ -4224,6 +4414,16 @@
         }
       }
     },
+    "Resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
+          }
+        }
+      }
+    },
     "Retry Failed": {
       "localizations": {
         "ja": {
@@ -4888,6 +5088,16 @@
         }
       }
     },
+    "Stop Watching": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視を停止"
+          }
+        }
+      }
+    },
     "Stopped": {
       "localizations": {
         "ja": {
@@ -5120,12 +5330,32 @@
         }
       }
     },
+    "The folder is missing. Reconnect it or choose another.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダが見つかりません。接続し直すか、別のフォルダを選択してください。"
+          }
+        }
+      }
+    },
     "The iPhone pins this Mac's certificate from the one-time code. Every transfer still needs your approval here, and files sent through AirDrop use the same verified .pbrcapture format.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "iPhoneは1回限りのコードからこのMacの証明書を固定します。転送のたびにここでの承認が必要で、AirDropで送ったファイルも同じ検証済みの.pbrcapture形式を使います。"
+          }
+        }
+      }
+    },
+    "The saved recipe new photos derive with (save one from the inspector's Saved recipes menu)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい写真の生成に使う保存済みレシピ（インスペクタの「保存したレシピ」メニューで保存できます）"
           }
         }
       }
@@ -5427,6 +5657,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Macでの承認を待っています…"
+          }
+        }
+      }
+    },
+    "Watch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視"
+          }
+        }
+      }
+    },
+    "Watch Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダ"
+          }
+        }
+      }
+    },
+    "Watch folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダ"
+          }
+        }
+      }
+    },
+    "Watching %@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Watching %1$@ · %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を監視中・%2$@"
           }
         }
       }
