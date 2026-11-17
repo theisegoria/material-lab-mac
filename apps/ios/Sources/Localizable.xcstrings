@@ -226,12 +226,52 @@
         }
       }
     },
+    "Add Tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを追加"
+          }
+        }
+      }
+    },
     "Add a material name before exporting.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "書き出す前にマテリアル名を入力してください。"
+          }
+        }
+      }
+    },
+    "Add a tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを追加"
+          }
+        }
+      }
+    },
+    "Add to Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションに追加"
+          }
+        }
+      }
+    },
+    "Adds this tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタグを追加します"
           }
         }
       }
@@ -274,6 +314,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ORMMaterial3D用のアルベド、ノーマル、ORM、高さ。"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
           }
         }
       }
@@ -689,6 +739,16 @@
         }
       }
     },
+    "Category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリ"
+          }
+        }
+      }
+    },
     "Category, e.g. stone": {
       "localizations": {
         "ja": {
@@ -803,6 +863,16 @@
         }
       }
     },
+    "Collection name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション名"
+          }
+        }
+      }
+    },
     "Compare": {
       "extractionState": "manual",
       "localizations": {
@@ -899,6 +969,16 @@
         }
       }
     },
+    "Create": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成"
+          }
+        }
+      }
+    },
     "Crop %@": {
       "localizations": {
         "ja": {
@@ -962,12 +1042,32 @@
         }
       }
     },
+    "Date Captured": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撮影日"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "削除"
+          }
+        }
+      }
+    },
+    "Delete %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を削除…"
           }
         }
       }
@@ -982,12 +1082,32 @@
         }
       }
     },
+    "Delete Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションを削除"
+          }
+        }
+      }
+    },
     "Delete this capture?": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "このキャプチャを削除しますか？"
+          }
+        }
+      }
+    },
+    "Delete this collection?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコレクションを削除しますか？"
           }
         }
       }
@@ -1176,6 +1296,16 @@
         }
       }
     },
+    "Dismiss tip": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒントを閉じる"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1234,6 +1364,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "レリーフ、表面、タイリングを編集"
+          }
+        }
+      }
+    },
+    "Edit Tags…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを編集…"
+          }
+        }
+      }
+    },
+    "Empty Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空のコレクション"
           }
         }
       }
@@ -1361,12 +1511,52 @@
         }
       }
     },
+    "Favourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
+    "Favourites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ファイル"
+          }
+        }
+      }
+    },
+    "Filters": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィルタ"
+          }
+        }
+      }
+    },
+    "Filters the library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリを絞り込みます"
           }
         }
       }
@@ -1633,6 +1823,16 @@
         }
       }
     },
+    "Grid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グリッド"
+          }
+        }
+      }
+    },
     "Ground": {
       "extractionState": "manual",
       "localizations": {
@@ -1640,6 +1840,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "地面"
+          }
+        }
+      }
+    },
+    "Group materials by project, room or client. A capture can be in several collections.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト、部屋、クライアントごとにマテリアルをまとめます。1つのキャプチャを複数のコレクションに入れられます。"
           }
         }
       }
@@ -1810,6 +2020,26 @@
         }
       }
     },
+    "Last Edited": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最終編集日"
+          }
+        }
+      }
+    },
+    "Layout": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レイアウト"
+          }
+        }
+      }
+    },
     "Learned": {
       "extractionState": "manual",
       "localizations": {
@@ -1923,6 +2153,16 @@
         }
       }
     },
+    "List": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リスト"
+          }
+        }
+      }
+    },
     "Lit preview unavailable": {
       "localizations": {
         "ja": {
@@ -1970,6 +2210,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "局所的な傾き。"
+          }
+        }
+      }
+    },
+    "Long-press a material and choose Add to Collection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しして「コレクションに追加」を選んでください。"
+          }
+        }
+      }
+    },
+    "Long-press a material and choose Favourite to keep it here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しして「お気に入り」を選ぶと、ここに表示されます。"
+          }
+        }
+      }
+    },
+    "Long-press a material to favourite it, add tags or put it in a collection. Search finds names, categories and tags.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しすると、お気に入り登録、タグ付け、コレクションへの追加ができます。検索では名前、カテゴリ、タグを探せます。"
           }
         }
       }
@@ -2118,6 +2388,16 @@
         }
       }
     },
+    "Materials edited in the last 7 days appear here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去7日間に編集したマテリアルがここに表示されます。"
+          }
+        }
+      }
+    },
     "Matte floor tile": {
       "extractionState": "manual",
       "localizations": {
@@ -2234,12 +2514,62 @@
         }
       }
     },
+    "Name, category, tag or collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前、カテゴリ、タグ、コレクション"
+          }
+        }
+      }
+    },
     "Name, e.g. Wet slate": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "名前（例：濡れたスレート）"
+          }
+        }
+      }
+    },
+    "New Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション"
+          }
+        }
+      }
+    },
+    "New Collection…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション…"
+          }
+        }
+      }
+    },
+    "No Favourites Yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りはまだありません"
+          }
+        }
+      }
+    },
+    "No Matching Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致するマテリアルはありません"
           }
         }
       }
@@ -2356,6 +2686,16 @@
         }
       }
     },
+    "Nothing Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近の項目はありません"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "ja": {
@@ -2408,6 +2748,36 @@
         }
       }
     },
+    "On This Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このマテリアルのタグ"
+          }
+        }
+      }
+    },
+    "Only the collection is removed. Its captures stay in the library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除されるのはコレクションだけです。キャプチャはライブラリに残ります。"
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        }
+      }
+    },
     "Open Camera": {
       "localizations": {
         "ja": {
@@ -2433,7 +2803,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "今すぐ開く"
+            "value": "表示中"
           }
         }
       }
@@ -2469,6 +2839,26 @@
         }
       }
     },
+    "Opens this capture. More actions are in the actions rotor or by long-pressing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキャプチャを開きます。その他の操作はアクションローターまたは長押しで使えます。"
+          }
+        }
+      }
+    },
+    "Opens this capture. Swipe for more actions.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキャプチャを開きます。スワイプでその他の操作ができます。"
+          }
+        }
+      }
+    },
     "Or paste the pairing code": {
       "localizations": {
         "ja": {
@@ -2486,6 +2876,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "有機物"
+          }
+        }
+      }
+    },
+    "Organise your materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを整理しましょう"
           }
         }
       }
@@ -2818,6 +3218,16 @@
         }
       }
     },
+    "Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
+          }
+        }
+      }
+    },
     "Recipe": {
       "localizations": {
         "ja": {
@@ -2921,6 +3331,16 @@
         }
       }
     },
+    "Remove from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から外す"
+          }
+        }
+      }
+    },
     "Remove lighting": {
       "localizations": {
         "ja": {
@@ -2937,6 +3357,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "「ライティングを除去」は写真の低周波の陰影を均一にします。「アルベドを修復」は写真自体を再構成して縦横両方向にタイル化し、「タイル化」は端のみを処理します。どちらかを調整している間、プレビューはタイル表示に切り替わります。"
+          }
+        }
+      }
+    },
+    "Rename": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更"
+          }
+        }
+      }
+    },
+    "Rename %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の名前を変更…"
+          }
+        }
+      }
+    },
+    "Rename Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション名を変更"
           }
         }
       }
@@ -3251,6 +3701,16 @@
         }
       }
     },
+    "Show All Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのマテリアルを表示"
+          }
+        }
+      }
+    },
     "Slate": {
       "extractionState": "manual",
       "localizations": {
@@ -3302,6 +3762,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "土"
+          }
+        }
+      }
+    },
+    "Sort By": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替え"
+          }
+        }
+      }
+    },
+    "Sort and Organise": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替えと整理"
           }
         }
       }
@@ -3472,6 +3952,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "合成素材"
+          }
+        }
+      }
+    },
+    "Tags": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ"
+          }
+        }
+      }
+    },
+    "Tags are searchable and appear as filters in the library, for example “outdoor”, “worn” or a client name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグは検索でき、ライブラリのフィルタにも表示されます。例：「屋外」「使い込み」、クライアント名など。"
+          }
+        }
+      }
+    },
+    "Tags: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ：%@"
           }
         }
       }
@@ -3754,6 +4264,16 @@
         }
       }
     },
+    "Try another filter.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のフィルタを試してください。"
+          }
+        }
+      }
+    },
     "Turns a photo into a PBR material: a .pbrmaterial bundle with every map, plus any export formats you choose.": {
       "localizations": {
         "ja": {
@@ -3775,12 +4295,32 @@
         }
       }
     },
+    "Uncategorized": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未分類"
+          }
+        }
+      }
+    },
     "Undo": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "取り消す"
+          }
+        }
+      }
+    },
+    "Unfavourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りから外す"
           }
         }
       }
@@ -3814,6 +4354,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unreal Engine"
+          }
+        }
+      }
+    },
+    "Untitled material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称未設定のマテリアル"
           }
         }
       }
@@ -3866,6 +4416,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用"
+          }
+        }
+      }
+    },
+    "Used Elsewhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかで使用中"
           }
         }
       }
