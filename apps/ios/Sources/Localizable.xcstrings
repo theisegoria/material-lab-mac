@@ -1306,6 +1306,16 @@
         }
       }
     },
+    "Displacement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1322,6 +1332,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ドラッグしてライトを移動"
+          }
+        }
+      }
+    },
+    "Drag to orbit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラッグして回転します。"
           }
         }
       }
@@ -2163,6 +2183,16 @@
         }
       }
     },
+    "Lit %@ preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティングした%@のプレビュー"
+          }
+        }
+      }
+    },
     "Lit preview unavailable": {
       "localizations": {
         "ja": {
@@ -2504,6 +2534,26 @@
         }
       }
     },
+    "Moves the surface by the height map at its derived relief. 1× is true to scale.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハイトマップに従い、生成された起伏の高さで表面を動かします。1×が実寸です。"
+          }
+        }
+      }
+    },
+    "Moves the surface by the height map. The relief is estimated until full-resolution maps are derived.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハイトマップに従って表面を動かします。フル解像度のマップを生成するまで、起伏の高さは推定値です。"
+          }
+        }
+      }
+    },
     "Name": {
       "localizations": {
         "ja": {
@@ -2682,6 +2732,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未送信"
+          }
+        }
+      }
+    },
+    "Not saved to maps or exports": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップや書き出しには保存されません"
           }
         }
       }
@@ -3100,6 +3160,16 @@
         }
       }
     },
+    "Preview only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ"
+          }
+        }
+      }
+    },
     "Preview shape": {
       "localizations": {
         "ja": {
@@ -3397,6 +3467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "アルベドを修復"
+          }
+        }
+      }
+    },
+    "Reset Preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューをリセット"
           }
         }
       }
@@ -4488,6 +4568,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Macでの承認を待っています…"
+          }
+        }
+      }
+    },
+    "Wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摩耗"
+          }
+        }
+      }
+    },
+    "Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "濡れ"
           }
         }
       }

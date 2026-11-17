@@ -566,6 +566,7 @@ struct MapChips: View {
 struct MaterialPreviewPane: View {
     let store: CaptureStore
     @State private var arPreviewURL: URL?
+    @State private var litSettings = LitPreviewSettings()
 
     /// Writes a USDZ of the derived maps and opens it in Quick Look, which offers AR placement on device.
     private func openInAR() async {
@@ -605,6 +606,12 @@ struct MaterialPreviewPane: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("preview-mode")
+
+            if mode == .lit, let material = store.displayed {
+                LitPreviewControls(settings: $litSettings, hasHeight: material.maps[.height] != nil,
+                                   measuredSpan: material.relief != nil)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(.top, 8)
         .quickLookPreview($arPreviewURL)
@@ -629,9 +636,8 @@ struct MaterialPreviewPane: View {
         case .relit:
             RelitView(material: material)
         case .lit:
-            MaterialSphereView(material: material,
+            MaterialSphereView(material: material, settings: $litSettings,
                                viewInAR: store.hasExportableMaps ? { Task { await openInAR() } } : nil)
-                .accessibilityLabel("Lit sphere preview. Drag to orbit.")
         case .compare:
             CompareView(before: material.correctedSource, after: map.previewImage, afterTitle: map.kind.shortTitle)
         }

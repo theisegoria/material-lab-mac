@@ -1,6 +1,7 @@
 import Metal
 import RealityKit
 import SwiftUI
+import UIKit
 
 /// Preview geometry, as on the Mac: a sphere, a cube or a flat tile.
 enum PreviewShape: String, CaseIterable, Identifiable {
@@ -28,18 +29,74 @@ enum PreviewShape: String, CaseIterable, Identifiable {
     }
 }
 
-/// A physically based sphere, cube or tile lit by the default environment plus a key light. Drag to orbit.
+/// What the lit preview shows. Shape, lighting and tiling match the Mac app's built-ins; displacement, wetness and
+/// wear change the preview only and never the derived maps or exports.
+struct LitPreviewSettings: Equatable {
+    var shape: PreviewShape = .sphere
+    var environment: PreviewEnvironment = .studio
+    var tiling: Float = 2
+    /// Multiplies the height span the core reported; 0 turns displacement off (the smooth mesh, normal map only).
+    var displacementScale: Double = 1
+    /// 0…1: darker albedo, glossier surface and a thin clear coat, as when wet.
+    var wetness: Double = 0
+    /// 0…1: rougher, less specular, as when scuffed and dusty.
+    var wear: Double = 0
+
+    static let displacementRange: ClosedRange<Double> = 0...3
+
+    /// Applies the preview-only wetness and wear to a copy of the derived material.
+    func adjusted(_ base: PhysicallyBasedMaterial) -> PhysicallyBasedMaterial {
+        guard wetness > 0 || wear > 0 else { return base }
+        var pbr = base
+        let wet = Float(wetness), worn = Float(wear)
+        // Wet surfaces darken (water fills the pores) and turn glossy; wear dulls and roughens.
+        let darken = CGFloat(1 - 0.45 * wet)
+        pbr.baseColor.tint = UIColor(white: darken, alpha: 1)
+        pbr.roughness.scale = max(0.05, (1 - 0.7 * wet) * (1 + 0.6 * worn))
+        pbr.specular.scale = 1 - 0.5 * worn
+        pbr.clearcoat = .init(floatLiteral: 0.85 * wet)
+        pbr.clearcoatRoughness = .init(floatLiteral: 0.04 + 0.2 * worn)
+        return pbr
+    }
+}
+
+/// A physically based sphere, cube or tile lit by a built-in environment plus a key light. Drag to orbit.
+/// With a height map, the mesh is really displaced (see `DisplacedPreviewMesh`).
 struct MaterialSphereView: View {
     let material: DerivedMaterial
+    @Binding var settings: LitPreviewSettings
     @State private var pbr: PhysicallyBasedMaterial?
     @State private var failed = false
-    @State private var shape: PreviewShape = .sphere
-    @State private var environment: PreviewEnvironment = .studio
-    @State private var tiling: Float = 2
+    @State private var heightField: PreviewHeightField?
+    /// The displaced mesh and the settings it was built for (used only while they still match).
+    @State private var displaced: (key: DisplacementKey, mesh: MeshResource)?
     /// Opens the material in AR Quick Look; nil until full-resolution maps exist.
     var viewInAR: (() -> Void)? = nil
 
+    private struct DisplacementKey: Equatable {
+        let material: ObjectIdentifier
+        let shape: PreviewShape
+        let tiling: Float
+        let scale: Double
+    }
+
+    private var displacementKey: DisplacementKey? {
+        guard heightField != nil, settings.displacementScale > 0 else { return nil }
+        return DisplacementKey(material: ObjectIdentifier(material.correctedSource), shape: settings.shape,
+                               tiling: settings.tiling, scale: settings.displacementScale)
+    }
+
+    private var currentMesh: MeshResource {
+        if let key = displacementKey, let displaced, displaced.key == key { return displaced.mesh }
+        return settings.shape.mesh
+    }
+
     var body: some View {
+        let shape = settings.shape
+        let environment = settings.environment
+        let mesh = currentMesh
+        let adjusted = pbr.map(settings.adjusted)
+        let tiling = settings.tiling
         ZStack {
             LinearGradient(colors: [Color(white: 0.30), Color(white: 0.10)], startPoint: .top, endPoint: .bottom)
             RealityView { content in
@@ -61,7 +118,7 @@ struct MaterialSphereView: View {
                 content.add(key)
                 content.cameraTarget = sphere
             } update: { content in
-                guard var pbr, let root = content.entities.first(where: { $0.name == "preview-root" }),
+                guard var pbr = adjusted, let root = content.entities.first(where: { $0.name == "preview-root" }),
                       let sphere = root.children.first(where: { $0.name == "material-sphere" }) as? ModelEntity
                 else { return }
                 // A named marker child records the environment the root carries.
@@ -74,7 +131,7 @@ struct MaterialSphereView: View {
                     root.addChild(next)
                 }
                 pbr.textureCoordinateTransform.scale = shape.textureScale(tiling: tiling)
-                sphere.model = ModelComponent(mesh: shape.mesh, materials: [pbr])
+                sphere.model = ModelComponent(mesh: mesh, materials: [pbr])
                 // The orbit camera framed the model when the scene was made; enlarging it afterwards fills the view.
                 sphere.scale = SIMD3(repeating: 1.75)
                 // Tilt the flat tile toward the camera so it reads as a surface, not an edge.
@@ -87,6 +144,9 @@ struct MaterialSphereView: View {
                 }
             }
             .realityViewCameraControls(.orbit)
+            .accessibilityElement()
+            .accessibilityLabel("Lit \(shape.title) preview")
+            .accessibilityHint("Drag to orbit.")
             .overlay(alignment: .topTrailing) {
                 if let viewInAR {
                     Button(action: viewInAR) {
@@ -104,19 +164,19 @@ struct MaterialSphereView: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 Menu {
-                    Picker("Shape", selection: $shape) {
+                    Picker("Shape", selection: $settings.shape) {
                         ForEach(PreviewShape.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                     }
-                    Picker("Lighting", selection: $environment) {
+                    Picker("Lighting", selection: $settings.environment) {
                         ForEach(PreviewEnvironment.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                     }
-                    Picker("Tiling", selection: $tiling) {
+                    Picker("Tiling", selection: $settings.tiling) {
                         ForEach([1, 2, 3, 4, 6, 8] as [Float], id: \.self) { Text("\(Int($0))×").tag($0) }
                     }
                 } label: {
                     Image(systemName: shape.symbol)
                         .font(.body.weight(.semibold))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                         .glassEffect(.regular.interactive(), in: .circle)
                 }
                 .accessibilityLabel("Preview shape")
@@ -137,6 +197,30 @@ struct MaterialSphereView: View {
                 failed = false
             } catch {
                 failed = true
+            }
+            let height = material.maps[.height]?.previewImage
+            heightField = await Task.detached(priority: .userInitiated) {
+                height.flatMap { PreviewHeightField(image: $0) }
+            }.value
+        }
+        .task(id: displacementKey) {
+            guard let key = displacementKey, let field = heightField else { return }
+            // Debounce slider drags.
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let span = material.relief?.heightSpanTileWidths ?? DisplacedPreviewMesh.fallbackHeightSpanTileWidths
+            let geometry = await Task.detached(priority: .userInitiated) {
+                DisplacedPreviewMesh.make(shape: key.shape, field: field, tiling: key.tiling,
+                                          heightSpan: span, scale: Float(key.scale))
+            }.value
+            guard !Task.isCancelled else { return }
+            var descriptor = MeshDescriptor(name: "displaced-\(key.shape.rawValue)")
+            descriptor.positions = MeshBuffers.Positions(geometry.positions)
+            descriptor.normals = MeshBuffers.Normals(geometry.normals)
+            descriptor.textureCoordinates = MeshBuffers.TextureCoordinates(geometry.uvs)
+            descriptor.primitives = .triangles(geometry.indices)
+            if let mesh = try? MeshResource.generate(from: [descriptor]) {
+                displaced = (key, mesh)
             }
         }
     }
