@@ -38,6 +38,20 @@ final class CaptureLibrary: Sendable {
 
     private var currentURL: URL { root.appending(path: "current") }
     private var savedRecipesURL: URL { root.appending(path: "saved-recipes.json") }
+    var catalogURL: URL { root.appending(path: "library.json") }
+
+    /// Favourites, tags and collections; empty when none were saved or the file is unreadable.
+    func loadCatalog() -> LibraryCatalog {
+        guard let data = try? Data(contentsOf: catalogURL) else { return LibraryCatalog() }
+        return (try? JSONDecoder().decode(LibraryCatalog.self, from: data)) ?? LibraryCatalog()
+    }
+
+    func saveCatalog(_ catalog: LibraryCatalog) {
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        try? encoder.encode(catalog).write(to: catalogURL, options: .atomic)
+    }
 
     func loadSavedRecipes() -> [SavedRecipe] {
         guard let data = try? Data(contentsOf: savedRecipesURL),
@@ -89,9 +103,19 @@ final class CaptureLibrary: Sendable {
         .sorted { $0.modified > $1.modified }
     }
 
+    /// Every capture folder on disk, readable or not (the catalog is pruned against these, not `entries()`).
+    func captureIDsOnDisk() -> Set<UUID> {
+        let children = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        return Set(children.compactMap { UUID(uuidString: $0.lastPathComponent) })
+    }
+
     func delete(_ id: UUID) {
         try? FileManager.default.removeItem(at: directory(for: id))
         if currentID == id { setCurrent(nil) }
+        var catalog = loadCatalog()
+        let before = catalog
+        catalog.forget(id)
+        if catalog != before { saveCatalog(catalog) }
     }
 
     /// Writes a small square JPEG preview of the capture (from its albedo).

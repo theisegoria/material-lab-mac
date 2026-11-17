@@ -120,6 +120,8 @@ final class CaptureStore {
     private(set) var libraryEntries: [CaptureLibrary.Entry] = []
     /// Named recipes the user saved, newest first.
     private(set) var savedRecipes: [SavedRecipe] = []
+    /// Favourites, tags and collections for the library (saved beside the captures).
+    private(set) var catalog = LibraryCatalog()
     private var persistence: CapturePersistence? { source.flatMap { source in library?.persistence(for: source.id) } }
 
     /// `libraryDirectory` is the capture library root; nil keeps captures in memory only.
@@ -258,11 +260,24 @@ final class CaptureStore {
 
     func refreshLibrary() async {
         guard let library else { return }
-        let (entries, recipes) = await Task.detached(priority: .utility) {
-            (library.entries(), library.loadSavedRecipes())
+        let (entries, recipes, catalog) = await Task.detached(priority: .utility) { () -> ([CaptureLibrary.Entry], [SavedRecipe], LibraryCatalog) in
+            let entries = library.entries()
+            var catalog = library.loadCatalog()
+            if catalog.prune(keeping: library.captureIDsOnDisk()) { library.saveCatalog(catalog) }
+            return (entries, library.loadSavedRecipes(), catalog)
         }.value
         libraryEntries = entries
         savedRecipes = recipes
+        self.catalog = catalog
+    }
+
+    /// Changes the library's favourites, tags or collections and saves them.
+    func updateCatalog(_ change: (inout LibraryCatalog) -> Void) {
+        var next = catalog
+        change(&next)
+        guard next != catalog else { return }
+        catalog = next
+        library?.saveCatalog(next)
     }
 
     // MARK: Saved recipes
@@ -311,6 +326,7 @@ final class CaptureStore {
     func delete(_ id: UUID) async {
         guard let library else { return }
         if source?.id == id { clear() }
+        catalog.forget(id)
         await Task.detached(priority: .utility) { library.delete(id) }.value
         await refreshLibrary()
     }
@@ -623,7 +639,8 @@ final class CaptureStore {
 
     /// Writes "<label> material/" in a temporary folder: the .pbrmaterial bundle (validator-compatible, as from the
     /// Mac app and CLI) plus every chosen export target. Returns the folder for the Files exporter.
-    func makeMaterialExport() async throws -> URL {
+    /// `targets` overrides the remembered choice (for sharing one format); nil uses `exportTargets`.
+    func makeMaterialExport(targets chosen: Set<String>? = nil) async throws -> URL {
         let label = trimmedLabel
         guard !label.isEmpty else { throw CaptureError.missingLabel }
         guard let source, let derived, hasExportableMaps else {
@@ -632,7 +649,7 @@ final class CaptureStore {
         let category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         let identity = MaterialBundleWriter.Identity(label: label, category: category.isEmpty ? "uncategorized" : category,
                                                      origin: source.origin, captureMode: source.captureMode(for: crop))
-        let targets = ExportTarget.named(exportTargets)
+        let targets = ExportTarget.named(chosen ?? exportTargets)
         let slug = Self.exportSlug(label)
         return try await Task.detached(priority: .userInitiated) {
             let fm = FileManager.default

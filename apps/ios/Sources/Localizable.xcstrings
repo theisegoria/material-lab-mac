@@ -71,6 +71,16 @@
         }
       }
     },
+    "%@, changed from default": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、デフォルトから変更済み"
+          }
+        }
+      }
+    },
     "%@² ready": {
       "localizations": {
         "ja": {
@@ -128,6 +138,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "4Kにはこのデバイスより多くのメモリが必要です。2Kを使用してください。"
+          }
+        }
+      }
+    },
+    "A dot marks a value changed from the material's default. Long-press a slider to reset it. Undo and Redo are at the top.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点はマテリアルのデフォルトから変更した値を示します。スライダを長押しするとリセットできます。取り消しとやり直しは上部にあります。"
           }
         }
       }
@@ -226,12 +246,52 @@
         }
       }
     },
+    "Add Tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを追加"
+          }
+        }
+      }
+    },
     "Add a material name before exporting.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "書き出す前にマテリアル名を入力してください。"
+          }
+        }
+      }
+    },
+    "Add a tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを追加"
+          }
+        }
+      }
+    },
+    "Add to Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションに追加"
+          }
+        }
+      }
+    },
+    "Adds this tag": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このタグを追加します"
           }
         }
       }
@@ -274,6 +334,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ORMMaterial3D用のアルベド、ノーマル、ORM、高さ。"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
           }
         }
       }
@@ -555,6 +625,36 @@
         }
       }
     },
+    "Bundle and %lld formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルと%lld形式"
+          }
+        }
+      }
+    },
+    "Bundle and Chosen Formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルと選択した形式"
+          }
+        }
+      }
+    },
+    "Bundle only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルのみ"
+          }
+        }
+      }
+    },
     "CPU only": {
       "extractionState": "manual",
       "localizations": {
@@ -657,6 +757,16 @@
         }
       }
     },
+    "Capture or import a new surface, or reopen one of your %lld saved materials.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい表面を撮影または読み込むか、保存済みの%lld個のマテリアルを開き直してください。"
+          }
+        }
+      }
+    },
     "Captures RAW and develops it neutrally for truer surface colour. Used when Constant Color is off.": {
       "localizations": {
         "ja": {
@@ -685,6 +795,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "カーペット"
+          }
+        }
+      }
+    },
+    "Category": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カテゴリ"
           }
         }
       }
@@ -726,6 +846,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "証明書"
+          }
+        }
+      }
+    },
+    "Check your material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを確認しましょう"
           }
         }
       }
@@ -799,6 +929,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "石畳"
+          }
+        }
+      }
+    },
+    "Collection name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション名"
           }
         }
       }
@@ -899,6 +1039,16 @@
         }
       }
     },
+    "Create": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成"
+          }
+        }
+      }
+    },
     "Crop %@": {
       "localizations": {
         "ja": {
@@ -962,12 +1112,32 @@
         }
       }
     },
+    "Date Captured": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撮影日"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "削除"
+          }
+        }
+      }
+    },
+    "Delete %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を削除…"
           }
         }
       }
@@ -982,12 +1152,32 @@
         }
       }
     },
+    "Delete Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションを削除"
+          }
+        }
+      }
+    },
     "Delete this capture?": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "このキャプチャを削除しますか？"
+          }
+        }
+      }
+    },
+    "Delete this collection?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコレクションを削除しますか？"
           }
         }
       }
@@ -1176,6 +1366,26 @@
         }
       }
     },
+    "Dismiss tip": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヒントを閉じる"
+          }
+        }
+      }
+    },
+    "Displacement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1186,12 +1396,32 @@
         }
       }
     },
+    "Drag to another app to copy the %@ PNG": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのアプリへドラッグすると%@のPNGをコピーできます"
+          }
+        }
+      }
+    },
     "Drag to move the light": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ドラッグしてライトを移動"
+          }
+        }
+      }
+    },
+    "Drag to orbit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラッグして回転します。"
           }
         }
       }
@@ -1238,6 +1468,26 @@
         }
       }
     },
+    "Edit Tags…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを編集…"
+          }
+        }
+      }
+    },
+    "Empty Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空のコレクション"
+          }
+        }
+      }
+    },
     "Estimated": {
       "localizations": {
         "ja": {
@@ -1265,6 +1515,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "学習ジオメトリを推定中"
+          }
+        }
+      }
+    },
+    "Every change updates the preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更するたびにプレビューが更新されます"
           }
         }
       }
@@ -1339,6 +1599,16 @@
         }
       }
     },
+    "Export or Share…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出しまたは共有…"
+          }
+        }
+      }
+    },
     "Fabric": {
       "extractionState": "manual",
       "localizations": {
@@ -1361,12 +1631,52 @@
         }
       }
     },
+    "Favourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
+    "Favourites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ファイル"
+          }
+        }
+      }
+    },
+    "Filters": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィルタ"
+          }
+        }
+      }
+    },
+    "Filters the library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリを絞り込みます"
           }
         }
       }
@@ -1418,6 +1728,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "色への追従"
+          }
+        }
+      }
+    },
+    "For the best maps, shoot straight on in soft, even light, without glare.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "きれいなマップを作るには、柔らかく均一な光の下で、反射を避けて正面から撮影してください。"
           }
         }
       }
@@ -1633,6 +1953,16 @@
         }
       }
     },
+    "Grid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グリッド"
+          }
+        }
+      }
+    },
     "Ground": {
       "extractionState": "manual",
       "localizations": {
@@ -1640,6 +1970,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "地面"
+          }
+        }
+      }
+    },
+    "Group materials by project, room or client. A capture can be in several collections.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト、部屋、クライアントごとにマテリアルをまとめます。1つのキャプチャを複数のコレクションに入れられます。"
           }
         }
       }
@@ -1810,6 +2150,26 @@
         }
       }
     },
+    "Last Edited": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最終編集日"
+          }
+        }
+      }
+    },
+    "Layout": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レイアウト"
+          }
+        }
+      }
+    },
     "Learned": {
       "extractionState": "manual",
       "localizations": {
@@ -1923,6 +2283,26 @@
         }
       }
     },
+    "List": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リスト"
+          }
+        }
+      }
+    },
+    "Lit %@ preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティングした%@のプレビュー"
+          }
+        }
+      }
+    },
     "Lit preview unavailable": {
       "localizations": {
         "ja": {
@@ -1970,6 +2350,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "局所的な傾き。"
+          }
+        }
+      }
+    },
+    "Long-press a material and choose Add to Collection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しして「コレクションに追加」を選んでください。"
+          }
+        }
+      }
+    },
+    "Long-press a material and choose Favourite to keep it here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しして「お気に入り」を選ぶと、ここに表示されます。"
+          }
+        }
+      }
+    },
+    "Long-press a material to favourite it, add tags or put it in a collection. Search finds names, categories and tags.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを長押しすると、お気に入り登録、タグ付け、コレクションへの追加ができます。検索では名前、カテゴリ、タグを探せます。"
           }
         }
       }
@@ -2067,6 +2477,16 @@
         }
       }
     },
+    "Material Bundle Only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルバンドルのみ"
+          }
+        }
+      }
+    },
     "Material Capture": {
       "localizations": {
         "ja": {
@@ -2114,6 +2534,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "MaterialX"
+          }
+        }
+      }
+    },
+    "Materials edited in the last 7 days appear here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去7日間に編集したマテリアルがここに表示されます。"
           }
         }
       }
@@ -2224,6 +2654,26 @@
         }
       }
     },
+    "Moves the surface by the height map at its derived relief. 1× is true to scale.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハイトマップに従い、生成された起伏の高さで表面を動かします。1×が実寸です。"
+          }
+        }
+      }
+    },
+    "Moves the surface by the height map. The relief is estimated until full-resolution maps are derived.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ハイトマップに従って表面を動かします。フル解像度のマップを生成するまで、起伏の高さは推定値です。"
+          }
+        }
+      }
+    },
     "Name": {
       "localizations": {
         "ja": {
@@ -2234,12 +2684,62 @@
         }
       }
     },
+    "Name, category, tag or collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前、カテゴリ、タグ、コレクション"
+          }
+        }
+      }
+    },
     "Name, e.g. Wet slate": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "名前（例：濡れたスレート）"
+          }
+        }
+      }
+    },
+    "New Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション"
+          }
+        }
+      }
+    },
+    "New Collection…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション…"
+          }
+        }
+      }
+    },
+    "No Favourites Yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りはまだありません"
+          }
+        }
+      }
+    },
+    "No Matching Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致するマテリアルはありません"
           }
         }
       }
@@ -2356,6 +2856,26 @@
         }
       }
     },
+    "Not saved to maps or exports": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マップや書き出しには保存されません"
+          }
+        }
+      }
+    },
+    "Nothing Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近の項目はありません"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "ja": {
@@ -2408,6 +2928,46 @@
         }
       }
     },
+    "On This Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このマテリアルのタグ"
+          }
+        }
+      }
+    },
+    "One Format": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1つの形式"
+          }
+        }
+      }
+    },
+    "Only the collection is removed. Its captures stay in the library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除されるのはコレクションだけです。キャプチャはライブラリに残ります。"
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        }
+      }
+    },
     "Open Camera": {
       "localizations": {
         "ja": {
@@ -2433,7 +2993,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "今すぐ開く"
+            "value": "表示中"
           }
         }
       }
@@ -2469,6 +3029,26 @@
         }
       }
     },
+    "Opens this capture. More actions are in the actions rotor or by long-pressing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキャプチャを開きます。その他の操作はアクションローターまたは長押しで使えます。"
+          }
+        }
+      }
+    },
+    "Opens this capture. Swipe for more actions.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このキャプチャを開きます。スワイプでその他の操作ができます。"
+          }
+        }
+      }
+    },
     "Or paste the pairing code": {
       "localizations": {
         "ja": {
@@ -2486,6 +3066,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "有機物"
+          }
+        }
+      }
+    },
+    "Organise your materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを整理しましょう"
           }
         }
       }
@@ -2626,6 +3216,16 @@
         }
       }
     },
+    "Pick a map below the preview, try 3D to see the relief, then name the material and export or share it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューの下でマップを選び、3Dで起伏を確かめてから、マテリアルに名前を付けて書き出すか共有しましょう。"
+          }
+        }
+      }
+    },
     "Plane": {
       "extractionState": "manual",
       "localizations": {
@@ -2690,12 +3290,32 @@
         }
       }
     },
+    "Preparing…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備中…"
+          }
+        }
+      }
+    },
     "Preview": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "プレビュー"
+          }
+        }
+      }
+    },
+    "Preview only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ"
           }
         }
       }
@@ -2818,6 +3438,16 @@
         }
       }
     },
+    "Recent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近"
+          }
+        }
+      }
+    },
     "Recipe": {
       "localizations": {
         "ja": {
@@ -2921,6 +3551,16 @@
         }
       }
     },
+    "Remove from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から外す"
+          }
+        }
+      }
+    },
     "Remove lighting": {
       "localizations": {
         "ja": {
@@ -2941,12 +3581,52 @@
         }
       }
     },
+    "Rename": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更"
+          }
+        }
+      }
+    },
+    "Rename %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の名前を変更…"
+          }
+        }
+      }
+    },
+    "Rename Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション名を変更"
+          }
+        }
+      }
+    },
     "Repair albedo": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "アルベドを修復"
+          }
+        }
+      }
+    },
+    "Reset Preview": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューをリセット"
           }
         }
       }
@@ -3130,6 +3810,16 @@
         }
       }
     },
+    "Save to Files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“ファイル”に保存"
+          }
+        }
+      }
+    },
     "Saved recipes": {
       "localizations": {
         "ja": {
@@ -3146,6 +3836,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "写真と一緒に深度を保存し、表面の形状に使います。深度付きの写真ではConstant ColorとRAWは使われません。"
+          }
+        }
+      }
+    },
+    "Saves or shares the PBR maps with glTF, USDZ, Unreal, Unity and other formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PBRマップをglTF、USDZ、Unreal、Unityなどの形式で保存または共有します"
           }
         }
       }
@@ -3251,6 +3951,46 @@
         }
       }
     },
+    "Shares the bundle or one format with AirDrop, Mail, Messages or another app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルまたは1つの形式をAirDrop、メール、メッセージ、ほかのアプリで共有します"
+          }
+        }
+      }
+    },
+    "Share…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有…"
+          }
+        }
+      }
+    },
+    "Sharing sends folders, such as the .pbrmaterial bundle, as .zip archives. Save to Files keeps them as folders.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有では、.pbrmaterialバンドルなどのフォルダを.zipアーカイブとして送ります。“ファイル”に保存するとフォルダのまま保存されます。"
+          }
+        }
+      }
+    },
+    "Show All Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのマテリアルを表示"
+          }
+        }
+      }
+    },
     "Slate": {
       "extractionState": "manual",
       "localizations": {
@@ -3302,6 +4042,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "土"
+          }
+        }
+      }
+    },
+    "Sort By": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替え"
+          }
+        }
+      }
+    },
+    "Sort and Organise": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替えと整理"
           }
         }
       }
@@ -3472,6 +4232,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "合成素材"
+          }
+        }
+      }
+    },
+    "Tags": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ"
+          }
+        }
+      }
+    },
+    "Tags are searchable and appear as filters in the library, for example “outdoor”, “worn” or a client name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグは検索でき、ライブラリのフィルタにも表示されます。例：「屋外」「使い込み」、クライアント名など。"
+          }
+        }
+      }
+    },
+    "Tags: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ：%@"
           }
         }
       }
@@ -3754,6 +4544,16 @@
         }
       }
     },
+    "Try another filter.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別のフィルタを試してください。"
+          }
+        }
+      }
+    },
     "Turns a photo into a PBR material: a .pbrmaterial bundle with every map, plus any export formats you choose.": {
       "localizations": {
         "ja": {
@@ -3775,12 +4575,32 @@
         }
       }
     },
+    "Uncategorized": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未分類"
+          }
+        }
+      }
+    },
     "Undo": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "取り消す"
+          }
+        }
+      }
+    },
+    "Unfavourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りから外す"
           }
         }
       }
@@ -3814,6 +4634,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Unreal Engine"
+          }
+        }
+      }
+    },
+    "Untitled material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名称未設定のマテリアル"
           }
         }
       }
@@ -3866,6 +4696,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用"
+          }
+        }
+      }
+    },
+    "Used Elsewhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかで使用中"
           }
         }
       }
@@ -3928,6 +4768,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Macでの承認を待っています…"
+          }
+        }
+      }
+    },
+    "Wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摩耗"
+          }
+        }
+      }
+    },
+    "Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "濡れ"
           }
         }
       }

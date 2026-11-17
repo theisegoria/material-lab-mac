@@ -71,7 +71,12 @@ struct MaterialReviewView: View {
                 ContentUnavailableView {
                     Label("No Material Yet", systemImage: "camera.macro")
                 } description: {
-                    Text("Capture a flat, evenly lit surface or import a photo to derive PBR maps on this iPhone.")
+                    if store.libraryEntries.isEmpty {
+                        Text("Capture a flat, evenly lit surface or import a photo to derive PBR maps on this iPhone.")
+                    } else {
+                        Text("Capture or import a new surface, or reopen one of your \(store.libraryEntries.count) saved materials.")
+                    }
+                    Text("For the best maps, shoot straight on in soft, even light, without glare.")
                 } actions: {
                     Button("Open Camera", systemImage: "camera") { selectTab(.capture) }
                         .buttonStyle(.glassProminent)
@@ -157,6 +162,9 @@ struct MaterialReviewView: View {
                     MapChips(material: material, selection: $selectedMap)
                         .padding(.horizontal, -16)
                 }
+                FirstRunTip(key: "review.hintDismissed", symbol: "sparkles",
+                            title: "Check your material",
+                            message: "Pick a map below the preview, try 3D to see the relief, then name the material and export or share it.")
                 identityCard
                 cropCard(source)
                 recipeCard
@@ -358,12 +366,12 @@ struct MaterialReviewView: View {
                         showExportTargets = true
                     }
                 } label: {
-                    Label("Export Material…", systemImage: "square.and.arrow.up.on.square")
+                    Label("Export or Share…", systemImage: "square.and.arrow.up.on.square")
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("export-material")
-                .accessibilityHint("Saves the PBR maps with glTF, USDZ, Unreal, Unity and other formats to Files")
+                .accessibilityHint("Saves or shares the PBR maps with glTF, USDZ, Unreal, Unity and other formats")
 
                 Button {
                     Task { await exportCapture() }
@@ -444,6 +452,38 @@ struct MaterialReviewView: View {
 
 // MARK: - Components
 
+/// A full-resolution map PNG dragged out of the preview (to Files, Photos, Mail or another app).
+struct MapPNGTransfer: Transferable {
+    let png: Data
+    let filename: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { $0.png }
+            .suggestedFileName { $0.filename }
+    }
+}
+
+/// Makes the map preview draggable once full-resolution maps exist (live previews have no PNG to give).
+private struct MapDragSource: ViewModifier {
+    let map: DerivedMap
+    let label: String
+
+    func body(content: Content) -> some View {
+        if map.png.isEmpty {
+            content
+        } else {
+            content
+                .draggable(MapPNGTransfer(png: map.png, filename: CaptureStore.exportSlug(label) + "_" + map.kind.exportedName + ".png")) {
+                    Image(decorative: map.previewImage, scale: 1)
+                        .resizable()
+                        .frame(width: 120, height: 120)
+                        .clipShape(.rect(cornerRadius: 14))
+                }
+                .accessibilityHint("Drag to another app to copy the \(map.kind.title) PNG")
+        }
+    }
+}
+
 struct Card<Content: View>: View {
     let title: String
     let symbol: String
@@ -458,9 +498,9 @@ struct Card<Content: View>: View {
                 .accessibilityAddTraits(.isHeader)
             content
         }
-        .padding(16)
+        .padding(GlassCardStyle.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 22))
+        .glassEffect(.regular, in: .rect(cornerRadius: GlassCardStyle.cornerRadius))
     }
 }
 
@@ -566,6 +606,7 @@ struct MapChips: View {
 struct MaterialPreviewPane: View {
     let store: CaptureStore
     @State private var arPreviewURL: URL?
+    @State private var litSettings = LitPreviewSettings()
 
     /// Writes a USDZ of the derived maps and opens it in Quick Look, which offers AR placement on device.
     private func openInAR() async {
@@ -605,6 +646,12 @@ struct MaterialPreviewPane: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("preview-mode")
+
+            if mode == .lit, let material = store.displayed {
+                LitPreviewControls(settings: $litSettings, hasHeight: material.maps[.height] != nil,
+                                   measuredSpan: material.relief != nil)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(.top, 8)
         .quickLookPreview($arPreviewURL)
@@ -619,6 +666,7 @@ struct MaterialPreviewPane: View {
                 .interpolation(.medium)
                 .aspectRatio(1, contentMode: .fit)
                 .accessibilityLabel("\(map.kind.title) map preview")
+                .modifier(MapDragSource(map: map, label: store.trimmedLabel))
         case .tiled:
             GeometryReader { geometry in
                 let tile = geometry.size.width / 3
@@ -629,9 +677,8 @@ struct MaterialPreviewPane: View {
         case .relit:
             RelitView(material: material)
         case .lit:
-            MaterialSphereView(material: material,
+            MaterialSphereView(material: material, settings: $litSettings,
                                viewInAR: store.hasExportableMaps ? { Task { await openInAR() } } : nil)
-                .accessibilityLabel("Lit sphere preview. Drag to orbit.")
         case .compare:
             CompareView(before: material.correctedSource, after: map.previewImage, afterTitle: map.kind.shortTitle)
         }
