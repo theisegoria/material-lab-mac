@@ -827,6 +827,188 @@ int main() {
         assert(learnedLow.rms_slope < .4f * learnedFull.rms_slope);
         assert(measuredLow.rms_slope > 1.3f * learnedLow.rms_slope);
     }
+    // Material operations (MaterialOps.cpp): layering, variants, larger tiles, measured guides.
+    {
+        const unsigned m = 64;
+        std::vector<uint8_t> stoneSource(m * m * 4, 255), mossSource(m * m * 4, 255);
+        for (unsigned y = 0; y < m; ++y)
+            for (unsigned x = 0; x < m; ++x) {
+                const size_t i = (static_cast<size_t>(y) * m + x) * 4;
+                const uint8_t a = static_cast<uint8_t>(90 + 60 * std::sin(x * .7) * std::cos(y * .45) + ((x * 13 + y * 7) % 23));
+                stoneSource[i] = a; stoneSource[i + 1] = static_cast<uint8_t>(a * .95); stoneSource[i + 2] = static_cast<uint8_t>(a * .9);
+                const uint8_t g = static_cast<uint8_t>(70 + 40 * std::cos(x * .31 + y * .2) + ((x * 5 + y * 11) % 17));
+                mossSource[i] = static_cast<uint8_t>(g * .5); mossSource[i + 1] = g; mossSource[i + 2] = static_cast<uint8_t>(g * .4);
+            }
+        auto stoneRecipe = PBRLabDefaultRecipe(PBRLabPresetStone);
+        auto mossRecipe = PBRLabDefaultRecipe(PBRLabPresetOrganic);
+        mossRecipe.assigned_metalness_enabled = 1;
+        mossRecipe.assigned_metalness = .25f;
+        auto* stone = derive(stoneSource, m, stoneRecipe);
+        auto* moss = derive(mossSource, m, mossRecipe);
+        struct Owned { std::vector<uint8_t> roughness, metal; PBRLabMaterialMaps maps{}; };
+        auto extract = [&](const PBRLabResult* r, Owned& o) {
+            auto a = map(r, PBRLabMapAlbedo), hm = map(r, PBRLabMapHeight), rm = map(r, PBRLabMapRoughness), nm = map(r, PBRLabMapNormal);
+            o.roughness.resize(m * m);
+            for (size_t i = 0; i < m * m; ++i) o.roughness[i] = rm.pixels[i * 4];
+            PBRLabMap orm{};
+            if (PBRLabGetMap(r, PBRLabMapORM, &orm)) { o.metal.resize(m * m); for (size_t i = 0; i < m * m; ++i) o.metal[i] = orm.pixels[i * 4 + 2]; }
+            o.maps = {a.pixels, a.row_bytes, hm.pixels, hm.row_bytes, o.roughness.data(), m, o.metal.empty() ? nullptr : o.metal.data(),
+                      o.metal.empty() ? 0 : m, nm.pixels, nm.row_bytes, m, 0, PBRLabGetDerivationInfo(r).height_span_tile_widths};
+        };
+        Owned so, mo;
+        extract(stone, so);
+        extract(moss, mo);
+        assert(so.maps.height_span_tile_widths > 0 && mo.maps.height_span_tile_widths > 0);
+        char error[256]{};
+        // A zero variant re-derives the same material: same albedo, same height, same recorded depth.
+        auto zero = PBRLabDefaultVariantParams(7);
+        zero.hue_degrees = zero.saturation = zero.value = zero.roughness = zero.relief = 0;
+        zero.offset = 0;
+        PBRLabRecipe used{};
+        auto* same = PBRLabMakeVariant(&so.maps, &zero, &stoneRecipe, nullptr, &used, error, sizeof(error));
+        if (!same) std::cerr << error << '\n';
+        assert(same);
+        {
+            auto a0 = map(stone, PBRLabMapAlbedo), a1 = map(same, PBRLabMapAlbedo);
+            assert(std::memcmp(a0.pixels, a1.pixels, a0.byte_count) == 0);
+            auto h0 = map(stone, PBRLabMapHeight), h1 = map(same, PBRLabMapHeight);
+            for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) assert(std::abs(int(h(h0, x, y)) - int(h(h1, x, y))) <= 1);
+            assert(std::abs(PBRLabGetDerivationInfo(same).height_span_tile_widths - so.maps.height_span_tile_widths) < 1e-4f * so.maps.height_span_tile_widths + 1e-7f);
+            assert(used.guide_normal_weight == 0 && used.normal_strength > 0);
+            // Re-derived normals stay close to the originals (same height, same convention).
+            auto n0 = map(stone, PBRLabMapNormal), n1 = map(same, PBRLabMapNormal);
+            double diff = 0;
+            for (size_t i = 0; i < m * m * 4; ++i) diff += std::abs(int(n0.pixels[i]) - int(n1.pixels[i]));
+            assert(diff / (m * m * 4) < 2.0);
+        }
+        // Seeded variants are deterministic and differ between seeds; an offset variant is the rolled material.
+        auto vp = PBRLabDefaultVariantParams(11);
+        PBRLabVariantInfo vi{}, vj{};
+        auto* v1 = PBRLabMakeVariant(&so.maps, &vp, &stoneRecipe, &vi, nullptr, error, sizeof(error));
+        auto* v2 = PBRLabMakeVariant(&so.maps, &vp, &stoneRecipe, &vj, nullptr, error, sizeof(error));
+        vp.seed = 12;
+        auto* v3 = PBRLabMakeVariant(&so.maps, &vp, &stoneRecipe, nullptr, nullptr, error, sizeof(error));
+        assert(v1 && v2 && v3);
+        assert(vi.offset_x == vj.offset_x && vi.hue_degrees == vj.hue_degrees && std::abs(vi.hue_degrees) <= 6 && vi.relief_scale >= .85f && vi.relief_scale <= 1.15f);
+        assert(std::memcmp(map(v1, PBRLabMapAlbedo).pixels, map(v2, PBRLabMapAlbedo).pixels, m * m * 4) == 0);
+        assert(std::memcmp(map(v1, PBRLabMapNormal).pixels, map(v2, PBRLabMapNormal).pixels, m * m * 4) == 0);
+        assert(std::memcmp(map(v1, PBRLabMapAlbedo).pixels, map(v3, PBRLabMapAlbedo).pixels, m * m * 4) != 0);
+        {
+            auto rolled = zero;
+            rolled.offset = 1;
+            PBRLabVariantInfo ri{};
+            auto* r = PBRLabMakeVariant(&so.maps, &rolled, &stoneRecipe, &ri, nullptr, error, sizeof(error));
+            assert(r && (ri.offset_x || ri.offset_y));
+            auto a0 = map(stone, PBRLabMapAlbedo), a1 = map(r, PBRLabMapAlbedo);
+            for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x)
+                for (unsigned c = 0; c < 4; ++c) assert(v(a1, x, y, c) == v(a0, (x + ri.offset_x) % m, (y + ri.offset_y) % m, c));
+            PBRLabFreeResult(r);
+        }
+        // Layers: a mask that is everywhere 1 gives the top's albedo and roughness; inverted, the base's.
+        auto everywhere = PBRLabDefaultLayerParams(PBRLabLayerMaskHeight);
+        everywhere.threshold = 0; everywhere.softness = 0;
+        auto* allTop = PBRLabLayerMaterials(&so.maps, &mo.maps, &everywhere, &stoneRecipe, &used, error, sizeof(error));
+        if (!allTop) std::cerr << error << '\n';
+        assert(allTop);
+        assert(std::memcmp(map(allTop, PBRLabMapAlbedo).pixels, map(moss, PBRLabMapAlbedo).pixels, m * m * 4) == 0);
+        assert(map(allTop, PBRLabMapRoughness).pixels[0] == map(moss, PBRLabMapRoughness).pixels[0]);
+        assert(used.assigned_metalness_enabled == 1 && map(allTop, PBRLabMapORM).pixels[2] == mo.metal[0]);
+        everywhere.invert = 1;
+        auto* allBase = PBRLabLayerMaterials(&so.maps, &mo.maps, &everywhere, &stoneRecipe, nullptr, error, sizeof(error));
+        assert(allBase && std::memcmp(map(allBase, PBRLabMapAlbedo).pixels, map(stone, PBRLabMapAlbedo).pixels, m * m * 4) == 0);
+        assert(map(allBase, PBRLabMapORM).pixels[2] == 0);
+        // Height mask: the weight rises with the base height; noise is seeded, tileable and deterministic.
+        std::vector<uint8_t> w(m * m), w2(m * m);
+        auto heightMask = PBRLabDefaultLayerParams(PBRLabLayerMaskHeight);
+        assert(PBRLabLayerWeights(&so.maps, nullptr, &heightMask, w.data(), m, error, sizeof(error)));
+        {
+            auto hm = map(stone, PBRLabMapHeight);
+            unsigned lowX = 0, lowY = 0, highX = 0, highY = 0;
+            for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+                if (h(hm, x, y) < h(hm, lowX, lowY)) { lowX = x; lowY = y; }
+                if (h(hm, x, y) > h(hm, highX, highY)) { highX = x; highY = y; }
+            }
+            assert(w[lowY * m + lowX] == 0 && w[highY * m + highX] == 255);
+        }
+        auto noise = PBRLabDefaultLayerParams(PBRLabLayerMaskNoise);
+        noise.seed = 5;
+        assert(PBRLabLayerWeights(&so.maps, nullptr, &noise, w.data(), m, error, sizeof(error)));
+        assert(PBRLabLayerWeights(&so.maps, nullptr, &noise, w2.data(), m, error, sizeof(error)));
+        assert(w == w2);
+        double mean = 0, edge = 0, inner = 0;
+        for (unsigned i = 0; i < m * m; ++i) mean += w[i] / 255.0 / (m * m);
+        assert(mean > .15 && mean < .85);
+        for (unsigned y = 0; y < m; ++y) { edge += std::abs(w[y * m] - w[y * m + m - 1]); inner += std::abs(w[y * m + m / 2] - w[y * m + m / 2 - 1]); }
+        assert(edge <= inner * 1.5 + 64);
+        noise.seed = 6;
+        assert(PBRLabLayerWeights(&so.maps, nullptr, &noise, w2.data(), m, error, sizeof(error)) && w != w2);
+        // A painted mask at the default threshold and softness is used as painted.
+        std::vector<uint8_t> painted(m * m);
+        for (unsigned i = 0; i < m * m; ++i) painted[i] = static_cast<uint8_t>((i * 37) % 256);
+        auto image = PBRLabDefaultLayerParams(PBRLabLayerMaskImage);
+        image.mask_r8 = painted.data(); image.mask_row_bytes = m; image.mask_size = m;
+        assert(PBRLabLayerWeights(&so.maps, nullptr, &image, w.data(), m, error, sizeof(error)) && w == painted);
+        // Height-aware blend: inside a uniform half mask, the higher layer wins.
+        auto half = PBRLabDefaultLayerParams(PBRLabLayerMaskImage);
+        std::vector<uint8_t> grey(m * m, 128);
+        half.mask_r8 = grey.data(); half.mask_row_bytes = m; half.mask_size = m; half.height_blend = .8f;
+        assert(PBRLabLayerWeights(&so.maps, &mo.maps, &half, w.data(), m, error, sizeof(error)));
+        unsigned extremes = 0;
+        for (auto value : w) extremes += value < 40 || value > 215;
+        assert(extremes > m * m / 4);
+        // Slope mask and the reoriented-normal blend run; without normals the blend is refused.
+        auto slope = PBRLabDefaultLayerParams(PBRLabLayerMaskSlope);
+        slope.normal_blend = 1;
+        auto* sloped = PBRLabLayerMaterials(&so.maps, &mo.maps, &slope, &stoneRecipe, nullptr, error, sizeof(error));
+        if (!sloped) std::cerr << error << '\n';
+        assert(sloped);
+        auto noNormals = mo.maps;
+        noNormals.normal_rgba8 = nullptr;
+        assert(!PBRLabLayerMaterials(&so.maps, &noNormals, &slope, &stoneRecipe, nullptr, error, sizeof(error)));
+        // Larger tiles: twice the size, same histogram, tiles at its own size, and the quadrants are not copies.
+        auto lt = PBRLabDefaultLargeTileParams(2, 3);
+        auto* big = PBRLabMakeLargeTile(&so.maps, &lt, &stoneRecipe, &used, error, sizeof(error));
+        if (!big) std::cerr << error << '\n';
+        assert(big);
+        {
+            auto a0 = map(stone, PBRLabMapAlbedo), a1 = map(big, PBRLabMapAlbedo);
+            assert(a1.width == 2 * m);
+            double m0 = 0, m1 = 0;
+            for (size_t i = 0; i < m * m; ++i) m0 += a0.pixels[i * 4] / double(m * m);
+            for (size_t i = 0; i < 4 * m * m; ++i) m1 += a1.pixels[i * 4] / double(4 * m * m);
+            assert(std::abs(m0 - m1) < 3);
+            unsigned sameQuadrant = 0;
+            for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) sameQuadrant += v(a1, x, y) == v(a1, x + m, y);
+            assert(sameQuadrant < m * m / 2);
+            assert(PBRLabGetDerivationInfo(big).height_wrap_seam_ratio < 3);
+            assert(std::abs(used.ao_radius_pixels - stoneRecipe.ao_radius_pixels / 2) < 1e-6f);
+            const float bigSpan = PBRLabGetDerivationInfo(big).height_span_tile_widths;
+            assert(bigSpan > 0 && bigSpan < so.maps.height_span_tile_widths);
+        }
+        lt.tiles = 3;
+        assert(!PBRLabMakeLargeTile(&so.maps, &lt, &stoneRecipe, nullptr, error, sizeof(error)));
+        // Measured depth: a tilted plane is removed (flat normals); a ramp along y faces up (+Y, green above 128).
+        std::vector<uint8_t> depth(m * m * 2), guide(m * m * 4);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            const uint16_t d = static_cast<uint16_t>(x * 500 + y * 300);
+            depth[(y * m + x) * 2] = d & 0xff; depth[(y * m + x) * 2 + 1] = d >> 8;
+        }
+        assert(PBRLabMeasuredDepthToGuideNormals(depth.data(), m * 2, m, .05f, guide.data(), m * 4, error, sizeof(error)));
+        for (size_t i = 0; i < m * m; ++i) assert(std::abs(guide[i * 4] - 128) <= 1 && std::abs(guide[i * 4 + 1] - 128) <= 1 && guide[i * 4 + 2] >= 254);
+        for (unsigned y = 0; y < m; ++y) for (unsigned x = 0; x < m; ++x) {
+            const uint16_t d = static_cast<uint16_t>(std::min(65535.0, 20000 + 18000 * std::sin(y * 3.14159 / (m - 1))));
+            depth[(y * m + x) * 2] = d & 0xff; depth[(y * m + x) * 2 + 1] = d >> 8;
+        }
+        assert(PBRLabMeasuredDepthToGuideNormals(depth.data(), m * 2, m, 1.0f, guide.data(), m * 4, error, sizeof(error)));
+        assert(guide[(4 * m + m / 2) * 4 + 1] > 140 && guide[((m - 5) * m + m / 2) * 4 + 1] < 116);
+        assert(!PBRLabMeasuredDepthToGuideNormals(depth.data(), m * 2, m, 0, guide.data(), m * 4, error, sizeof(error)));
+        // Split bands: the measured form plus learned detail; flat learned keeps the measured guide.
+        std::vector<uint8_t> flatGuide(m * m * 4), split(m * m * 4);
+        for (size_t i = 0; i < m * m; ++i) { flatGuide[i * 4] = flatGuide[i * 4 + 1] = 128; flatGuide[i * 4 + 2] = 255; flatGuide[i * 4 + 3] = 255; }
+        assert(PBRLabSplitGuideBands(guide.data(), flatGuide.data(), m * 4, m, 0, split.data(), m * 4));
+        for (size_t i = 0; i < m * m * 4; ++i) assert(std::abs(int(split[i]) - int(guide[i])) <= 2);
+        for (auto* r : {stone, moss, same, v1, v2, v3, allTop, allBase, sloped, big}) PBRLabFreeResult(r);
+    }
     PBRLabInput in{source.data(), n * 4, nullptr, 0, nullptr, 0, n, n, nullptr, 0};
     char error[64]{};
     assert(!PBRLabDerive(&in, &recipe, stop, nullptr, error, sizeof(error)));

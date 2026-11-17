@@ -31,6 +31,8 @@ if [[ -e "$model" ]]; then
 else
   echo "warning: no learned model at $model; --learned will need the Material Lab app or MATERIAL_LAB_MODEL" >&2
 fi
+# The pinned Real-ESRGAN adapter for --resolution (the vendor tree and its weights are not shipped).
+cp "$repo_root/scripts/pinned_realesrgan.py" "$stage/share/material-lab/"
 cp "$packaging/material-lab.1" "$stage/share/man/man1/"
 cp "$packaging/completions/_material-lab" "$stage/share/zsh/site-functions/"
 cp "$packaging/completions/material-lab.bash" "$stage/share/bash-completion/completions/material-lab"

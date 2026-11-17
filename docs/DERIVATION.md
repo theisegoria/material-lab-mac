@@ -106,6 +106,45 @@ The material manifest holds map and source hashes, the algorithm version, every 
 
 The source alone does not determine intrinsic roughness, metalness, specular F0, emission, opacity, thickness, physical depth, or gameplay properties. Normal-variance filtering for rendering is an engine concern and is kept separate from authored roughness.
 
+## Material operations (CLI 1.4.0)
+
+Layering, variants and larger tiles start from derived materials, not photos (`core/src/MaterialOps.cpp`; C API under "Material operations" in `PBRMaterialLab.h`). Each builds a new albedo, relief, roughness and metalness, then re-derives every geometry-dependent map with `PBRLabDerive`, passing the relief as an authored height and the roughness and metalness as authored maps. Normals, AO, cavity, convexity, slope, edge, bent normal and ORM therefore agree with the new relief, and the derivation algorithm (1.5.0) is unchanged. Reliefs are handled in physical units: a bundle's height times its `relief.height_span_tile_widths`. The re-derivation sets `normal_strength` so the new height spans the new depth (8/1024 tile widths per unit). A relief deeper than 1/8 of the tile is refused.
+
+### Layers
+
+`top` over `base` through a mask, at the base's size (a top of another size is resampled, bilinear and wrapped):
+
+- `height`: top where the base is high, `smoothstep(threshold ± softness)` of the base's normalised height. `invert` puts it in the hollows instead (dust, water, moss in mortar).
+- `slope`: top where the base is steep. Steepness is the slope angle / 90°, from the base relief (wrapped central differences). Inverted, the top sits on flat ground (snow, sand).
+- `noise`: seeded value-noise fBm, five octaves, with an integer number of cells per tile (`scale`) so it tiles. `contrast` is applied about 0.5, then the smoothstep.
+- `image`: a painted mask, grey values as data (255 = top). It is resampled to the base size and mapped by a linear ramp over `threshold ± softness`, so the defaults (0.5 ± 0.5) use it as painted.
+
+`height_blend` (0..0.95) adds the height-aware term inside the transition: with mask m and normalised heights hT, hB, the top weight is `clamp(0.5 + (m + d·4m(1−m)·(hT − hB) − 0.5) / (1 − d))`. The higher layer wins where the mask is undecided and the edge sharpens, but the top is always fully present where m = 1 and absent where m = 0. With d = 0 the weight is the mask.
+
+The weight w blends:
+
+- albedo in linear light, and alpha;
+- roughness and metalness linearly (a material without ORM has metalness 0);
+- the reliefs, each measured from its own lowest point.
+
+Normals are re-derived from the blended relief by default. `normal_blend = reoriented` instead blends each pixel's normal from the base normal to the reoriented-normal blend (Barré-Brisebois and Hill) of the top's normal map onto it, keeping the top's own fine normal detail; AO and the diagnostics still come from the blended relief.
+
+### Variants
+
+A seed draws, in a fixed order with splitmix64, uniform shifts within the given maxima: hue rotation about the grey axis in linear light (default ±6°), chroma (±8 %) and brightness (±6 %) scales, a roughness offset (±0.05) and a relief-depth scale (±15 %). A random tile offset (tileable materials) and, if asked, a quarter turn and mirror are applied identically to every map before the re-derivation, so the normals follow the rotation. The same seed gives the same variant on every machine. `--variant-strength` scales all the maxima.
+
+### Larger tiles
+
+`--large-tile 2|4` synthesises a 2×2 or 4×4 area that tiles at its own size without the source's period, by histogram-preserving tiling and blending (Heitz and Neyret, "High-Performance By-Example Noise using a Histogram-Preserving Blending Operator", 2018):
+
+- A periodic lattice of squares, `1/patch` per source tile (default 2), each split into two triangles. Every vertex draws a random integer offset into the (tileable) source.
+- Each output pixel reads the source at its three vertices' offsets, with barycentric weights raised to `sharpness` (default 4) and normalised.
+- Albedo R, G, B, roughness, height (16-bit) and metalness are each Gaussianised through their own histogram. The three samples are blended and divided by the weights' L2 norm, so the variance is kept, then mapped back through the inverse histogram: the output keeps each map's histogram. Alpha is blended linearly.
+- Every map uses the same offsets and weights, so albedo, relief and roughness stay registered.
+- The relief keeps its physical depth: the span in tile widths of the larger tile is divided by the tile count. `ao_radius_pixels` is divided and `tile_metres` multiplied by it, so AO keeps its physical radius.
+
+Like any patch-based method, it suits stochastic surfaces (stone, concrete, plaster, ground, fabric weave) best. Strongly structured ones (brick courses, tiles, planks) are scrambled at patch edges; use `--large-tile-patch 1` (whole-tile patches) or variants for those. Each channel is Gaussianised separately, without the original's PCA decorrelation, so rare colour combinations can shift slightly.
+
 ## Learned geometry
 
 Single-image SVBRDF estimators lead the state of the art in *quality*: ControlMat, MaterialPicker, DualMat, HiMat. None has permissively licensed weights, and they generate plausible maps rather than deterministic estimates. Material Lab therefore uses **MoGe-2 ViT-S normals** (MIT) as an optional guide input rather than a replacement for the analytic pipeline:
@@ -132,6 +171,18 @@ On iPhone, Material Capture streams unfiltered LiDAR depth while the user frames
 - Confidence falls with how few frames saw the pixel and how far the readings scatter beyond the expected noise (4 mm + 0.5 % of range). Pixels below 0.3 confidence become holes.
 
 The averaged depth is stored beside the capture (`depth.mld`), because re-embedding edited depth in the photo would drop the camera calibration. With learned geometry on as well, slopes below the depth's resolution come from MoGe-2 and the rest from LiDAR. The crop's real width and height come from straight-line fits along the grid rows and columns of the back-projected crop. That width is the tile size whenever the recipe's own Tile size is 0. Bundles record all of this in a top-level `depth` section, including `height_span_mm`.
+
+### Measured guides from other scanners (`--guide-measured`, CLI 1.4.0)
+
+The CLI takes a scanner's output as measured form, the way Material Capture uses LiDAR, with `PBRLabInput.guide_normals_measured` set:
+
+- **A tangent normal map** (colour image, +Y; `--guide-measured-dx` for green-down) is used as the guide.
+- **A depth or height map** (grey, 8- or 16-bit, white = near) is converted by `PBRLabMeasuredDepthToGuideNormals`:
+  - `--measured-depth-mm` gives the depth that black..white spans, and `--tile-metres` the tile width.
+  - A least-squares plane is removed, then slopes are taken by central differences, clamped at the edges (a scan does not wrap).
+- **Both are resampled to the derivation size.** Crop the scan like the photo.
+- **With `--learned`,** the guides are combined like the iPhone's (`PBRLabSplitGuideBands`, a port of `DepthStack.splitBands`): the measured slopes, plus the learned slopes above a box-blur cutoff of size/64 px. `guide_normals.combination` is then `measured_form_learned_detail_v1`, and both inputs' hashes are kept.
+- **The manifest records a top-level `depth` section** with `source: "external_scan"`: the scan's `file`, `sha256`, `kind` (`depth` or `normal`), `size_px`, `depth_range_mm` and `plane_removed` (depth), `measured_form`, `learned_detail`, `measured_form_rms_slope`, and `height_span_mm` when the tile size is known. The validator requires guide provenance with it.
 
 ## Scope of validation
 

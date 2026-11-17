@@ -72,7 +72,9 @@ def main():
 
         tools = {tool["name"]: tool for tool in client.request("tools/list")["result"]["tools"]}
         assert set(tools) == {"list_presets", "list_formats", "derive_material", "export_material", "inspect_material",
-                              "validate_material", "diff_materials", "preview_material"}, sorted(tools)
+                              "validate_material", "diff_materials", "preview_material", "layer_materials", "make_variant",
+                              "large_tile"}, sorted(tools)
+        assert tools["derive_material"]["inputSchema"]["properties"]["resolution"]["enum"] == [4096, 8192]
         for tool in tools.values():
             assert tool["description"] and tool["inputSchema"]["type"] == "object"
 
@@ -113,6 +115,37 @@ def main():
         client.ok("export_material", {"bundle": str(bundle), "format": "unreal", "output": str(root / "ue")})
         assert (root / "ue").is_dir() and any((root / "ue").iterdir())
 
+        # Composing tools (CLI 1.4.0): layers, variants and larger tiles, under the same rules.
+        top = root / "out" / "top.pbrmaterial"
+        client.ok("derive_material", {"input": str(photo), "output": str(top), "preset": "organic", "metalness": 0.4})
+        layered = json.loads(client.ok("layer_materials", {
+            "base": str(bundle), "top": str(top), "mask": "noise", "seed": 3, "scale": 2, "height_blend": 0.3,
+            "output": str(root / "out" / "layered"), "label": "Layered"})[0]["text"])
+        assert layered["bundle"] == str(root / "out" / "layered.pbrmaterial") and layered["material"], layered
+        layered_manifest = json.loads((root / "out" / "layered.pbrmaterial" / "manifest.json").read_text())
+        assert layered_manifest["layers"]["mask"]["seed"] == 3 and layered_manifest["semantic_label"] == "Layered"
+        paint = root / "paint.png"
+        sample_png(paint)
+        client.ok("layer_materials", {"base": str(bundle), "top": str(top), "mask": str(paint), "invert": True,
+                                      "output": str(root / "out" / "painted")})
+        variant = json.loads(client.ok("make_variant", {"bundle": str(bundle), "seed": 9, "strength": 2, "rotate": True,
+                                                        "output": str(root / "out" / "v9")})[0]["text"])
+        assert json.loads((root / "out" / "v9.pbrmaterial" / "manifest.json").read_text())["variant"]["seed"] == 9, variant
+        client.ok("large_tile", {"bundle": str(bundle), "tiles": 2, "seed": 4, "output": str(root / "out" / "big")})
+        big = json.loads((root / "out" / "big.pbrmaterial" / "manifest.json").read_text())
+        assert big["maps"]["albedo"]["width"] == 32 and big["large_tile"]["seed"] == 4
+        assert "valid" in client.ok("validate_material", {"path": str(root / "out" / "big.pbrmaterial")})[0]["text"].lower()
+        client.refused("make_variant", {"bundle": str(bundle), "seed": 9, "output": str(root / "out" / "v9")}, "already exists")
+        client.refused("make_variant", {"bundle": str(bundle), "seed": 1.5, "output": str(root / "out" / "v1")}, "whole number")
+        client.refused("large_tile", {"bundle": str(bundle), "tiles": 3, "output": str(root / "out" / "b3")}, "2 or 4")
+        client.refused("large_tile", {"bundle": str(photo), "tiles": 2, "output": str(root / "out" / "b2")}, ".pbrmaterial folder")
+        client.refused("layer_materials", {"base": str(bundle), "top": str(top), "mask": "cloudy", "output": str(root / "out" / "l2")},
+                       "absolute path")
+        client.refused("layer_materials", {"base": str(bundle), "top": str(top), "mask": "slope", "shell": "rm",
+                                           "output": str(root / "out" / "l2")}, "unknown argument")
+        client.refused("derive_material", {"input": str(photo), "output": str(root / "out" / "r"), "resolution": 2048}, "4096 or 8192")
+        assert not (root / "out" / "l2.pbrmaterial").exists() and not (root / "out" / "r.pbrmaterial").exists()
+
         # Nothing is overwritten, and bad arguments are tool errors (the server survives every one).
         client.refused("derive_material", {"input": str(photo), "output": str(bundle)}, "already exists")
         client.refused("export_material", {"bundle": str(bundle), "format": "unreal", "output": str(root / "ue")}, "already exists")
@@ -141,6 +174,8 @@ def main():
         client.refused("derive_material", {"input": str(inside / "a.png"), "output": str(root / "x")}, "--root")
         client.refused("derive_material", {"input": str(inside / "a.png"), "output": str(inside / ".." / "x")}, "--root")
         client.refused("inspect_material", {"bundle": str(bundle)}, "--root")
+        client.refused("make_variant", {"bundle": str(bundle), "seed": 1, "output": str(inside / "v")}, "--root")
+        client.refused("layer_materials", {"base": str(bundle), "top": str(bundle), "mask": "height", "output": str(inside / "l")}, "--root")
         client.ok("derive_material", {"input": str(inside / "a.png"), "output": str(inside / "x")})
         assert (inside / "x.pbrmaterial" / "manifest.json").is_file()
         client.close()

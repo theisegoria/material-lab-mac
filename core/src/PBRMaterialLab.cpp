@@ -243,8 +243,8 @@ double rmsSlope(const std::vector<float> &h, int width, int height, bool tiled) 
 }
 bool valid(const PBRLabInput *in, const PBRLabRecipe *r, std::string &why) {
     if (!in || !r || !in->rgba8) { why = "input, recipe, and RGBA buffer are required"; return false; }
-    if (in->width < 2 || in->width > 4096 || in->height != in->width) {
-        why = "input must be square, 2..4096 pixels"; return false;
+    if (in->width < 2 || in->width > 8192 || in->height != in->width) {
+        why = "input must be square, 2..8192 pixels"; return false;
     }
     if (in->rgba_row_bytes < static_cast<size_t>(in->width) * 4 ||
         (in->relief_mask_r8 && in->relief_mask_row_bytes < in->width) ||
@@ -1734,7 +1734,7 @@ extern "C" int PBRLabGuideTilerAddPrediction(PBRLabGuideTiler *t, uint32_t pass,
     return 1;
 }
 extern "C" int PBRLabGuideTilerFinish(PBRLabGuideTiler *t, uint32_t out_size, uint8_t *rgba8, size_t row_bytes) {
-    if (!t || !rgba8 || t->nextPass != 2 * t->tiles() || out_size < 2 || out_size > 4096 ||
+    if (!t || !rgba8 || t->nextPass != 2 * t->tiles() || out_size < 2 || out_size > 8192 ||
         row_bytes < static_cast<size_t>(out_size) * 4) return 0;
     try {
         const int work = t->work, pad = t->pad, padded = t->padded, n = static_cast<int>(out_size);

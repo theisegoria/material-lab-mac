@@ -208,6 +208,115 @@ uint32_t PBRLabMaterialPresetCount(void);
 const PBRLabMaterialPreset *PBRLabMaterialPresetAt(uint32_t index);        // NULL past the end.
 const PBRLabMaterialPreset *PBRLabFindMaterialPreset(const char *identifier); // NULL when unknown.
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Material operations (added with CLI 1.4.0; core/src/MaterialOps.cpp). They start from derived materials (the decoded
+// maps of a bundle), never from a photo, and re-derive the geometry-dependent maps (normal, AO, cavity, convexity,
+// slope, edge, bent normal, ORM) with PBRLabDerive from the new height, so every map agrees. The derivation algorithm
+// and PBRLabVersion are unchanged. Results are ordinary PBRLabResults (PBRLabGetMap, PBRLabGetDerivationInfo,
+// PBRLabFreeResult); their size is at most 8192. Each writes the recipe it actually derived with to `out_recipe` (may be
+// NULL): `shading` with normal_strength set from the new relief depth, guides and albedo conditioning off, and (large
+// tiles) the AO radius and tile size rescaled. Bundles record that recipe.
+
+// One derived material: the stored maps of a .pbrmaterial bundle, each size x size.
+typedef struct PBRLabMaterialMaps {
+    const uint8_t *albedo_rgba8;     // albedo.png: straight sRGB RGBA8 (alpha is carried through).
+    size_t albedo_row_bytes;
+    const uint8_t *height_r16;       // height.png: R16 UNorm, little-endian.
+    size_t height_row_bytes;
+    const uint8_t *roughness_r8;     // roughness.png red channel, linear R8.
+    size_t roughness_row_bytes;
+    const uint8_t *metalness_r8;     // Optional: orm.png blue channel, linear R8. NULL = non-metal (and no ORM output
+    size_t metalness_row_bytes;      // unless the shading recipe assigns metalness).
+    const uint8_t *normal_rgba8;     // Optional: normal.png, as stored; only the reoriented-normal layer blend reads it.
+    size_t normal_row_bytes;
+    uint32_t size;                   // 2..8192.
+    uint32_t normal_y_down;          // Convention of normal_rgba8 (the bundle's recipe.normal_y_down).
+    float height_span_tile_widths;   // relief.height_span_tile_widths of the bundle: the depth height 0..1 spans.
+} PBRLabMaterialMaps;
+
+// Layered materials: `top` over `base` through a mask. Height and slope masks read the base's relief.
+typedef enum PBRLabLayerMaskKind {
+    PBRLabLayerMaskHeight = 0,       // Top where the base is high (invert: where it is low); threshold on normalised height.
+    PBRLabLayerMaskSlope = 1,        // Top where the base is steep (invert: flat); threshold on slope angle / 90 degrees.
+    PBRLabLayerMaskNoise = 2,        // Seeded tileable fBm; threshold on the noise level after contrast.
+    PBRLabLayerMaskImage = 3         // A painted mask (255 = top), resampled to the material size; linear ramp.
+} PBRLabLayerMaskKind;
+typedef struct PBRLabLayerParams {
+    PBRLabLayerMaskKind mask;
+    float threshold;                 // [0,1].
+    float softness;                  // [0,0.5]: half-width of the transition around the threshold; 0 = hard edge.
+    uint32_t invert;                 // Nonzero swaps where the top appears.
+    uint32_t seed;                   // Noise: lattice seed.
+    float noise_scale;               // Noise: base cells per tile, [1,64] (rounded to an integer so the mask tiles).
+    float noise_contrast;            // Noise: contrast about 0.5, [0.1,8].
+    const uint8_t *mask_r8;          // Image: the painted mask, mask_size x mask_size linear R8.
+    size_t mask_row_bytes;
+    uint32_t mask_size;
+    float height_blend;              // [0,1): height-aware transition. 0 = the mask alone; higher lets the higher layer
+                                     // win inside the transition and sharpens it (top fully present where mask = 1).
+    uint32_t normal_blend;           // 0 = normals re-derived from the blended height; 1 = reoriented-normal blend of the
+                                     // two normal maps (needs normal_rgba8 in both; AO etc. still from the blended height).
+} PBRLabLayerParams;
+PBRLabLayerParams PBRLabDefaultLayerParams(PBRLabLayerMaskKind mask);
+// Writes the final per-pixel weight of the top layer (255 = top only), base->size square. With top NULL the weight
+// is the mask alone (no height-aware term). Returns 0 with a message on error.
+int PBRLabLayerWeights(const PBRLabMaterialMaps *base, const PBRLabMaterialMaps *top, const PBRLabLayerParams *params,
+                       uint8_t *out_r8, size_t out_row_bytes, char *error, size_t error_capacity);
+// Blends albedo (linear light), alpha, roughness and metalness by that weight, and the reliefs (in tile widths, each
+// from its own lowest point) by it; then re-derives with `shading` (normally the base's recipe: AO, bent normal,
+// normal convention, tile wrap). A top of another size is resampled (bilinear, wrapped) to the base size.
+PBRLabResult *PBRLabLayerMaterials(const PBRLabMaterialMaps *base, const PBRLabMaterialMaps *top,
+                                   const PBRLabLayerParams *params, const PBRLabRecipe *shading,
+                                   PBRLabRecipe *out_recipe, char *error, size_t error_capacity);
+
+// Seeded variants: small deterministic shifts drawn uniformly in [-max, max] from the seed.
+typedef struct PBRLabVariantParams {
+    uint32_t seed;
+    float hue_degrees;               // Maximum hue rotation about the grey axis (linear light), [0,180].
+    float saturation;                // Maximum relative chroma change, [0,0.5].
+    float value;                     // Maximum relative brightness change, [0,0.5].
+    float roughness;                 // Maximum roughness offset, [0,0.5].
+    float relief;                    // Maximum relative relief-depth change, [0,0.9].
+    uint32_t offset;                 // Nonzero: a random tile offset (only when shading.tile_wrap is set).
+    uint32_t rotation;               // Nonzero: a random quarter turn and mirror (normals are re-derived, so they follow).
+} PBRLabVariantParams;
+typedef struct PBRLabVariantInfo {   // What a seed drew.
+    float hue_degrees, saturation_scale, value_scale, roughness_offset, relief_scale;
+    uint32_t offset_x, offset_y, quarter_turns, mirrored;
+} PBRLabVariantInfo;
+PBRLabVariantParams PBRLabDefaultVariantParams(uint32_t seed);
+PBRLabResult *PBRLabMakeVariant(const PBRLabMaterialMaps *material, const PBRLabVariantParams *params,
+                                const PBRLabRecipe *shading, PBRLabVariantInfo *out_info,
+                                PBRLabRecipe *out_recipe, char *error, size_t error_capacity);
+
+// Larger non-repeating tiles: a tiles x tiles area synthesised from a tileable material by histogram-preserving
+// tiling and blending (Heitz and Neyret 2018) on a periodic triangle lattice. Every map uses the same random patch
+// offsets and blend weights; the result tiles at its own size. The relief keeps its physical depth, so the recorded
+// span (in tile widths of the larger tile) is divided by `tiles`; the AO radius is divided by `tiles` and tile_metres
+// multiplied by it, so AO and the physical scale stay those of the source.
+typedef struct PBRLabLargeTileParams {
+    uint32_t tiles;                  // 2 or 4 (output size = tiles x size, at most 8192).
+    uint32_t seed;
+    float patch;                     // Lattice cell size as a fraction of the source tile, [0.125,1].
+    float sharpness;                 // Blend-weight exponent, [1,16]: higher keeps patches crisper.
+} PBRLabLargeTileParams;
+PBRLabLargeTileParams PBRLabDefaultLargeTileParams(uint32_t tiles, uint32_t seed);
+PBRLabResult *PBRLabMakeLargeTile(const PBRLabMaterialMaps *material, const PBRLabLargeTileParams *params,
+                                  const PBRLabRecipe *shading, PBRLabRecipe *out_recipe,
+                                  char *error, size_t error_capacity);
+
+// Measured guides (docs/DERIVATION.md, "Measured form"): a depth or height map from a scanner, converted to guide
+// normals for PBRLabInput with guide_normals_measured = 1. depth_r16: R16 UNorm little-endian, 65535 = nearest
+// (raised); depth_span_tile_widths is the depth 0..65535 spans divided by the tile width. A least-squares plane is
+// removed first; differences are clamped at the edges (a scan does not wrap). Writes linear RGBA8 +Y normals.
+int PBRLabMeasuredDepthToGuideNormals(const uint8_t *depth_r16, size_t depth_row_bytes, uint32_t size,
+                                      float depth_span_tile_widths, uint8_t *out_rgba8, size_t out_row_bytes,
+                                      char *error, size_t error_capacity);
+// Measured form with learned detail, as Material Capture does with LiDAR: the measured guide's slopes plus the learned
+// guide's slopes above a box-blur cutoff (radius = cutoff_pixels, 0 = max(2, size / 64)). All buffers RGBA8 +Y.
+int PBRLabSplitGuideBands(const uint8_t *measured_rgba8, const uint8_t *learned_rgba8, size_t row_bytes, uint32_t size,
+                          uint32_t cutoff_pixels, uint8_t *out_rgba8, size_t out_row_bytes);
+
 #ifdef __cplusplus
 }
 #endif

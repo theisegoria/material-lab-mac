@@ -46,6 +46,29 @@ _arguments -s \
   '--pre-upscale-exec[local upscaler executable]:executable:_files' \
   '*--pre-upscale-arg[upscaler argument]:argument:' \
   '--pre-upscale-timeout[upscaler timeout in seconds]:seconds:' \
+  '--resolution[derive at 4096 or 8192]:size:(4096 8192)' \
+  '--upscaler-root[pinned Real-ESRGAN vendor project]:folder:_files -/' \
+  '--upscaler-device[upscaler device]:device:(cpu mps)' \
+  '--guide-measured[measured normal or depth map from a scanner]:image:_files' \
+  '--guide-measured-dx[the measured normal map is DirectX]' \
+  '--measured-depth-mm[depth the measured map spans]:mm:' \
+  '--variant[seeded variant]:seed:' \
+  '--variant-strength[variant shift scale 0..3]:value:' \
+  '--variant-rotate[variant may turn and mirror]' \
+  '--large-tile[non-repeating tile size]:tiles:(2 4)' \
+  '--large-tile-seed[large-tile seed]:seed:' \
+  '--large-tile-patch[large-tile patch fraction 0.125..1]:value:' \
+  '--base[layer: base bundle]:bundle:_files -/' \
+  '--top[layer: top bundle]:bundle:_files -/' \
+  '--mask[layer: height, slope, noise or a mask image]:mask:{_alternative "kinds:kind:(height slope noise)" "files:image:_files"}' \
+  '--threshold[layer mask threshold 0..1]:value:' \
+  '--softness[layer mask softness 0..0.5]:value:' \
+  '--invert[layer mask inverted]' \
+  '--seed[layer noise seed]:seed:' \
+  '--scale[layer noise cells per tile]:value:' \
+  '--contrast[layer noise contrast]:value:' \
+  '--height-blend[layer height-aware blend 0..0.95]:value:' \
+  '--normal-blend[layer normal blend]:mode:(height reoriented)' \
   '--bent-normal[write a bent normal map]' \
   '--learned[use the bundled learned-geometry model]' \
   '--learned-normals[Core ML model]:model:_files' \

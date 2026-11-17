@@ -5,6 +5,7 @@ import hashlib
 import os
 import uuid
 import json
+import math
 import signal
 import time
 import shutil
@@ -78,6 +79,23 @@ def rgb_png(path: pathlib.Path, pixel) -> None:
             rows.extend(pixel(x, y))
     png = bytearray(b"\x89PNG\r\n\x1a\n")
     png += chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(rows))
+    png += chunk(b"IEND", b"")
+    path.write_bytes(png)
+
+
+def textured_png(path: pathlib.Path, n: int = 32, tint=(1.0, 0.95, 0.9), phase: float = 0.0) -> None:
+    """A tileable n x n RGBA8 sRGB texture with relief-like detail."""
+    rows = bytearray()
+    for y in range(n):
+        rows.append(0)
+        for x in range(n):
+            a = 0.5 + 0.25 * math.sin(2 * math.pi * (2 * x / n + phase)) * math.cos(2 * math.pi * 3 * y / n) \
+                + 0.15 * math.sin(2 * math.pi * (5 * x + 7 * y) / n)
+            rows.extend(tuple(max(0, min(255, int(255 * a * t))) for t in tint) + (255,))
+    png = bytearray(b"\x89PNG\r\n\x1a\n")
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 8, 6, 0, 0, 0))
+    png += chunk(b"sRGB", b"\x00")
     png += chunk(b"IDAT", zlib.compress(rows))
     png += chunk(b"IEND", b"")
     path.write_bytes(png)
@@ -788,6 +806,156 @@ def main() -> None:
         going = catalog_run(mixed, "--keep-going", expect_success=False, output="going")
         assert (catalog_root / "going" / "fine.pbrmaterial").is_dir()
         assert "derived 1 material bundles, 1 failed" in going.stdout
+
+        # Composed bundles (CLI 1.4.0): layers, variants and larger tiles, validated and traceable to their sources.
+        compose = root / "compose"
+        compose.mkdir()
+        textured_png(compose / "stone.png")
+        textured_png(compose / "moss.png", tint=(0.45, 0.8, 0.35), phase=0.3)
+        run(cli, "--input", str(compose / "stone.png"), "--output", str(compose / "stone"), "--preset", "stone")
+        run(cli, "--input", str(compose / "moss.png"), "--output", str(compose / "moss"), "--preset", "organic", "--metalness", "0.3")
+        base, top = compose / "stone.pbrmaterial", compose / "moss.pbrmaterial"
+        def composed(path):
+            run(cli, "--validate", str(path))
+            return json.loads((path / "manifest.json").read_text())
+        printed = run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "height", "--invert",
+                      "--output", str(compose / "mossy"), "--label", "mossy stone").stdout.strip()
+        assert printed == str(compose / "mossy.pbrmaterial")
+        layered = composed(compose / "mossy.pbrmaterial")
+        assert layered["source"]["source_kind"] == "derived_bundle" and layered["semantic_label"] == "mossy stone"
+        assert layered["source"]["sha256"] == hashlib.sha256((base / "manifest.json").read_bytes()).hexdigest()
+        assert layered["layers"]["top"]["manifest_sha256"] == hashlib.sha256((top / "manifest.json").read_bytes()).hexdigest()
+        assert layered["layers"]["mask"] == {"type": "height", "threshold": 0.5, "softness": layered["layers"]["mask"]["softness"], "invert": True}
+        assert layered["recipe"]["assigned_metalness_enabled"] and "orm" in layered["maps"]
+        assert layered["maps"]["albedo"]["provenance"] == "layer_blend_albedo"
+        assert layered["maps"]["normal"]["provenance"] == "derived_from_composed_height"
+        for name in ("noise-a", "noise-b"):
+            run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "noise", "--seed", "4", "--scale", "2",
+                "--output", str(compose / name))
+        assert (compose / "noise-a.pbrmaterial" / "albedo.png").read_bytes() == (compose / "noise-b.pbrmaterial" / "albedo.png").read_bytes()
+        gray_png(compose / "paint.png", lambda x, y: 255 if x < 8 else 0)
+        painted = run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", str(compose / "paint.png"),
+                      "--normal-blend", "reoriented", "--output", str(compose / "painted")).stdout.strip()
+        painted_manifest = composed(pathlib.Path(painted))
+        assert painted_manifest["layers"]["mask"]["sha256"] == hashlib.sha256((compose / "paint.png").read_bytes()).hexdigest()
+        # A 16 px painted mask over 32 px maps: the mask is resampled, the top (same size) is not.
+        assert painted_manifest["layers"]["top_resampled"] is False and painted_manifest["layers"]["mask"]["size_px"] == 16
+        run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "slope", "--output", str(compose / "mossy"),
+            expect_success=False)  # never overwrites
+        run(cli, "layer", "--base", str(base), "--top", str(top), "--mask", "cloudy", "--output", str(compose / "x"),
+            expect_success=False)
+        run(cli, "layer", "--base", str(base), "--top", str(compose / "missing.pbrmaterial"), "--mask", "slope",
+            "--output", str(compose / "x"), expect_success=False)
+        # Variants: deterministic per seed, different across seeds; the drawn shifts are recorded.
+        for name, seed in (("v7", "7"), ("v7b", "7"), ("v8", "8")):
+            run(cli, "--input", str(base), "--variant", seed, "--output", str(compose / name))
+        assert (compose / "v7.pbrmaterial" / "normal.png").read_bytes() == (compose / "v7b.pbrmaterial" / "normal.png").read_bytes()
+        assert (compose / "v7.pbrmaterial" / "albedo.png").read_bytes() != (compose / "v8.pbrmaterial" / "albedo.png").read_bytes()
+        variant = composed(compose / "v7.pbrmaterial")
+        assert variant["variant"]["seed"] == 7 and abs(variant["variant"]["drawn"]["hue_degrees"]) <= 6
+        # From a photo: derive, vary, then a 2 x 2 tile; only the final bundle remains and the chain is recorded.
+        run(cli, "--input", str(compose / "stone.png"), "--preset", "stone", "--variant", "3", "--large-tile", "2",
+            "--output", str(compose / "big"))
+        big = composed(compose / "big.pbrmaterial")
+        assert big["maps"]["albedo"]["width"] == 64 and big["large_tile"]["tiles"] == 2
+        assert big["source"]["path"] == "intermediate" and big["large_tile"]["source"]["variant"]["seed"] == 3
+        assert big["large_tile"]["source"]["variant"]["source"]["source"]["path"] == "stone.png"
+        assert not [p for p in compose.iterdir() if ".stage-" in p.name]
+        run(cli, "--input", str(base), "--large-tile", "3", "--output", str(compose / "bad"), expect_success=False)
+        run(cli, "--input", str(compose / "stone.png"), "--no-tile", "--large-tile", "2", "--output", str(compose / "bad"),
+            expect_success=False)
+        run(cli, "--input", str(base), "--output", str(compose / "bad"), expect_success=False)  # a bundle input needs an operation
+        tampered = json.loads((compose / "v8.pbrmaterial" / "manifest.json").read_text())
+        tampered["layers"] = layered["layers"]
+        (compose / "v8.pbrmaterial" / "manifest.json").write_text(json.dumps(tampered))
+        run(cli, "--validate", str(compose / "v8.pbrmaterial"), expect_success=False)
+
+        # --guide-measured (CLI 1.4.0): another scanner's depth or normal map as measured form.
+        measured_dir = root / "measured"
+        measured_dir.mkdir()
+        textured_png(measured_dir / "photo.png")
+        n = 32
+        depth_rows = bytearray()
+        for y in range(n):
+            depth_rows.append(0)
+            for x in range(n):
+                depth_rows += struct.pack(">H", int(30000 + 20000 * math.sin(2 * math.pi * x / n) * math.cos(2 * math.pi * y / n)))
+        depth_png = bytearray(b"\x89PNG\r\n\x1a\n")
+        depth_png += chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 16, 0, 0, 0, 0))
+        depth_png += chunk(b"IDAT", zlib.compress(bytes(depth_rows)))
+        depth_png += chunk(b"IEND", b"")
+        (measured_dir / "depth.png").write_bytes(bytes(depth_png))
+        run(cli, "--input", str(measured_dir / "photo.png"), "--preset", "stone", "--guide-measured", str(measured_dir / "depth.png"),
+            "--measured-depth-mm", "3", "--tile-metres", "0.25", "--output", str(measured_dir / "scan"))
+        scan = json.loads((measured_dir / "scan.pbrmaterial" / "manifest.json").read_text())
+        run(cli, "--validate", str(measured_dir / "scan.pbrmaterial"))
+        assert scan["depth"]["source"] == "external_scan" and scan["depth"]["kind"] == "depth" and scan["depth"]["measured_form"] is True
+        assert scan["depth"]["measured_form_rms_slope"] > 0 and scan["depth"]["height_span_mm"] > 0
+        assert scan["guide_normals"]["estimator"] == "measured_scan" and scan["recipe"]["guide_normal_weight"] == 1
+        assert scan["maps"]["height"]["provenance"] == "estimated_from_albedo_and_measured_guide"
+        # A normal map from a scanner is measured form too; a depth map needs its range and the tile size.
+        run(cli, "--input", str(measured_dir / "photo.png"), "--preset", "stone", "--guide-measured",
+            str(measured_dir / "scan.pbrmaterial" / "normal.png"), "--output", str(measured_dir / "normals"))
+        assert json.loads((measured_dir / "normals.pbrmaterial" / "manifest.json").read_text())["depth"]["kind"] == "normal"
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--tile-metres", "0.25", "--output", str(measured_dir / "x"), expect_success=False)
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--measured-depth-mm", "3", "--output", str(measured_dir / "x"), expect_success=False)
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--guide-normals", str(measured_dir / "depth.png"), "--output", str(measured_dir / "x"), expect_success=False)
+        tampered = json.loads((measured_dir / "scan.pbrmaterial" / "manifest.json").read_text())
+        tampered["depth"]["sha256"] = "nope"
+        (measured_dir / "scan.pbrmaterial" / "manifest.json").write_text(json.dumps(tampered))
+        run(cli, "--validate", str(measured_dir / "scan.pbrmaterial"), expect_success=False)
+        # --resolution (CLI 1.4.0): upscaler passes that land exactly on 4096, wrap-padded so the albedo still tiles.
+        # ResolutionStub.py (sips resize) stands in for Real-ESRGAN, both as --pre-upscale-exec and through the pinned
+        # adapter lookup (a fake vendor root; the adapter path and Python come from the environment).
+        resolution = root / "resolution"
+        resolution.mkdir()
+        rstub = pathlib.Path(__file__).with_name("ResolutionStub.py")
+        textured_png(resolution / "small.png", n=64)
+        stub_args = ["--pre-upscale-exec", sys.executable, "--pre-upscale-arg", "-I", "--pre-upscale-arg", str(rstub),
+                     "--pre-upscale-arg", "--input", "--pre-upscale-arg", "{input}", "--pre-upscale-arg", "--output",
+                     "--pre-upscale-arg", "{output}", "--pre-upscale-arg", "--scale", "--pre-upscale-arg", "{scale}"]
+        run(cli, "--input", str(resolution / "small.png"), "--preset", "stone", "--resolution", "4096",
+            "--output", str(resolution / "custom"), *stub_args)
+        big4k = json.loads((resolution / "custom.pbrmaterial" / "manifest.json").read_text())
+        run(cli, "--validate", str(resolution / "custom.pbrmaterial"))
+        res = big4k["source"]["resolution"]
+        assert big4k["maps"]["normal"]["width"] == 4096 and res["target_px"] == 4096 and res["source_px"] == 64
+        assert res["upscaler"] == "custom" and [p["scale"] for p in res["passes"]] == [4, 4, 4] and res["pre_resample_px"] == 64
+        assert all(p["wrap_padding_px"] > 0 and p["receipt"]["model"] == "sips-resize-test-stub" for p in res["passes"])
+        assert big4k["source"]["sha256"] == hashlib.sha256((resolution / "small.png").read_bytes()).hexdigest()
+        assert big4k["seam_metrics"]["albedo_value_delta"] < 0.02
+        # Not installed: a clear failure that names the missing upscaler, and no bundle.
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("MATERIAL_LAB_REALESRGAN")}
+        missing = subprocess.run([cli, "--input", str(resolution / "small.png"), "--resolution", "4096",
+                                  "--output", str(resolution / "missing")], text=True, capture_output=True, env=clean_env)
+        assert missing.returncode == 1 and "pinned Real-ESRGAN upscaler is not configured" in missing.stderr, missing.stderr
+        assert not (resolution / "missing.pbrmaterial").exists()
+        bad_root = subprocess.run([cli, "--input", str(resolution / "small.png"), "--resolution", "4096", "--upscaler-root",
+                                   str(resolution), "--output", str(resolution / "missing")], text=True, capture_output=True,
+                                  env=clean_env)
+        assert bad_root.returncode == 1 and "not installed" in bad_root.stderr, bad_root.stderr
+        # The pinned path, with the stub as the adapter.
+        vendor = resolution / "vendor"
+        (vendor / "script").mkdir(parents=True)
+        (vendor / "script" / "vendor_realesrgan.py").write_text("# fake vendor tree for tests\n")
+        pinned_env = dict(clean_env, MATERIAL_LAB_REALESRGAN_PYTHON=sys.executable, MATERIAL_LAB_REALESRGAN_ADAPTER=str(rstub))
+        textured_png(resolution / "mid.png", n=48)
+        pinned = subprocess.run([cli, "--input", str(resolution / "mid.png"), "--preset", "fabric", "--resolution", "4096",
+                                 "--upscaler-root", str(vendor), "--output", str(resolution / "pinned")],
+                                text=True, capture_output=True, env=pinned_env)
+        assert pinned.returncode == 0, pinned.stderr
+        pinned_res = json.loads((resolution / "pinned.pbrmaterial" / "manifest.json").read_text())["source"]["resolution"]
+        assert pinned_res["upscaler"] == "pinned_realesrgan" and pinned_res["pre_resample_px"] == 64
+        assert pinned_res["passes"][0]["arguments_template"][-4:] == ["--scale", "{scale}", "--device", "cpu"]
+        run(cli, "--validate", str(resolution / "pinned.pbrmaterial"))
+        run(cli, "--input", str(resolution / "small.png"), "--resolution", "2048", "--output", str(resolution / "x"),
+            expect_success=False)
+        run(cli, "--input", str(resolution / "small.png"), "--resolution", "4096", "--relief-mask-r8", str(resolution / "small.png"),
+            "--output", str(resolution / "x"), expect_success=False)
+        shutil.rmtree(resolution)
     print("Material Lab CLI smoke tests passed")
 
 

@@ -37,11 +37,11 @@ brew install material-lab
 Download `material-lab-<version>-macos-arm64.tar.gz` from [Releases](https://github.com/theisegoria/material-lab-cli/releases), check it against its `.sha256`, then:
 
 ```sh
-tar -xzf material-lab-1.3.0-macos-arm64.tar.gz
-sudo cp -R material-lab-1.3.0-macos-arm64/{bin,share} /usr/local/
+tar -xzf material-lab-1.4.0-macos-arm64.tar.gz
+sudo cp -R material-lab-1.4.0-macos-arm64/{bin,share} /usr/local/
 ```
 
-Keep `bin/material-lab` and `share/material-lab/` together so `--learned` finds the bundled model. The binary is signed with a Developer ID but not yet notarized. If you downloaded the archive with a browser, macOS may refuse to run it the first time; clear the quarantine flag with `xattr -dr com.apple.quarantine material-lab-1.3.0-macos-arm64`.
+Keep `bin/material-lab` and `share/material-lab/` together so `--learned` finds the bundled model. The binary is signed with a Developer ID but not yet notarized. If you downloaded the archive with a browser, macOS may refuse to run it the first time; clear the quarantine flag with `xattr -dr com.apple.quarantine material-lab-1.4.0-macos-arm64`.
 
 ## Quick start
 
@@ -60,6 +60,19 @@ material-lab --catalog catalog.json --output materials --recipe slate.json --job
 
 # Derive anything dropped into a folder:
 material-lab --watch ~/Inbox/textures --output ~/Materials --learned --also-export glb
+
+# Moss in the hollows of a stone wall (height, slope, seeded noise or a painted mask):
+material-lab layer --base stone.pbrmaterial --top moss.pbrmaterial --mask height --invert --output mossy
+
+# Seeded variants, and a 4 x 4 tile with no visible repetition:
+material-lab --input mossy.pbrmaterial --variant 7 --output mossy-v7
+material-lab --input mossy.pbrmaterial --large-tile 4 --output mossy-4x4
+
+# A 4K material (the pinned Real-ESRGAN upscaler enlarges smaller photos; see docs/UPSCALE.md):
+material-lab --input wall.jpg --output wall-4k --preset red-brick --resolution 4096 --upscaler-root ~/vendor/realesrgan
+
+# Another scanner's depth map as measured form, with learned fine detail:
+material-lab --input wall.jpg --output wall-scan --guide-measured depth.png --measured-depth-mm 6 --tile-metres 0.5 --learned
 ```
 
 `man material-lab` documents every option.
@@ -89,10 +102,12 @@ Then ask, for example: "Make a tileable material from ~/Pictures/wall.jpg, show 
 | Tool | What it does |
 | --- | --- |
 | `list_presets`, `list_formats` | the 39 material presets and the 11 export formats |
-| `derive_material` | a photo (or a hand-made albedo and your own maps) to a `.pbrmaterial` bundle, with every recipe option |
+| `derive_material` | a photo (or a hand-made albedo and your own maps) to a `.pbrmaterial` bundle, with every recipe option, 4K/8K `resolution` and a measured `guide_measured` |
 | `preview_material` | returns an image: every map on one sheet, or a lit render on a sphere and a 2 × 2 tiling |
 | `inspect_material`, `validate_material`, `diff_materials` | recipe, provenance and measures; strict validation; comparison |
 | `export_material` | any of the export formats |
+| `layer_materials` | one bundle over another through a height, slope, noise or painted mask |
+| `make_variant`, `large_tile` | a seeded variant; a 2 × 2 or 4 × 4 non-repeating tile |
 
 The server never overwrites anything: an output path that already exists is refused. By default it reads any image you name and writes only inside the client's workspace folders, your home folder or a temporary folder. To confine it further, start it with `material-lab mcp --root ~/Materials` (repeatable); then every path it reads or writes must be inside those folders.
 

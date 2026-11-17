@@ -5,6 +5,10 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include "PBRMaterialLab.h"
+#ifdef __OBJC__
+@class NSDictionary;
+#endif
 
 namespace mltools {
 namespace fs = std::filesystem;
@@ -32,6 +36,20 @@ int diff(const fs::path& a, const fs::path& b, bool json);
 int exportBundle(const fs::path& bundle, const std::string& format, const fs::path& output, bool announce = true);
 // Every --export format, in display order.
 const std::vector<std::string>& exportFormats();
+
+// Recipes as bundle manifests and --save-recipe write them (snake_case; preset names as for --preset).
+std::string presetName(PBRLabPreset preset);
+#ifdef __OBJC__
+NSDictionary* recipeDictionary(const PBRLabRecipe& recipe);
+#endif
+
+// Composed bundles (Compose.mm): each source bundle is already validated; `output` must not exist. Empty label or id
+// take defaults. maskImage is read for PBRLabLayerMaskImage.
+void layerBundles(const fs::path& base, const fs::path& top, PBRLabLayerParams params, const fs::path& maskImage,
+                  const fs::path& output, std::string label, std::string id);
+void variantBundle(const fs::path& source, const PBRLabVariantParams& params, const fs::path& output, std::string label, std::string id);
+void largeTileBundle(const fs::path& source, const PBRLabLargeTileParams& params, const fs::path& output, std::string label, std::string id);
+const char* layerMaskName(PBRLabLayerMaskKind kind);
 
 // Shared helpers.
 Raster loadMap(const fs::path& bundle, const std::string& name);  // throws on a missing or undecodable map
