@@ -1,4 +1,4 @@
-.Dd November 16, 2026
+.Dd November 17, 2026
 .Dt MATERIAL-LAB 1
 .Os macOS
 .Sh NAME
@@ -19,6 +19,16 @@
 .Fl -output Ar folder
 .Nm
 .Fl -info | -contact-sheet | -preview | -export | -diff Ar bundle ...
+.Nm
+.Cm layer
+.Fl -base Ar bundle
+.Fl -top Ar bundle
+.Fl -mask Cm height | slope | noise | Ar image
+.Fl -output Ar bundle
+.Nm
+.Fl -input Ar image | bundle
+.Fl -variant Ar seed | Fl -large-tile Cm 2 | 4
+.Fl -output Ar bundle
 .Nm
 .Cm mcp
 .Op Fl -root Ar folder ...
@@ -113,6 +123,23 @@ and
 placeholders; no shell is involved.
 .Fl -pre-upscale-timeout Ar seconds
 limits it (default 600).
+.It Fl -resolution Cm 4096 | 8192
+Derive the whole material at 4096 or 8192 pixels.
+A smaller source is enlarged first with the pinned Real-ESRGAN adapter, in 2x and 4x passes that land on the
+target (wrap-padded, so a tileable albedo stays tileable); then every map, including height and normals, is
+derived at the target size.
+The vendor tree is named by
+.Fl -upscaler-root Ar folder
+or
+.Ev MATERIAL_LAB_REALESRGAN_ROOT ;
+.Fl -upscaler-device Cm cpu | mps
+picks the device (default cpu).
+With
+.Fl -pre-upscale-exec ,
+that tool is the upscaler instead, and its arguments may also use
+.Ql {scale} .
+Without an installed upscaler the command fails before deriving.
+A 4096 derivation needs about 3.5 GB of memory; 8192 about four times that.
 .El
 .Sh LEARNED GEOMETRY
 .Bl -tag -width Ds
@@ -133,7 +160,75 @@ Use precomputed +Y tangent normals instead of running a model.
 .It Fl -save-guide-normals Ar png
 Also write the guide normals that were used, for reuse with
 .Fl -guide-normals .
+.It Fl -guide-measured Ar image
+Use another scanner's output as measured form, the way Material Capture uses LiDAR: its slopes keep their
+measured amplitude.
+A colour image is a +Y tangent normal map
+.Pq Fl -guide-measured-dx No for green-down ;
+a grey image is a depth map, white nearest, which needs
+.Fl -measured-depth-mm Ar mm
+(the depth black to white spans) and
+.Fl -tile-metres .
+A best-fit plane is removed from depth.
+With
+.Fl -learned ,
+the measured form is combined with the learned fine detail.
+The manifest records the scan in a
+.Ql depth
+section.
 .El
+.Sh LAYERS, VARIANTS AND LARGER TILES
+These build new bundles from derived ones.
+Albedo, relief, roughness and metalness are composed; normals, occlusion and the masks are re-derived from
+the new relief, so every map agrees.
+The manifest records the sources by manifest hash and the operation's parameters.
+.Bl -tag -width Ds
+.It Cm layer Fl -base Ar bundle Fl -top Ar bundle Fl -mask Ar mask Fl -output Ar bundle
+Lay the top material over the base through a mask:
+.Cm height
+(where the base is high),
+.Cm slope
+(where it is steep),
+.Cm noise
+(seeded, tileable), or a painted grey image (white is top).
+.Fl -threshold Ar 0..1 ,
+.Fl -softness Ar 0..0.5
+and
+.Fl -invert
+shape it;
+.Fl -seed ,
+.Fl -scale Ar 1..64
+and
+.Fl -contrast Ar 0.1..8
+tune noise.
+.Fl -height-blend Ar 0..0.95
+lets the higher layer win inside the transition (default 0.5).
+.Fl -normal-blend Cm reoriented
+blends the two normal maps instead of re-deriving them from the blended height.
+.It Fl -variant Ar seed
+A seeded variant: small shifts in hue, value, roughness and relief depth, and a tile offset.
+The same seed always gives the same variant.
+.Fl -variant-strength Ar 0..3
+scales the shifts;
+.Fl -variant-rotate
+adds a quarter turn and mirror.
+.It Fl -large-tile Cm 2 | 4
+A 2 x 2 or 4 x 4 tile without visible repetition, by histogram-preserving tiling and blending with the same
+patches for every map.
+.Fl -large-tile-seed Ar n
+and
+.Fl -large-tile-patch Ar 0.125..1
+(patch size as a fraction of the source; default 0.5) control it.
+Best for stochastic surfaces; use a patch of 1 for brick or tiles.
+.El
+.Pp
+With an image
+.Fl -input ,
+the photo is derived first and the variant, then the larger tile, are applied to it; only the final bundle is
+kept.
+With a bundle
+.Fl -input ,
+the operations apply to that bundle.
 .Sh RECIPES AND PIPELINES
 .Bl -tag -width Ds
 .It Fl -recipe Ar file | bundle
@@ -236,6 +331,13 @@ material-lab --catalog catalog.json --output out --recipe slate.json \e
     --jobs 2 --also-export glb --report report.json
 .Ed
 .Pp
+Moss in the hollows of a stone wall, then a non-repeating 4 x 4 tile of it:
+.Bd -literal -offset indent
+material-lab layer --base stone.pbrmaterial --top moss.pbrmaterial \e
+    --mask height --invert --output mossy
+material-lab --input mossy.pbrmaterial --large-tile 4 --output mossy-4x4
+.Ed
+.Pp
 Inspect a result:
 .Bd -literal -offset indent
 material-lab --info wall.pbrmaterial
@@ -247,10 +349,17 @@ material-lab --preview wall.pbrmaterial --output wall-lit.png
 .Cm mcp
 runs a Model Context Protocol server on standard input and output, so Claude and other agents can use
 Material Lab directly.
-It offers eight tools:
+It offers eleven tools:
 .Cm list_presets ,
 .Cm list_formats ,
-.Cm derive_material ,
+.Cm derive_material
+(including
+.Ql resolution
+and
+.Ql guide_measured ) ,
+.Cm layer_materials ,
+.Cm make_variant ,
+.Cm large_tile ,
 .Cm preview_material
 (returns an image of the maps, or a lit render),
 .Cm inspect_material ,
