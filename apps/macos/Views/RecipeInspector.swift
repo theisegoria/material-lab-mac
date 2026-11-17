@@ -5,6 +5,8 @@ struct RecipeInspector: View {
     let source: MaterialSource
     /// Basic shows the controls most materials need; Advanced shows every parameter.
     @AppStorage("materialLab.inspectorAdvanced") private var advanced = false
+    /// Advanced groups the user opened while in Basic mode (comma-separated group IDs).
+    @AppStorage("materialLab.inspectorExpanded") private var expandedGroups = ""
 
     private var base: MaterialRecipe { store.baselineRecipe }
 
@@ -12,7 +14,10 @@ struct RecipeInspector: View {
         Form {
             Section {
                 header
-                Picker("Controls", selection: $advanced) {
+                Picker("Controls", selection: Binding(
+                    get: { advanced },
+                    set: { advanced = $0; if !$0 { expandedGroups = "" } }
+                )) {
                     Text("Basic").tag(false)
                     Text("Advanced").tag(true)
                 }
@@ -72,7 +77,7 @@ struct RecipeInspector: View {
                     Text("Recessed").tag(Int32(-1))
                 }
                 .pickerStyle(.segmented)
-                if advanced {
+                AdvancedGroup(isExpanded: expanded("relief")) {
                     ParameterRow(title: String(localized: "Normal strength"), value: $store.recipe.normalStrength,
                                  range: MaterialRecipe.Range.normalStrength, digits: 2, baseline: base.normalStrength,
                                  sliderRange: 0...4,
@@ -90,22 +95,25 @@ struct RecipeInspector: View {
                                      range: MaterialRecipe.Range.midReliefShare, digits: 2, baseline: base.midReliefShare,
                                      help: String(localized: "Minimum share of the relief carried by 4–30 mm features (seams, chips, fasteners), so it still reads from a few metres away. 0 turns the floor off."))
                     }
+                    AttachmentRow(
+                        title: String(localized: "Relief mask"),
+                        systemImage: "circle.lefthalf.striped.horizontal",
+                        url: store.recipe.reliefMaskURL,
+                        choose: { store.showReliefImporter = true },
+                        clear: { store.recipe.reliefMaskURL = nil },
+                        help: String(localized: "Grayscale mask: black flattens inferred relief, white keeps it.")
+                    )
                 }
                 LearnedGeometryRow(store: store, learned: store.learned)
-                if advanced {
-                AttachmentRow(
-                    title: String(localized: "Relief mask"),
-                    systemImage: "circle.lefthalf.striped.horizontal",
-                    url: store.recipe.reliefMaskURL,
-                    choose: { store.showReliefImporter = true },
-                    clear: { store.recipe.reliefMaskURL = nil },
-                    help: String(localized: "Grayscale mask: black flattens inferred relief, white keeps it.")
-                )
-                }
             } header: {
-                SectionHeader(title: String(localized: "Relief"), modified: modified(\.heightStrength, \.normalStrength, \.tileMetres,
-                                                                  \.midReliefShare, \.substrateRelief) ||
-                              store.recipe.heightPolarity != base.heightPolarity)
+                SectionHeader(title: String(localized: "Relief"), symbol: "mountain.2",
+                              modified: modified(\.heightStrength, \.normalStrength, \.tileMetres,
+                                                 \.midReliefShare, \.substrateRelief) ||
+                              store.recipe.heightPolarity != base.heightPolarity) {
+                    reset(\.heightStrength, \.normalStrength, \.tileMetres, \.midReliefShare, \.substrateRelief) {
+                        $0.heightPolarity = base.heightPolarity
+                    }
+                }
             }
 
             Section {
@@ -134,7 +142,7 @@ struct RecipeInspector: View {
                     }
                 }
             } header: {
-                Text("Your maps")
+                SectionHeader(title: String(localized: "Your maps"), symbol: "photo.stack", modified: false)
             } footer: {
                 Text("Bring your own artwork: anything you add replaces the estimate, and the bundle records it as authored.")
                     .font(.caption)
@@ -145,7 +153,7 @@ struct RecipeInspector: View {
                 ParameterRow(title: String(localized: "Roughness"), value: $store.recipe.roughnessBase,
                              range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessBase,
                              help: String(localized: "Perceptual roughness prior: 0 glossy, 1 matte."))
-                if advanced {
+                AdvancedGroup(isExpanded: expanded("surface")) {
                     ParameterRow(title: String(localized: "Roughness variation"), value: $store.recipe.roughnessVariation,
                                  range: MaterialRecipe.Range.roughness, digits: 2, baseline: base.roughnessVariation,
                                  help: String(localized: "Restrained height-driven variation."))
@@ -163,13 +171,18 @@ struct RecipeInspector: View {
                                  help: String(localized: "An artist decision, never inferred from color."))
                 }
             } header: {
-                SectionHeader(title: String(localized: "Surface"), modified: modified(\.roughnessBase, \.roughnessVariation, \.roughnessAlbedoLimit, \.albedoEqualize,
-                                                                   \.assignedMetalness) ||
-                              store.recipe.assignedMetalnessEnabled != base.assignedMetalnessEnabled)
+                SectionHeader(title: String(localized: "Surface"), symbol: "circle.lefthalf.filled",
+                              modified: modified(\.roughnessBase, \.roughnessVariation, \.roughnessAlbedoLimit, \.albedoEqualize,
+                                                 \.assignedMetalness) ||
+                              store.recipe.assignedMetalnessEnabled != base.assignedMetalnessEnabled) {
+                    reset(\.roughnessBase, \.roughnessVariation, \.roughnessAlbedoLimit, \.albedoEqualize, \.assignedMetalness) {
+                        $0.assignedMetalnessEnabled = base.assignedMetalnessEnabled
+                    }
+                }
             }
 
             Section {
-                if advanced {
+                AdvancedGroup(isExpanded: expanded("lighting")) {
                     ParameterRow(title: String(localized: "AO radius"), value: $store.recipe.aoRadiusPixels,
                                  range: MaterialRecipe.Range.aoRadius, digits: 0, baseline: base.aoRadiusPixels, unit: "px",
                                  help: String(localized: "Horizon search radius in source pixels."))
@@ -185,9 +198,15 @@ struct RecipeInspector: View {
                 }
                 TileableRows(store: store)
             } header: {
-                SectionHeader(title: String(localized: "Lighting & Tiling"), modified: modified(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) ||
+                SectionHeader(title: String(localized: "Lighting & Tiling"), symbol: "square.grid.3x3.topleft.filled",
+                              modified: modified(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) ||
                               store.recipe.albedoRepair != base.albedoRepair ||
-                              store.recipe.bentNormalEnabled != base.bentNormalEnabled)
+                              store.recipe.bentNormalEnabled != base.bentNormalEnabled) {
+                    reset(\.aoRadiusPixels, \.aoStrength, \.seamlessBlend) {
+                        $0.albedoRepair = base.albedoRepair
+                        $0.bentNormalEnabled = base.bentNormalEnabled
+                    }
+                }
             }
 
             Section {
@@ -207,7 +226,7 @@ struct RecipeInspector: View {
                 }
                 .disabled(store.isBatching || store.eligibleBatchSources.isEmpty)
             } header: {
-                Text("Export")
+                SectionHeader(title: String(localized: "Export"), symbol: "square.and.arrow.up", modified: false)
             } footer: {
                 Text("OpenGL (+Y, green up) suits glTF, Blender and Unity; DirectX (−Y) suits Unreal. Batch applies this recipe to eligible sources in the sidebar.")
                     .font(.caption)
@@ -216,6 +235,41 @@ struct RecipeInspector: View {
         }
         .formStyle(.grouped)
         .accessibilityLabel("Material recipe inspector")
+    }
+
+    /// An advanced group is open in Advanced mode, or when the user opened it in Basic mode. Collapsing one in
+    /// Advanced mode switches to Basic with the other groups left open.
+    private func expanded(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { advanced || openGroups.contains(id) },
+            set: { open in
+                var groups = openGroups
+                if open {
+                    groups.insert(id)
+                } else if advanced {
+                    advanced = false
+                    groups = Set(Self.advancedGroupIDs).subtracting([id])
+                } else {
+                    groups.remove(id)
+                }
+                expandedGroups = groups.sorted().joined(separator: ",")
+            }
+        )
+    }
+
+    private static let advancedGroupIDs = ["relief", "surface", "lighting"]
+
+    private var openGroups: Set<String> {
+        Set(expandedGroups.split(separator: ",").map(String.init))
+    }
+
+    /// Resets a section's values to the baseline in one undoable step.
+    private func reset(_ keys: WritableKeyPath<MaterialRecipe, Float>..., also: (inout MaterialRecipe) -> Void = { _ in }) {
+        var next = store.recipe
+        for key in keys { next[keyPath: key] = base[keyPath: key] }
+        also(&next)
+        store.resetUndoCoalescing()
+        withAnimation(.snappy) { store.recipe = next }
     }
 
     /// Whether any of these values differs from the baseline (the material or prior defaults).
@@ -248,19 +302,56 @@ struct RecipeInspector: View {
     }
 }
 
-/// A section title with a dot when any value in it differs from the material's defaults.
+/// A section title with its symbol, a dot when any value in it differs from the material's defaults, and a reset
+/// button for the section's values.
 private struct SectionHeader: View {
     let title: String
+    var symbol: String? = nil
     let modified: Bool
+    var reset: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                    .accessibilityHidden(true)
+            }
             Text(title)
             if modified {
                 Circle().fill(.tint).frame(width: 6, height: 6)
                     .accessibilityLabel("Modified")
                     .help("Changed from the material's defaults")
             }
+            Spacer(minLength: 4)
+            if modified, let reset {
+                Button("Reset", action: reset)
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .help("Reset this section to the material's defaults")
+                    .accessibilityLabel("Reset \(title)")
+            }
+        }
+        .frame(minHeight: 18)
+    }
+}
+
+/// Parameters most materials leave alone, folded under a disclosure that remembers whether it is open.
+private struct AdvancedGroup<Content: View>: View {
+    @Binding var isExpanded: Bool
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded.animation(.snappy(duration: 0.2))) {
+            VStack(alignment: .leading, spacing: 12) {
+                content
+            }
+            .padding(.top, 4)
+        } label: {
+            Text("Advanced")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -291,6 +382,19 @@ private struct ParameterRow: View {
                 .onTapGesture(count: 2) { if let baseline { value = baseline } }
                 .accessibilityAction(named: "Reset to default") { if let baseline { value = baseline } }
                 Spacer()
+                if isModified, let baseline {
+                    Button {
+                        value = baseline
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Reset to \(baseline.formatted(.number.precision(.fractionLength(digits))))")
+                    .accessibilityLabel("Reset \(title)")
+                    .transition(.opacity)
+                }
                 TextField(
                     title,
                     value: Binding(
@@ -322,7 +426,8 @@ private struct ParameterRow: View {
             .accessibilityLabel(title)
             .accessibilityValue(value.formatted(.number.precision(.fractionLength(digits))))
         }
-        .help((help ?? title) + (baseline == nil ? "" : " Double-click the name to reset."))
+        .help((help ?? title) + (baseline == nil ? "" : String(localized: " Double-click the name to reset.")))
+        .animation(.easeOut(duration: 0.15), value: isModified)
     }
 
     private var isModified: Bool { baseline.map { abs($0 - value) > 1e-4 } ?? false }

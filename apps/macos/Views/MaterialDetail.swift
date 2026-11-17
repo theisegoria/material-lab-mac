@@ -23,6 +23,14 @@ struct MaterialWorkspace: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                store.navigate(to: .library(.all))
+            } label: {
+                Label("Library", systemImage: "square.grid.2x2")
+            }
+            .help("Back to the material library")
+        }
         ToolbarItem(placement: .principal) {
             Picker("View", selection: $store.canvasMode) {
                 ForEach(CanvasMode.allCases) { mode in
@@ -99,6 +107,10 @@ private struct MapShelf: View {
                         .lineLimit(1)
                         .contentTransition(.opacity)
                     Spacer(minLength: 0)
+                    if let material = store.currentMaterial, store.canExport {
+                        BundleDragHandle(material: material)
+                            .transition(.opacity)
+                    }
                 }
                 ScrollView(.horizontal) {
                     HStack(spacing: 12) {
@@ -106,6 +118,11 @@ private struct MapShelf: View {
                             MapCard(
                                 kind: kind,
                                 image: store.currentMaterial?.previews[kind],
+                                transfer: store.currentMaterial.flatMap { material in
+                                    material.maps[kind].flatMap { map in
+                                        kind.isExported ? MapPNGTransfer(material: material, kind: kind, map: map) : nil
+                                    }
+                                },
                                 shortcut: index < 9 ? "⌘\(index + 1)" : nil,
                                 isSelected: store.selectedMap == kind && store.currentMaterial != nil,
                                 namespace: selection
@@ -136,6 +153,8 @@ private struct MapShelf: View {
 private struct MapCard: View {
     let kind: MaterialMapKind
     let image: CGImage?
+    /// Present when the map can be dragged out as a PNG file.
+    let transfer: MapPNGTransfer?
     let shortcut: String?
     let isSelected: Bool
     let namespace: Namespace.ID
@@ -193,10 +212,71 @@ private struct MapCard: View {
         .onHover { inside in
             withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
         }
-        .help(kind.explanation)
+        .modifier(MapDragModifier(transfer: transfer, image: image))
+        .help(transfer == nil ? kind.explanation : kind.explanation + String(localized: " Drag out to save it as a PNG."))
         .accessibilityLabel(kind.title)
         .accessibilityHint(kind.explanation)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Makes a map card draggable as a PNG file when the map exists.
+private struct MapDragModifier: ViewModifier {
+    let transfer: MapPNGTransfer?
+    let image: CGImage?
+
+    func body(content: Content) -> some View {
+        if let transfer {
+            content.draggable(transfer) {
+                DragPreview(image: image, title: transfer.fileName)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// Drag the whole material out as a .pbrmaterial bundle (Finder, engines, other apps).
+private struct BundleDragHandle: View {
+    let material: DerivedMaterial
+
+    var body: some View {
+        Label("Drag Material", systemImage: "shippingbox")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .glassEffect(.regular.interactive(), in: Capsule())
+            .draggable(MaterialBundleTransfer(material: material)) {
+                DragPreview(image: material.previews[.albedo],
+                            title: "\(MaterialBundle.exportSlug(material.source.semanticLabel)).pbrmaterial")
+            }
+            .help("Drag the material out as a .pbrmaterial bundle with every map and its manifest")
+            .accessibilityLabel("Drag material bundle")
+            .accessibilityIdentifier("drag-material-bundle")
+    }
+}
+
+/// What follows the pointer while dragging a map or bundle.
+struct DragPreview: View {
+    let image: CGImage?
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            if let image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(1, contentMode: .fill)
+                    .frame(width: 72, height: 72)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            Text(title)
+                .font(.caption2)
+                .lineLimit(1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.regularMaterial, in: Capsule())
+        }
     }
 }
 

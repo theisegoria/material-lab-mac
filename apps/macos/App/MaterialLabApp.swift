@@ -80,6 +80,7 @@ struct MaterialLabApp: App {
                 Divider()
                 Button("Batch Export Eligible Sources…") { store.batchDeriveVisible() }
                     .disabled(store.isBatching || store.eligibleBatchSources.isEmpty)
+                BatchQueueCommand()
                 if store.isDeriving || store.isBatching {
                     Button("Cancel") { store.cancel() }
                         .keyboardShortcut(".")
@@ -134,5 +135,15 @@ enum MaterialLabAbout {
         credits.append(text("Runs locally through Core ML; maps are editable estimates."))
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
         NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+/// Opens the Batch Queue window (where the watch folder is set up).
+private struct BatchQueueCommand: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Batch Queue and Watch Folder…") { openWindow(id: "batch-queue") }
+            .keyboardShortcut("b", modifiers: [.command, .option])
     }
 }

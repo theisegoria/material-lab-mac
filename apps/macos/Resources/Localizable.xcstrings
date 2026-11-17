@@ -4,6 +4,36 @@
     "": {
       "shouldTranslate": false
     },
+    " Double-click the name to reset.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前をダブルクリックするとリセットされます。"
+          }
+        }
+      }
+    },
+    " Drag out to save it as a PNG.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラッグして外に出すとPNGとして保存できます。"
+          }
+        }
+      }
+    },
+    "#%@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#%@"
+          }
+        }
+      }
+    },
     "%@": {
       "shouldTranslate": false
     },
@@ -134,12 +164,48 @@
         }
       }
     },
+    "%lld materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件のマテリアル"
+          }
+        }
+      }
+    },
+    "%lld of %lld selected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld of %2$lld selected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld件中%1$lld件を選択"
+          }
+        }
+      }
+    },
     "%lld percent source": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ソース %lld%%"
+          }
+        }
+      }
+    },
+    "%lld selected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件を選択中"
           }
         }
       }
@@ -160,6 +226,16 @@
     },
     "%lld×": {
       "shouldTranslate": false
+    },
+    "1 material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1件のマテリアル"
+          }
+        }
+      }
     },
     "3D": {
       "extractionState": "manual",
@@ -297,6 +373,46 @@
         }
       }
     },
+    "Add": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加"
+          }
+        }
+      }
+    },
+    "Add tags, separated by commas": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを追加（カンマ区切り）"
+          }
+        }
+      }
+    },
+    "Add to Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションに追加"
+          }
+        }
+      }
+    },
+    "Add to Favourites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りに追加"
+          }
+        }
+      }
+    },
     "Adds the fine unevenness of a painted or coated surface. Flat prior only; off with learned geometry.": {
       "localizations": {
         "ja": {
@@ -372,6 +488,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "すべて（Neural Engine、GPU、CPU）"
+          }
+        }
+      }
+    },
+    "All Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのマテリアル"
           }
         }
       }
@@ -532,6 +658,16 @@
         }
       }
     },
+    "Back to the material library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルライブラリに戻る"
+          }
+        }
+      }
+    },
     "Back to the single map view": {
       "localizations": {
         "ja": {
@@ -667,6 +803,26 @@
         }
       }
     },
+    "Batch Queue and Watch Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バッチキューと監視フォルダ…"
+          }
+        }
+      }
+    },
+    "Batch export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一括書き出し"
+          }
+        }
+      }
+    },
     "Before and after comparison": {
       "localizations": {
         "ja": {
@@ -741,6 +897,16 @@
         }
       }
     },
+    "Brightens and polishes raised edges (convexity map) and adds grime in cavities.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "盛り上がったエッジ（凸部マップ）を明るく滑らかにし、くぼみに汚れを加えます。"
+          }
+        }
+      }
+    },
     "Bring your own artwork: anything you add replaces the estimate, and the bundle records it as authored.": {
       "localizations": {
         "ja": {
@@ -758,6 +924,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "ヘアライン仕上げの鋼"
+          }
+        }
+      }
+    },
+    "Bundle + %lld formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドル＋%lld個のフォーマット"
+          }
+        }
+      }
+    },
+    "Bundle only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルのみ"
           }
         }
       }
@@ -808,6 +994,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "生成できません"
+          }
+        }
+      }
+    },
+    "Cannot Use This HDRI": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このHDRIは使用できません"
           }
         }
       }
@@ -906,12 +1102,32 @@
         }
       }
     },
+    "Change Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを変更…"
+          }
+        }
+      }
+    },
     "Changed from the material's defaults": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "マテリアルの既定値から変更されています"
+          }
+        }
+      }
+    },
+    "Choose Folder…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを選択…"
           }
         }
       }
@@ -932,6 +1148,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "MoGe2Normals.mlpackage（またはコンパイル済みの.mlmodelc）を選択してください。一度だけコンパイルされ、~/Library/Application Support/Material Lab/Models に保存されます。"
+          }
+        }
+      }
+    },
+    "Choose Where Watched Photos Export": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダの写真の書き出し先を選択"
+          }
+        }
+      }
+    },
+    "Choose a Folder to Watch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視するフォルダを選択"
+          }
+        }
+      }
+    },
+    "Choose a Radiance HDR (.hdr) or OpenEXR (.exr) panorama.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radiance HDR（.hdr）または OpenEXR（.exr）のパノラマを選択してください。"
           }
         }
       }
@@ -977,6 +1223,26 @@
         }
       }
     },
+    "Clear the search": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索をクリア"
+          }
+        }
+      }
+    },
+    "Click the star on a material to add it to Favourites.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルの星をクリックするとお気に入りに追加されます。"
+          }
+        }
+      }
+    },
     "Coated metal": {
       "extractionState": "manual",
       "localizations": {
@@ -995,6 +1261,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "石畳"
+          }
+        }
+      }
+    },
+    "Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション"
+          }
+        }
+      }
+    },
+    "Collections": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション"
+          }
+        }
+      }
+    },
+    "Collections group materials without moving them. A material can be in several.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションはマテリアルを移動せずにまとめます。1つのマテリアルを複数のコレクションに入れられます。"
           }
         }
       }
@@ -1145,6 +1441,26 @@
         }
       }
     },
+    "Create": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作成"
+          }
+        }
+      }
+    },
+    "Create a collection to group materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションを作成してマテリアルをまとめます"
+          }
+        }
+      }
+    },
     "Creates a new Mac identity; paired iPhones must pair again.": {
       "localizations": {
         "ja": {
@@ -1162,6 +1478,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "立方体"
+          }
+        }
+      }
+    },
+    "Current": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在のタグ"
           }
         }
       }
@@ -1188,6 +1514,16 @@
         }
       }
     },
+    "Darkens the albedo and lowers roughness, filling the cavities first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドを暗くしてラフネスを下げます。くぼみから先に濡れます。"
+          }
+        }
+      }
+    },
     "Decline": {
       "localizations": {
         "ja": {
@@ -1198,12 +1534,32 @@
         }
       }
     },
+    "Default (Flat)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルト（フラット）"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "削除"
+          }
+        }
+      }
+    },
+    "Delete Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションを削除"
           }
         }
       }
@@ -1310,6 +1666,36 @@
         }
       }
     },
+    "Deselect All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての選択を解除"
+          }
+        }
+      }
+    },
+    "Deselect all": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての選択を解除"
+          }
+        }
+      }
+    },
+    "Deselect all (Esc)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての選択を解除（Esc）"
+          }
+        }
+      }
+    },
     "Device Link": {
       "localizations": {
         "ja": {
@@ -1362,6 +1748,86 @@
         }
       }
     },
+    "Displacement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント"
+          }
+        }
+      }
+    },
+    "Displacement shows on the sphere and the plane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメントは球と平面で表示されます。"
+          }
+        }
+      }
+    },
+    "Displacement, wetness and wear change only this 3D view, never the maps or exports": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント、濡れ、摩耗はこの3D表示だけを変え、マップや書き出しには影響しません"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了"
+          }
+        }
+      }
+    },
+    "Double-click to open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダブルクリックで開きます"
+          }
+        }
+      }
+    },
+    "Drag Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルをドラッグ"
+          }
+        }
+      }
+    },
+    "Drag material bundle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルバンドルをドラッグ"
+          }
+        }
+      }
+    },
+    "Drag the material out as a .pbrmaterial bundle with every map and its manifest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのマップとマニフェストを含む .pbrmaterial バンドルとしてマテリアルをドラッグして書き出します"
+          }
+        }
+      }
+    },
     "Drop files to import": {
       "localizations": {
         "ja": {
@@ -1409,6 +1875,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "エッジ"
+          }
+        }
+      }
+    },
+    "Edge wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エッジの摩耗"
           }
         }
       }
@@ -1505,6 +1981,16 @@
         }
       }
     },
+    "Export Here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに書き出す"
+          }
+        }
+      }
+    },
     "Export Material": {
       "localizations": {
         "ja": {
@@ -1535,6 +2021,16 @@
         }
       }
     },
+    "Export each selected material with its own recipe through the Batch Queue": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択した各マテリアルをそれぞれのレシピでバッチキューから書き出します"
+          }
+        }
+      }
+    },
     "Export for your engine": {
       "localizations": {
         "ja": {
@@ -1551,6 +2047,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "書き出し済み"
+          }
+        }
+      }
+    },
+    "Exports to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出し先：%@"
+          }
+        }
+      }
+    },
+    "Export…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出す…"
           }
         }
       }
@@ -1573,6 +2089,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "布／柔らかい素材"
+          }
+        }
+      }
+    },
+    "Favourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
+          }
+        }
+      }
+    },
+    "Favourites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入り"
           }
         }
       }
@@ -1614,6 +2150,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "色への追従"
+          }
+        }
+      }
+    },
+    "Formats written beside each bundle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各バンドルと一緒に書き出すフォーマット"
           }
         }
       }
@@ -1954,6 +2500,16 @@
         }
       }
     },
+    "Import HDRI…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDRIを読み込む…"
+          }
+        }
+      }
+    },
     "Import Images…": {
       "localizations": {
         "ja": {
@@ -1990,6 +2546,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "画像を読み込むかドロップして始めましょう。"
+          }
+        }
+      }
+    },
+    "Imported photos and camera captures move to the Trash. Catalog entries are hidden from the library; the catalog's files are not changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込んだ写真とカメラのキャプチャはゴミ箱に移動します。カタログの項目はライブラリで非表示になるだけで、カタログのファイルは変更されません。"
           }
         }
       }
@@ -2051,6 +2617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "汎用形式"
+          }
+        }
+      }
+    },
+    "Kind": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "種類"
+          }
+        }
+      }
+    },
+    "Large": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大"
           }
         }
       }
@@ -2138,6 +2724,16 @@
         }
       }
     },
+    "Library selection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリの選択項目"
+          }
+        }
+      }
+    },
     "Licences": {
       "localizations": {
         "ja": {
@@ -2194,6 +2790,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ライティング環境"
+          }
+        }
+      }
+    },
+    "Lighting environment: built-in skies or your own .hdr / .exr panoramas": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティング環境：内蔵の空、または独自の .hdr / .exr パノラマ"
           }
         }
       }
@@ -2373,6 +2979,16 @@
         }
       }
     },
+    "Materials you edit in the last two weeks appear here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去2週間に編集したマテリアルがここに表示されます。"
+          }
+        }
+      }
+    },
     "Matte floor tile": {
       "extractionState": "manual",
       "localizations": {
@@ -2390,6 +3006,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "対辺の平均差：%@"
+          }
+        }
+      }
+    },
+    "Medium": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中"
           }
         }
       }
@@ -2538,6 +3164,16 @@
         }
       }
     },
+    "More": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        }
+      }
+    },
     "Moss": {
       "extractionState": "manual",
       "localizations": {
@@ -2545,6 +3181,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "苔"
+          }
+        }
+      }
+    },
+    "Moves the tessellated sphere or plane along its normal by the height map.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割した球や平面を、ハイトマップに従って法線方向に動かします。"
           }
         }
       }
@@ -2565,6 +3211,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "名前"
+          }
+        }
+      }
+    },
+    "Name, e.g. Kitchen tiles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前（例：キッチンのタイル）"
           }
         }
       }
@@ -2595,6 +3251,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "新しいコード"
+          }
+        }
+      }
+    },
+    "New Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション"
+          }
+        }
+      }
+    },
+    "New Collection…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規コレクション…"
+          }
+        }
+      }
+    },
+    "New photos added to a folder are derived with a saved recipe and exported automatically.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダに追加した新しい写真を、保存したレシピで自動的に生成して書き出します。"
+          }
+        }
+      }
+    },
+    "New photos added to this folder are derived and exported automatically.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフォルダに追加した新しい写真は自動的に生成され、書き出されます。"
           }
         }
       }
@@ -2635,6 +3331,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ソースがありません"
+          }
+        }
+      }
+    },
+    "No materials match this filter.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフィルタに一致するマテリアルはありません。"
           }
         }
       }
@@ -2712,6 +3418,26 @@
         }
       }
     },
+    "Not watching": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視していません"
+          }
+        }
+      }
+    },
+    "Nothing Here Yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ何もありません"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "ja": {
@@ -2776,6 +3502,16 @@
         }
       }
     },
+    "Open": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く"
+          }
+        }
+      }
+    },
     "Open Learned Geometry Settings…": {
       "localizations": {
         "ja": {
@@ -2792,6 +3528,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "新しいウインドウで開く"
+          }
+        }
+      }
+    },
+    "Open in the workspace": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークスペースで開いています"
           }
         }
       }
@@ -2910,6 +3656,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "塗装漆喰"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止"
+          }
+        }
+      }
+    },
+    "Paused · new photos wait until you resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止中・新しい写真は再開まで待機します"
           }
         }
       }
@@ -3038,12 +3804,42 @@
         }
       }
     },
+    "Preview Only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ"
+          }
+        }
+      }
+    },
     "Preview Tiling": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "タイリングをプレビュー"
+          }
+        }
+      }
+    },
+    "Preview only · not exported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ・書き出しには含まれません"
+          }
+        }
+      }
+    },
+    "Preview-only displacement, wetness and edge wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビュー専用のディスプレイスメント、濡れ、エッジの摩耗"
           }
         }
       }
@@ -3216,6 +4012,16 @@
         }
       }
     },
+    "Recently Edited": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近編集した項目"
+          }
+        }
+      }
+    },
     "Recessed": {
       "localizations": {
         "ja": {
@@ -3358,12 +4164,142 @@
         }
       }
     },
+    "Remove %lld Materials": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件のマテリアルを削除"
+          }
+        }
+      }
+    },
+    "Remove %lld from Library…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件をライブラリから削除…"
+          }
+        }
+      }
+    },
+    "Remove %lld materials from the library?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld件のマテリアルをライブラリから削除しますか？"
+          }
+        }
+      }
+    },
+    "Remove Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルを削除"
+          }
+        }
+      }
+    },
     "Remove baked lighting": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "焼き込まれたライティングを除去"
+          }
+        }
+      }
+    },
+    "Remove from Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクションから削除"
+          }
+        }
+      }
+    },
+    "Remove from Favourites": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りから削除"
+          }
+        }
+      }
+    },
+    "Remove from Library…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリから削除…"
+          }
+        }
+      }
+    },
+    "Remove this material from the library?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このマテリアルをライブラリから削除しますか？"
+          }
+        }
+      }
+    },
+    "Remove “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”を削除"
+          }
+        }
+      }
+    },
+    "Remove…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除…"
+          }
+        }
+      }
+    },
+    "Rename": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更"
+          }
+        }
+      }
+    },
+    "Rename Collection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コレクション名を変更"
+          }
+        }
+      }
+    },
+    "Rename…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更…"
           }
         }
       }
@@ -3384,6 +4320,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "修復の帯"
+          }
+        }
+      }
+    },
+    "Reset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット"
+          }
+        }
+      }
+    },
+    "Reset %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@をリセット"
           }
         }
       }
@@ -3448,6 +4404,26 @@
         }
       }
     },
+    "Reset this section to the material's defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセクションをマテリアルの初期値に戻す"
+          }
+        }
+      }
+    },
+    "Reset to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に戻す"
+          }
+        }
+      }
+    },
     "Reset to default": {
       "localizations": {
         "ja": {
@@ -3458,12 +4434,32 @@
         }
       }
     },
+    "Restore Removed Catalog Entries": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除したカタログ項目を復元"
+          }
+        }
+      }
+    },
     "Restrained height-driven variation.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "高さに応じた控えめな変化。"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
           }
         }
       }
@@ -3707,12 +4703,62 @@
         }
       }
     },
+    "Select All": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてを選択"
+          }
+        }
+      }
+    },
     "Select None": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "すべて解除"
+          }
+        }
+      }
+    },
+    "Select materials for batch actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一括操作するマテリアルを選択"
+          }
+        }
+      }
+    },
+    "Select materials in All Materials, then choose Add to Collection.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「すべてのマテリアル」でマテリアルを選択し、「コレクションに追加」を選んでください。"
+          }
+        }
+      }
+    },
+    "Selection": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択"
+          }
+        }
+      }
+    },
+    "Selection actions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択項目の操作"
           }
         }
       }
@@ -3890,6 +4936,16 @@
         }
       }
     },
+    "Small": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小"
+          }
+        }
+      }
+    },
     "Small crevices.": {
       "extractionState": "manual",
       "localizations": {
@@ -3919,6 +4975,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "土"
+          }
+        }
+      }
+    },
+    "Sort": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替え"
+          }
+        }
+      }
+    },
+    "Sort By": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "並べ替え"
+          }
+        }
+      }
+    },
+    "Sort the library and choose the thumbnail size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリの並べ替えとサムネールのサイズ"
           }
         }
       }
@@ -4042,6 +5128,16 @@
         }
       }
     },
+    "Stop Watching": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視を停止"
+          }
+        }
+      }
+    },
     "Stopped": {
       "localizations": {
         "ja": {
@@ -4149,6 +5245,56 @@
         }
       }
     },
+    "Tags": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ"
+          }
+        }
+      }
+    },
+    "Tags make materials easy to find with search and the tag filters.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグを付けると、検索やタグフィルタでマテリアルを見つけやすくなります。"
+          }
+        }
+      }
+    },
+    "Tags you add apply to all %lld selected materials.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加したタグは選択中の%lld件すべてに付きます。"
+          }
+        }
+      }
+    },
+    "Tags…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ…"
+          }
+        }
+      }
+    },
+    "Tag…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ…"
+          }
+        }
+      }
+    },
     "Tangent-space normal map; also drives height, AO and the masks.": {
       "extractionState": "manual",
       "localizations": {
@@ -4224,6 +5370,16 @@
         }
       }
     },
+    "The folder is missing. Reconnect it or choose another.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダが見つかりません。接続し直すか、別のフォルダを選択してください。"
+          }
+        }
+      }
+    },
     "The iPhone pins this Mac's certificate from the one-time code. Every transfer still needs your approval here, and files sent through AirDrop use the same verified .pbrcapture format.": {
       "localizations": {
         "ja": {
@@ -4234,12 +5390,42 @@
         }
       }
     },
+    "The saved recipe new photos derive with (save one from the inspector's Saved recipes menu)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい写真の生成に使う保存済みレシピ（インスペクタの「保存したレシピ」メニューで保存できます）"
+          }
+        }
+      }
+    },
     "The source is painted or drawn, not photographed. It is recorded as authored; leave Remove baked lighting and Repair albedo off to keep it untouched.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "ソースは撮影ではなく、描いたものです。作成者提供として記録されます。そのまま使うには「焼き込まれたライティングを除去」と「アルベドを修復」をオフにしてください。"
+          }
+        }
+      }
+    },
+    "These change only this 3D view. The maps and every export stay exactly as derived.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらはこの3D表示だけを変更します。マップとすべての書き出しは生成されたままです。"
+          }
+        }
+      }
+    },
+    "This file could not be decoded as an HDR image.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルはHDR画像としてデコードできませんでした。"
           }
         }
       }
@@ -4260,6 +5446,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "3×3のタイルプレビュー"
+          }
+        }
+      }
+    },
+    "Thumbnail Size": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サムネールのサイズ"
           }
         }
       }
@@ -4388,6 +5584,16 @@
         }
       }
     },
+    "Unfavourite": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りから外す"
+          }
+        }
+      }
+    },
     "Unity HDRP": {
       "extractionState": "manual",
       "localizations": {
@@ -4453,6 +5659,16 @@
         }
       }
     },
+    "Used elsewhere": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかで使用中"
+          }
+        }
+      }
+    },
     "Varnished wood": {
       "extractionState": "manual",
       "localizations": {
@@ -4485,6 +5701,62 @@
         }
       }
     },
+    "Watch": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視"
+          }
+        }
+      }
+    },
+    "Watch Folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダ"
+          }
+        }
+      }
+    },
+    "Watch folder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "監視フォルダ"
+          }
+        }
+      }
+    },
+    "Watching %@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Watching %1$@ · %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を監視中・%2$@"
+          }
+        }
+      }
+    },
+    "Wear & Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摩耗と濡れ"
+          }
+        }
+      }
+    },
     "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface.": {
       "localizations": {
         "ja": {
@@ -4511,6 +5783,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Material Labへようこそ"
+          }
+        }
+      }
+    },
+    "Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "濡れ"
           }
         }
       }
@@ -4569,6 +5851,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "端でフィルタを折り返す"
+          }
+        }
+      }
+    },
+    "Your HDRIs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込んだHDRI"
+          }
+        }
+      }
+    },
+    "Your Library Is Empty": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリは空です"
           }
         }
       }
@@ -4704,6 +6006,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "風化した石灰岩の壁"
+          }
+        }
+      }
+    },
+    "“%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”"
           }
         }
       }

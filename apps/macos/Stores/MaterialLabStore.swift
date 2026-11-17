@@ -15,6 +15,8 @@ struct MaterialAlert: Identifiable {
 }
 
 enum SidebarDestination: Hashable {
+    /// The library home: a searchable grid of every material, narrowed by a smart filter or collection.
+    case library(LibraryFilter)
     case source(String)
     case inbox
     case link
@@ -50,7 +52,7 @@ enum CanvasMode: String, CaseIterable, Identifiable {
 @Observable
 final class MaterialLabStore {
     var sources: [MaterialSource] = []
-    var destination: SidebarDestination = .inbox
+    var destination: SidebarDestination = .library(.all)
     private(set) var selectedSourceID: String?
     var searchText = ""
     var recipe = MaterialEngine.defaultRecipe(for: .flat) {
@@ -110,6 +112,15 @@ final class MaterialLabStore {
     /// Named recipes the user saved, newest first.
     private(set) var savedRecipes: [SavedRecipe] = []
     var metadataEditorSource: MaterialSource?
+    /// Tags, favourites, collections and edit dates for the library home (library.json).
+    var library = LibraryMetadata()
+    /// Materials selected in the library grid.
+    var librarySelection: Set<String> = []
+    /// Watch folder: new photos are derived with a saved recipe and exported through the batch queue.
+    var watchSettings = WatchFolderSettings.load() {
+        didSet { watchSettings.save() }
+    }
+    let watch = WatchFolderService()
     let link = LocalLinkService()
     let learned = LearnedModelStore()
 
@@ -125,6 +136,8 @@ final class MaterialLabStore {
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var deriveGeneration = 0
     @ObservationIgnored private var pendingMetadataSources: [MaterialSource] = []
+    @ObservationIgnored var librarySaveTask: Task<Void, Never>?
+    @ObservationIgnored var thumbnailTask: Task<Void, Never>?
 
     // MARK: - Derived state
 
@@ -167,7 +180,8 @@ final class MaterialLabStore {
         guard !searchText.isEmpty else { return sources }
         return sources.filter {
             $0.semanticLabel.localizedCaseInsensitiveContains(searchText) ||
-            $0.category.localizedCaseInsensitiveContains(searchText)
+            $0.category.localizedCaseInsensitiveContains(searchText) ||
+            library.entry($0.id).tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
         }
     }
 
@@ -203,6 +217,7 @@ final class MaterialLabStore {
                 self.status = "Capture imported from iPhone and checksum verified."
             }
             recipesBySource = MaterialLibrary.loadRecipes()
+            library = MaterialLibrary.loadLibraryMetadata()
             savedRecipes = MaterialLibrary.loadSavedRecipes()
             sources = MaterialLibrary.loadSavedSources() + MaterialLibrary.loadInbox()
             if let savedCatalog = UserDefaults.standard.string(forKey: "materialLab.catalogPath") {
@@ -217,6 +232,9 @@ final class MaterialLabStore {
                 ? "Import a source image or material catalog to begin."
                 : "\(sources.count) sources ready."
             if let first = sources.first { selectSource(first.id) }
+            // The library grid is home; the first material is selected (and derived) behind it.
+            destination = .library(.all)
+            startWatchingFromPreferences()
         } catch {
             alert = MaterialAlert(message: error.localizedDescription)
         }
@@ -289,6 +307,7 @@ final class MaterialLabStore {
         guard !suppressRecipeObserver, recipe != oldValue else { return }
         if let id = selectedSourceID {
             recipesBySource[id] = recipe
+            touchLibraryEntry(id)
             registerUndo(restoring: oldValue, for: id)
             scheduleRecipeSave()
         }
@@ -476,6 +495,7 @@ final class MaterialLabStore {
             guard selectedSourceID == source.id else { return }
             derived = value
             derivationSerial += 1
+            scheduleLibraryThumbnail(for: value)
             if let guide = value.guide, !guide.wasCached { learned.lastInferenceDuration = guide.inferenceDuration }
             progress = 1
             if !value.maps.keys.contains(selectedMap) { selectedMap = .albedo }
@@ -572,19 +592,23 @@ final class MaterialLabStore {
     // MARK: - Batch queue
 
     /// One source in the batch queue, with its status and output.
+    /// One source in the batch queue, with the recipe, folder and formats it exports with.
     struct BatchItem: Identifiable, Sendable {
         enum State: Sendable, Equatable { case queued, running, done, failed(String), cancelled }
+        /// Where the item came from: a batch the user started, the library selection, or the watch folder.
+        enum Origin: Sendable, Equatable { case batch, library, watchFolder }
+        let id = UUID()
         let source: MaterialSource
+        let recipe: MaterialRecipe
+        let destination: URL
+        let formats: [ExportTarget]
+        var origin: Origin = .batch
         var state: State = .queued
         var bundle: URL?
         var duration: TimeInterval?
-        var id: String { source.id }
     }
 
     private(set) var batchItems: [BatchItem] = []
-    @ObservationIgnored private var batchDestination: URL?
-    @ObservationIgnored private var batchRecipe = MaterialRecipe()
-    @ObservationIgnored private var batchFormats: [ExportTarget] = []
     /// Set when a batch starts so the window opens the Batch Queue.
     var batchQueueRequest = 0
 
@@ -600,12 +624,26 @@ final class MaterialLabStore {
     /// Queues every eligible source with the current recipe and export formats into `destination`.
     func startBatch(into destination: URL) {
         guard !isBatching, !eligibleBatchSources.isEmpty else { return }
-        batchDestination = destination
-        batchRecipe = recipe
-        batchFormats = ExportTarget.named(exportTargets)
-        batchItems = eligibleBatchSources.map { BatchItem(source: $0) }
+        let formats = ExportTarget.named(exportTargets)
+        beginBatch(eligibleBatchSources.map {
+            BatchItem(source: $0, recipe: recipe, destination: destination, formats: formats)
+        })
+    }
+
+    /// Replaces the queue with `items` and runs them (manual and library batches).
+    func beginBatch(_ items: [BatchItem]) {
+        guard !isBatching, !items.isEmpty else { return }
+        batchItems = items
         batchQueueRequest += 1
-        runBatch(batchItems.indices.map { $0 })
+        runBatch(Array(batchItems.indices))
+    }
+
+    /// Adds `items` to the queue (watch folder): they run now when idle, otherwise after the current run.
+    func enqueueBatch(_ items: [BatchItem]) {
+        guard !items.isEmpty else { return }
+        let first = batchItems.count
+        batchItems.append(contentsOf: items)
+        if !isBatching { runBatch(Array(first..<batchItems.count)) }
     }
 
     /// Re-runs the failed and cancelled items with the batch's recipe and destination.
@@ -619,9 +657,8 @@ final class MaterialLabStore {
     }
 
     private func runBatch(_ indices: [Int]) {
-        guard let destination = batchDestination else { return }
-        let chosenRecipe = batchRecipe, formats = batchFormats
-        let work = indices.map { ($0, batchItems[$0].source) }
+        guard !indices.isEmpty else { return }
+        let work = indices.map { (index: $0, item: batchItems[$0]) }
         for index in indices { batchItems[index].state = .queued }
         debounceTask?.cancel()
         deriveControl?.cancel()
@@ -636,7 +673,8 @@ final class MaterialLabStore {
         }
         batchControl = control
         Task.detached(priority: .userInitiated) { [weak self] in
-            for (index, source) in work {
+            for (index, item) in work {
+                let source = item.source
                 if !control.shouldContinue {
                     await self?.updateBatchItem(index, state: .cancelled)
                     continue
@@ -644,9 +682,9 @@ final class MaterialLabStore {
                 await self?.updateBatchItem(index, state: .running)
                 let started = Date()
                 do {
-                    let result = try MaterialEngine.derive(source: source, recipe: chosenRecipe, control: control)
-                    let bundle = try MaterialBundle.export(result, into: destination)
-                    for format in formats { try format.export(bundle: bundle) }
+                    let result = try MaterialEngine.derive(source: source, recipe: item.recipe, control: control)
+                    let bundle = try MaterialBundle.export(result, into: item.destination)
+                    for format in item.formats { try format.export(bundle: bundle) }
                     await self?.updateBatchItem(index, state: .done, bundle: bundle, duration: Date().timeIntervalSince(started))
                 } catch {
                     let state: BatchItem.State = control.shouldContinue ? .failed(error.localizedDescription) : .cancelled
@@ -686,7 +724,8 @@ final class MaterialLabStore {
             return entry
         }
         let report: [String: Any] = ["exporter": "Material Lab", "items": items,
-                                     "formats": batchFormats.map(\.id), "succeeded": batchDoneCount,
+                                     "formats": Set(batchItems.flatMap { $0.formats.map(\.id) }).sorted(),
+                                     "succeeded": batchDoneCount,
                                      "failed": batchFailedCount]
         do {
             try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: url)
@@ -704,6 +743,13 @@ final class MaterialLabStore {
     private func finishBatch(completed: Bool) {
         isBatching = false
         batchControl = nil
+        // Items queued while this run was going (the watch folder) run next, unless the user cancelled.
+        let pending = batchItems.indices.filter { batchItems[$0].state == .queued }
+        if completed, !pending.isEmpty {
+            runBatch(pending)
+            return
+        }
+        for index in pending { batchItems[index].state = .cancelled }
         status = completed
             ? "Batch complete: \(batchDoneCount) exported, \(batchFailedCount) failed."
             : "Batch cancelled after \(batchDoneCount) exports."
@@ -732,6 +778,7 @@ final class MaterialLabStore {
             } catch {
                 failures.append("Could not save the source list: \(error.localizedDescription)")
             }
+            imported.forEach { touchLibraryEntry($0.id) }
             selectSource(imported.last?.id)
             pendingMetadataSources.append(contentsOf: imported)
             presentNextMetadataEditor()
@@ -878,6 +925,7 @@ final class MaterialLabStore {
         do {
             try MaterialLibrary.saveMetadataOverride(updated)
             sources[index] = updated
+            touchLibraryEntry(id)
             if updated.origin == .imported {
                 try MaterialLibrary.saveImportedSources(sources)
             }
@@ -894,16 +942,17 @@ final class MaterialLabStore {
 
     // MARK: - Helpers
 
-    private func deduplicateAndSort() {
+    func deduplicateAndSort() {
         var seen = Set<String>()
-        sources = sources.filter { seen.insert($0.id).inserted }
+        let hidden = Set(library.hiddenCatalogIDs)
+        sources = sources.filter { !hidden.contains($0.id) && seen.insert($0.id).inserted }
             .sorted {
                 if $0.origin != $1.origin { return $0.origin.rawValue < $1.origin.rawValue }
                 return $0.semanticLabel.localizedStandardCompare($1.semanticLabel) == .orderedAscending
             }
     }
 
-    private func chooseDestination() -> URL? {
+    func chooseDestination() -> URL? {
         let panel = NSOpenPanel()
         panel.title = "Choose an Export Folder"
         panel.message = "Material Lab creates a separate .pbrmaterial bundle for each source."
