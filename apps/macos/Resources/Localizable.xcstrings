@@ -14,6 +14,16 @@
         }
       }
     },
+    " Drag out to save it as a PNG.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ドラッグして外に出すとPNGとして保存できます。"
+          }
+        }
+      }
+    },
     "#%@": {
       "localizations": {
         "ja": {
@@ -1784,6 +1794,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "ダブルクリックで開きます"
+          }
+        }
+      }
+    },
+    "Drag Material": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルをドラッグ"
+          }
+        }
+      }
+    },
+    "Drag material bundle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルバンドルをドラッグ"
+          }
+        }
+      }
+    },
+    "Drag the material out as a .pbrmaterial bundle with every map and its manifest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのマップとマニフェストを含む .pbrmaterial バンドルとしてマテリアルをドラッグして書き出します"
           }
         }
       }

@@ -213,6 +213,8 @@ struct LibraryHomeView: View {
         return LibraryTile(source: source, entry: entry, isSelected: selection.contains(source.id),
                            isCurrent: store.selectedSource?.id == source.id && store.currentMaterial != nil,
                            toggleFavourite: { store.toggleFavourite(source.id) })
+            .modifier(LibraryTileDrag(material: store.selectedSource?.id == source.id && store.canExport
+                                      ? store.currentMaterial : nil))
             .onTapGesture { click(source.id, in: items) }
             .simultaneousGesture(TapGesture(count: 2).onEnded { store.navigate(to: .source(source.id)) })
             .contextMenu { contextMenu(for: source) }
@@ -305,6 +307,22 @@ struct LibraryHomeView: View {
                 Label("Selection", systemImage: "checkmark.circle")
             }
             .help("Select materials for batch actions")
+        }
+    }
+}
+
+/// The open, exportable material drags out of the grid as its .pbrmaterial bundle.
+private struct LibraryTileDrag: ViewModifier {
+    let material: DerivedMaterial?
+
+    func body(content: Content) -> some View {
+        if let material {
+            content.draggable(MaterialBundleTransfer(material: material)) {
+                DragPreview(image: material.previews[.albedo],
+                            title: "\(MaterialBundle.exportSlug(material.source.semanticLabel)).pbrmaterial")
+            }
+        } else {
+            content
         }
     }
 }
