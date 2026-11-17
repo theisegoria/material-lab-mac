@@ -120,12 +120,19 @@ final class LibraryCatalogTests: XCTestCase {
             XCTAssertEqual(catalog.tags(for: second), ["blue"])
         }
 
-        // A capture folder removed behind the app's back is pruned on refresh.
-        try FileManager.default.removeItem(at: library.directory(for: second))
+        // Entries for a capture with no folder on disk (removed behind the app's back) are pruned on refresh.
+        let ghost = UUID()
+        var stale = CaptureLibrary(root: root).loadCatalog()
+        stale.setFavourite(ghost, true)
+        stale.addTag("gone", to: ghost)
+        stale.add(ghost, to: try XCTUnwrap(stale.collections.first?.id))
+        CaptureLibrary(root: root).saveCatalog(stale)
         let fresh = CaptureStore(libraryDirectory: root)
         await fresh.refreshLibrary()
-        XCTAssertTrue(fresh.catalog.tags(for: second).isEmpty)
-        XCTAssertEqual(fresh.catalog.collections.first?.members, [])
+        XCTAssertFalse(fresh.catalog.isFavourite(ghost))
+        XCTAssertTrue(fresh.catalog.tags(for: ghost).isEmpty)
+        XCTAssertEqual(fresh.catalog.collections.first?.members, [second])
+        XCTAssertEqual(fresh.catalog.tags(for: second), ["blue"])
         XCTAssertEqual(CaptureLibrary(root: root).loadCatalog(), fresh.catalog)
 
         // An unreadable catalog loses only the organisation (a library no store is using, so nothing rewrites it).
