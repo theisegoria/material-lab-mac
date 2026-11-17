@@ -39,9 +39,11 @@ enum PreviewShape: String, CaseIterable, Identifiable {
 struct MaterialPreview3D: View {
     let material: DerivedMaterial
     let shape: PreviewShape
-    var environment: PreviewEnvironment = .studio
+    var lighting: PreviewLighting = .builtIn(.studio)
     /// UV repeats across the preview geometry, so tiling shows.
     var tiling: Float = 2
+    /// Preview-only displacement, wetness and wear (never exported).
+    var surface = PreviewSurface()
     @State private var scene = PreviewScene()
 
     private var materialKey: MaterialKey {
@@ -49,7 +51,7 @@ struct MaterialPreview3D: View {
             albedo: material.previews[.albedo].map { ObjectIdentifier($0) },
             normalYDown: material.recipe.normalYDown,
             metalness: material.recipe.assignedMetalnessEnabled ? material.recipe.assignedMetalness : -1,
-            shape: shape, tiling: tiling
+            shape: shape, tiling: tiling, surface: surface
         )
     }
 
@@ -59,11 +61,18 @@ struct MaterialPreview3D: View {
             scene.install(into: &content)
         } update: { _ in
             scene.setShape(shape)
-            scene.setEnvironment(environment)
         }
         .realityViewCameraControls(.orbit)
+        .task(id: lighting) {
+            await scene.setLighting(lighting)
+        }
         .task(id: materialKey) {
-            await scene.apply(material, shape: shape, tiling: tiling)
+            if !surface.isNeutral {
+                // Coalesce slider drags: weathering and displacement are rebuilt once the value settles.
+                try? await Task.sleep(for: .milliseconds(90))
+                guard !Task.isCancelled else { return }
+            }
+            await scene.apply(material, shape: shape, tiling: tiling, surface: surface)
         }
         .accessibilityLabel("Interactive 3D preview of the material on a \(shape.title.lowercased())")
     }
@@ -74,6 +83,7 @@ struct MaterialPreview3D: View {
         let metalness: Float
         let shape: PreviewShape
         let tiling: Float
+        let surface: PreviewSurface
     }
 }
 
@@ -83,7 +93,9 @@ final class PreviewScene {
     let model = ModelEntity()
     private(set) var environment: EnvironmentResource?
     private var currentShape: PreviewShape?
-    private var currentEnvironment: PreviewEnvironment = .studio
+    private var currentLighting: PreviewLighting = .builtIn(.studio)
+    /// True while the model shows a tessellated, height-displaced mesh instead of the generated shape.
+    private var displaced = false
     private var installed = false
 
     func install(into content: inout RealityViewCameraContent) {
@@ -135,24 +147,55 @@ final class PreviewScene {
         }
     }
 
-    func setEnvironment(_ choice: PreviewEnvironment) {
-        guard choice != currentEnvironment, let resource = choice.makeResource() else { return }
-        currentEnvironment = choice
+    /// Switches the image-based light to a built-in sky or an imported HDRI (decoded off the main thread).
+    func setLighting(_ choice: PreviewLighting) async {
+        guard choice != currentLighting else { return }
+        let resource: EnvironmentResource?
+        switch choice {
+        case .builtIn(let environment):
+            resource = environment.makeResource()
+        case .custom(let url):
+            let image = await Task.detached(priority: .userInitiated) { CustomEnvironmentLibrary.loadImage(url) }.value
+            guard !Task.isCancelled, let image else { return }
+            resource = try? await EnvironmentResource(equirectangular: image, options: .init(samplingQuality: .normal))
+        }
+        guard !Task.isCancelled, let resource else { return }
+        currentLighting = choice
         environment = resource
         root.components.set(ImageBasedLightComponent(source: .single(resource), intensityExponent: 0.4))
     }
 
-    func apply(_ material: DerivedMaterial, shape: PreviewShape, tiling: Float? = nil) async {
+    func apply(_ material: DerivedMaterial, shape: PreviewShape, tiling: Float? = nil,
+               surface: PreviewSurface = PreviewSurface()) async {
         setShape(shape)
+        let repeats = tiling ?? shape.uvRepeat
+        var albedoImage = material.previews[.albedo]
+        var roughnessImage = material.previews[.roughness]
+        if surface.changesTextures {
+            let weathered = await Task.detached(priority: .userInitiated) {
+                PreviewWeathering.apply(material, wetness: surface.wetness, wear: surface.wear)
+            }.value
+            guard !Task.isCancelled else { return }
+            albedoImage = weathered.albedo ?? albedoImage
+            roughnessImage = weathered.roughness ?? roughnessImage
+        }
+        var displacedMesh: MeshResource?
+        if surface.displacement > 0, shape != .cube, let height = material.maps[.height] {
+            let data = await Task.detached(priority: .userInitiated) {
+                PreviewGeometry.displaced(shape, height: height, scale: surface.displacement, tiling: repeats)
+            }.value
+            guard !Task.isCancelled else { return }
+            displacedMesh = try? data?.makeMesh()
+        }
         do {
             var pbr = PhysicallyBasedMaterial()
-            if let albedo = try await texture(material.previews[.albedo], semantic: .color) {
+            if let albedo = try await texture(albedoImage, semantic: .color) {
                 pbr.baseColor = .init(tint: .white, texture: albedo)
             }
             if let normal = try await texture(MaterialEngine.openGLNormalImage(material), semantic: .normal) {
                 pbr.normal = .init(texture: normal)
             }
-            if let roughness = try await texture(material.previews[.roughness], semantic: .raw) {
+            if let roughness = try await texture(roughnessImage, semantic: .raw) {
                 pbr.roughness = .init(scale: 1, texture: roughness)
             } else {
                 pbr.roughness = .init(floatLiteral: material.recipe.roughnessBase)
@@ -162,9 +205,19 @@ final class PreviewScene {
             }
             pbr.metallic = .init(floatLiteral: material.recipe.assignedMetalnessEnabled
                                  ? material.recipe.assignedMetalness : 0)
-            pbr.textureCoordinateTransform = .init(scale: SIMD2(repeating: tiling ?? shape.uvRepeat))
+            pbr.textureCoordinateTransform = .init(scale: SIMD2(repeating: repeats))
+            if displacedMesh != nil { pbr.faceCulling = .none }
             guard !Task.isCancelled else { return }
             model.model?.materials = [pbr]
+            if let displacedMesh {
+                model.model?.mesh = displacedMesh
+                currentShape = shape
+                displaced = true
+            } else if displaced {
+                displaced = false
+                currentShape = nil
+                setShape(shape)
+            }
         } catch {
             // Keep the previous material; the 2D views remain authoritative.
         }

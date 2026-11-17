@@ -867,6 +867,16 @@
         }
       }
     },
+    "Brightens and polishes raised edges (convexity map) and adds grime in cavities.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "盛り上がったエッジ（凸部マップ）を明るく滑らかにし、くぼみに汚れを加えます。"
+          }
+        }
+      }
+    },
     "Bring your own artwork: anything you add replaces the estimate, and the bundle records it as authored.": {
       "localizations": {
         "ja": {
@@ -934,6 +944,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "生成できません"
+          }
+        }
+      }
+    },
+    "Cannot Use This HDRI": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このHDRIは使用できません"
           }
         }
       }
@@ -1058,6 +1078,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "MoGe2Normals.mlpackage（またはコンパイル済みの.mlmodelc）を選択してください。一度だけコンパイルされ、~/Library/Application Support/Material Lab/Models に保存されます。"
+          }
+        }
+      }
+    },
+    "Choose a Radiance HDR (.hdr) or OpenEXR (.exr) panorama.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radiance HDR（.hdr）または OpenEXR（.exr）のパノラマを選択してください。"
           }
         }
       }
@@ -1394,6 +1424,16 @@
         }
       }
     },
+    "Darkens the albedo and lowers roughness, filling the cavities first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルベドを暗くしてラフネスを下げます。くぼみから先に濡れます。"
+          }
+        }
+      }
+    },
     "Decline": {
       "localizations": {
         "ja": {
@@ -1608,6 +1648,36 @@
         }
       }
     },
+    "Displacement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント"
+          }
+        }
+      }
+    },
+    "Displacement shows on the sphere and the plane.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメントは球と平面で表示されます。"
+          }
+        }
+      }
+    },
+    "Displacement, wetness and wear change only this 3D view, never the maps or exports": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスプレイスメント、濡れ、摩耗はこの3D表示だけを変え、マップや書き出しには影響しません"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "ja": {
@@ -1675,6 +1745,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "エッジ"
+          }
+        }
+      }
+    },
+    "Edge wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エッジの摩耗"
           }
         }
       }
@@ -2260,6 +2340,16 @@
         }
       }
     },
+    "Import HDRI…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDRIを読み込む…"
+          }
+        }
+      }
+    },
     "Import Images…": {
       "localizations": {
         "ja": {
@@ -2530,6 +2620,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ライティング環境"
+          }
+        }
+      }
+    },
+    "Lighting environment: built-in skies or your own .hdr / .exr panoramas": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライティング環境：内蔵の空、または独自の .hdr / .exr パノラマ"
           }
         }
       }
@@ -2901,6 +3001,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "苔"
+          }
+        }
+      }
+    },
+    "Moves the tessellated sphere or plane along its normal by the height map.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分割した球や平面を、ハイトマップに従って法線方向に動かします。"
           }
         }
       }
@@ -3464,12 +3574,42 @@
         }
       }
     },
+    "Preview Only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ"
+          }
+        }
+      }
+    },
     "Preview Tiling": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "タイリングをプレビュー"
+          }
+        }
+      }
+    },
+    "Preview only · not exported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビューのみ・書き出しには含まれません"
+          }
+        }
+      }
+    },
+    "Preview-only displacement, wetness and edge wear": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プレビュー専用のディスプレイスメント、濡れ、エッジの摩耗"
           }
         }
       }
@@ -3880,6 +4020,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "このマテリアルをライブラリから削除しますか？"
+          }
+        }
+      }
+    },
+    "Remove “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@”を削除"
           }
         }
       }
@@ -4990,6 +5140,26 @@
         }
       }
     },
+    "These change only this 3D view. The maps and every export stay exactly as derived.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらはこの3D表示だけを変更します。マップとすべての書き出しは生成されたままです。"
+          }
+        }
+      }
+    },
+    "This file could not be decoded as an HDR image.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルはHDR画像としてデコードできませんでした。"
+          }
+        }
+      }
+    },
     "This source is no longer in the library.": {
       "localizations": {
         "ja": {
@@ -5261,6 +5431,16 @@
         }
       }
     },
+    "Wear & Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摩耗と濡れ"
+          }
+        }
+      }
+    },
     "Weight of MoGe-2 learned geometry: large-scale form and which way the fine detail points. 0 analytic only; at 1 the fine grain still comes from the photo, oriented by the learned surface.": {
       "localizations": {
         "ja": {
@@ -5287,6 +5467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Material Labへようこそ"
+          }
+        }
+      }
+    },
+    "Wetness": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "濡れ"
           }
         }
       }
@@ -5345,6 +5535,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "端でフィルタを折り返す"
+          }
+        }
+      }
+    },
+    "Your HDRIs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込んだHDRI"
           }
         }
       }

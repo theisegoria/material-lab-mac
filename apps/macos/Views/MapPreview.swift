@@ -18,7 +18,11 @@ struct MaterialCanvas: View {
     @State private var loupe: CGPoint?   // Normalized cursor position over the map (Map view).
     @State private var showSeams = true
     @State private var shape: PreviewShape = .sphere
-    @State private var environment: PreviewEnvironment = .studio
+    @State private var lighting: PreviewLighting = .builtIn(.studio)
+    @State private var customEnvironments: [URL] = []
+    @State private var importingEnvironment = false
+    @State private var surface = PreviewSurface()
+    @State private var showSurface = false
     @State private var tiling: Float = 2
     @FocusState private var focused: Bool
 
@@ -54,6 +58,10 @@ struct MaterialCanvas: View {
                 HStack(alignment: .top) {
                     stateChip
                     Spacer()
+                    if store.canvasMode == .shaded3D, !surface.isNeutral {
+                        chip(String(localized: "Preview only · not exported"), systemImage: "eye", tint: .secondary)
+                            .help("Displacement, wetness and wear change only this 3D view, never the maps or exports")
+                    }
                 }
                 Spacer()
                 hud
@@ -104,6 +112,21 @@ struct MaterialCanvas: View {
             resetZoom()
         }
         .onChange(of: store.canvasMode) { _, _ in resetZoom() }
+        .task { customEnvironments = CustomEnvironmentLibrary.list() }
+        .fileImporter(isPresented: $importingEnvironment, allowedContentTypes: CustomEnvironmentLibrary.contentTypes) { result in
+            switch result {
+            case .success(let url):
+                do {
+                    let copy = try CustomEnvironmentLibrary.importFile(url)
+                    customEnvironments = CustomEnvironmentLibrary.list()
+                    lighting = .custom(copy)
+                } catch {
+                    store.alert = MaterialAlert(title: String(localized: "Cannot Use This HDRI"), message: error.localizedDescription)
+                }
+            case .failure(let error):
+                store.alert = MaterialAlert(message: error.localizedDescription)
+            }
+        }
         .animation(.easeInOut(duration: 0.2), value: store.canvasMode)
         .animation(.easeInOut(duration: 0.18), value: store.selectedMap)
     }
@@ -115,7 +138,7 @@ struct MaterialCanvas: View {
         switch store.canvasMode {
         case .shaded3D:
             if let material {
-                MaterialPreview3D(material: material, shape: shape, environment: environment, tiling: tiling)
+                MaterialPreview3D(material: material, shape: shape, lighting: lighting, tiling: tiling, surface: surface)
                     .transition(.opacity)
             } else {
                 placeholder
@@ -280,16 +303,47 @@ struct MaterialCanvas: View {
                     .padding(.vertical, 6)
                     .glassEffect(.regular, in: Capsule())
                     Menu {
-                        Picker("Lighting", selection: $environment) {
-                            ForEach(PreviewEnvironment.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                        Picker("Lighting", selection: $lighting) {
+                            ForEach(PreviewEnvironment.allCases) {
+                                Label($0.title, systemImage: $0.symbol).tag(PreviewLighting.builtIn($0))
+                            }
+                            if !customEnvironments.isEmpty {
+                                Section("Your HDRIs") {
+                                    ForEach(customEnvironments, id: \.self) { url in
+                                        Label(PreviewLighting.custom(url).title, systemImage: PreviewLighting.custom(url).symbol)
+                                            .tag(PreviewLighting.custom(url))
+                                    }
+                                }
+                            }
+                        }
+                        .pickerStyle(.inline)
+                        Divider()
+                        Button("Import HDRI…", systemImage: "square.and.arrow.down") { importingEnvironment = true }
+                        if case .custom(let url) = lighting {
+                            Button("Remove “\(lighting.title)”", systemImage: "trash", role: .destructive) {
+                                CustomEnvironmentLibrary.remove(url)
+                                customEnvironments = CustomEnvironmentLibrary.list()
+                                lighting = .builtIn(.studio)
+                            }
                         }
                     } label: {
-                        Label(environment.title, systemImage: environment.symbol)
+                        Label(lighting.title, systemImage: lighting.symbol)
                     }
                     .menuStyle(.button)
                     .buttonStyle(.glass)
                     .fixedSize()
-                    .help("Lighting environment")
+                    .help("Lighting environment: built-in skies or your own .hdr / .exr panoramas")
+                    Button {
+                        showSurface.toggle()
+                    } label: {
+                        Label("Surface", systemImage: surface.isNeutral ? "drop" : "drop.fill")
+                    }
+                    .buttonStyle(.glass)
+                    .help("Preview-only displacement, wetness and edge wear")
+                    .popover(isPresented: $showSurface, arrowEdge: .top) {
+                        PreviewSurfaceControls(surface: $surface, shape: shape,
+                                               hasHeight: material?.maps[.height] != nil)
+                    }
                     HStack(spacing: 6) {
                         Text("Tiling").font(.callout).foregroundStyle(.secondary)
                         Stepper(value: $tiling, in: 1...8, step: 1) {
@@ -698,5 +752,63 @@ private struct HistogramStrip: View {
             pixel += stride
         }
         return bins
+    }
+}
+
+/// Preview-only surface controls for the 3D view: displacement from the height map, wetness and edge wear.
+private struct PreviewSurfaceControls: View {
+    @Binding var surface: PreviewSurface
+    let shape: PreviewShape
+    let hasHeight: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Label("Preview Only", systemImage: "eye")
+                    .font(.headline)
+                Text("These change only this 3D view. The maps and every export stay exactly as derived.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            slider(String(localized: "Displacement"), value: $surface.displacement, in: PreviewSurface.displacementRange,
+                   help: String(localized: "Moves the tessellated sphere or plane along its normal by the height map."))
+                .disabled(shape == .cube || !hasHeight)
+            if shape == .cube {
+                Text("Displacement shows on the sphere and the plane.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            Text("Wear & Wetness").font(.subheadline.weight(.semibold))
+            slider(String(localized: "Wetness"), value: $surface.wetness, in: 0...1,
+                   help: String(localized: "Darkens the albedo and lowers roughness, filling the cavities first."))
+            slider(String(localized: "Edge wear"), value: $surface.wear, in: 0...1,
+                   help: String(localized: "Brightens and polishes raised edges (convexity map) and adds grime in cavities."))
+            HStack {
+                Spacer()
+                Button("Reset") { withAnimation { surface = PreviewSurface() } }
+                    .disabled(surface.isNeutral)
+            }
+        }
+        .padding(16)
+        .frame(width: 300)
+    }
+
+    private func slider(_ title: String, value: Binding<Float>, in range: ClosedRange<Float>, help: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue == 0 ? String(localized: "Off")
+                     : "\(Int((value.wrappedValue / range.upperBound * 100).rounded())) %")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range)
+                .controlSize(.small)
+                .accessibilityLabel(title)
+        }
+        .help(help)
     }
 }
