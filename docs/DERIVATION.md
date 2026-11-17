@@ -172,6 +172,18 @@ On iPhone, Material Capture streams unfiltered LiDAR depth while the user frames
 
 The averaged depth is stored beside the capture (`depth.mld`), because re-embedding edited depth in the photo would drop the camera calibration. With learned geometry on as well, slopes below the depth's resolution come from MoGe-2 and the rest from LiDAR. The crop's real width and height come from straight-line fits along the grid rows and columns of the back-projected crop. That width is the tile size whenever the recipe's own Tile size is 0. Bundles record all of this in a top-level `depth` section, including `height_span_mm`.
 
+### Measured guides from other scanners (`--guide-measured`, CLI 1.4.0)
+
+The CLI takes a scanner's output as measured form, the way Material Capture uses LiDAR, with `PBRLabInput.guide_normals_measured` set:
+
+- **A tangent normal map** (colour image, +Y; `--guide-measured-dx` for green-down) is used as the guide.
+- **A depth or height map** (grey, 8- or 16-bit, white = near) is converted by `PBRLabMeasuredDepthToGuideNormals`:
+  - `--measured-depth-mm` gives the depth that black..white spans, and `--tile-metres` the tile width.
+  - A least-squares plane is removed, then slopes are taken by central differences, clamped at the edges (a scan does not wrap).
+- **Both are resampled to the derivation size.** Crop the scan like the photo.
+- **With `--learned`,** the guides are combined like the iPhone's (`PBRLabSplitGuideBands`, a port of `DepthStack.splitBands`): the measured slopes, plus the learned slopes above a box-blur cutoff of size/64 px. `guide_normals.combination` is then `measured_form_learned_detail_v1`, and both inputs' hashes are kept.
+- **The manifest records a top-level `depth` section** with `source: "external_scan"`: the scan's `file`, `sha256`, `kind` (`depth` or `normal`), `size_px`, `depth_range_mm` and `plane_removed` (depth), `measured_form`, `learned_detail`, `measured_form_rms_slope`, and `height_span_mm` when the tile size is known. The validator requires guide provenance with it.
+
 ## Scope of validation
 
 Core tests always run with assertions, including Release builds. They check:

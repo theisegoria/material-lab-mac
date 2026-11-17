@@ -869,6 +869,93 @@ def main() -> None:
         tampered["layers"] = layered["layers"]
         (compose / "v8.pbrmaterial" / "manifest.json").write_text(json.dumps(tampered))
         run(cli, "--validate", str(compose / "v8.pbrmaterial"), expect_success=False)
+
+        # --guide-measured (CLI 1.4.0): another scanner's depth or normal map as measured form.
+        measured_dir = root / "measured"
+        measured_dir.mkdir()
+        textured_png(measured_dir / "photo.png")
+        n = 32
+        depth_rows = bytearray()
+        for y in range(n):
+            depth_rows.append(0)
+            for x in range(n):
+                depth_rows += struct.pack(">H", int(30000 + 20000 * math.sin(2 * math.pi * x / n) * math.cos(2 * math.pi * y / n)))
+        depth_png = bytearray(b"\x89PNG\r\n\x1a\n")
+        depth_png += chunk(b"IHDR", struct.pack(">IIBBBBB", n, n, 16, 0, 0, 0, 0))
+        depth_png += chunk(b"IDAT", zlib.compress(bytes(depth_rows)))
+        depth_png += chunk(b"IEND", b"")
+        (measured_dir / "depth.png").write_bytes(bytes(depth_png))
+        run(cli, "--input", str(measured_dir / "photo.png"), "--preset", "stone", "--guide-measured", str(measured_dir / "depth.png"),
+            "--measured-depth-mm", "3", "--tile-metres", "0.25", "--output", str(measured_dir / "scan"))
+        scan = json.loads((measured_dir / "scan.pbrmaterial" / "manifest.json").read_text())
+        run(cli, "--validate", str(measured_dir / "scan.pbrmaterial"))
+        assert scan["depth"]["source"] == "external_scan" and scan["depth"]["kind"] == "depth" and scan["depth"]["measured_form"] is True
+        assert scan["depth"]["measured_form_rms_slope"] > 0 and scan["depth"]["height_span_mm"] > 0
+        assert scan["guide_normals"]["estimator"] == "measured_scan" and scan["recipe"]["guide_normal_weight"] == 1
+        assert scan["maps"]["height"]["provenance"] == "estimated_from_albedo_and_measured_guide"
+        # A normal map from a scanner is measured form too; a depth map needs its range and the tile size.
+        run(cli, "--input", str(measured_dir / "photo.png"), "--preset", "stone", "--guide-measured",
+            str(measured_dir / "scan.pbrmaterial" / "normal.png"), "--output", str(measured_dir / "normals"))
+        assert json.loads((measured_dir / "normals.pbrmaterial" / "manifest.json").read_text())["depth"]["kind"] == "normal"
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--tile-metres", "0.25", "--output", str(measured_dir / "x"), expect_success=False)
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--measured-depth-mm", "3", "--output", str(measured_dir / "x"), expect_success=False)
+        run(cli, "--input", str(measured_dir / "photo.png"), "--guide-measured", str(measured_dir / "depth.png"),
+            "--guide-normals", str(measured_dir / "depth.png"), "--output", str(measured_dir / "x"), expect_success=False)
+        tampered = json.loads((measured_dir / "scan.pbrmaterial" / "manifest.json").read_text())
+        tampered["depth"]["sha256"] = "nope"
+        (measured_dir / "scan.pbrmaterial" / "manifest.json").write_text(json.dumps(tampered))
+        run(cli, "--validate", str(measured_dir / "scan.pbrmaterial"), expect_success=False)
+        # --resolution (CLI 1.4.0): upscaler passes that land exactly on 4096, wrap-padded so the albedo still tiles.
+        # ResolutionStub.py (sips resize) stands in for Real-ESRGAN, both as --pre-upscale-exec and through the pinned
+        # adapter lookup (a fake vendor root; the adapter path and Python come from the environment).
+        resolution = root / "resolution"
+        resolution.mkdir()
+        rstub = pathlib.Path(__file__).with_name("ResolutionStub.py")
+        textured_png(resolution / "small.png", n=64)
+        stub_args = ["--pre-upscale-exec", sys.executable, "--pre-upscale-arg", "-I", "--pre-upscale-arg", str(rstub),
+                     "--pre-upscale-arg", "--input", "--pre-upscale-arg", "{input}", "--pre-upscale-arg", "--output",
+                     "--pre-upscale-arg", "{output}", "--pre-upscale-arg", "--scale", "--pre-upscale-arg", "{scale}"]
+        run(cli, "--input", str(resolution / "small.png"), "--preset", "stone", "--resolution", "4096",
+            "--output", str(resolution / "custom"), *stub_args)
+        big4k = json.loads((resolution / "custom.pbrmaterial" / "manifest.json").read_text())
+        run(cli, "--validate", str(resolution / "custom.pbrmaterial"))
+        res = big4k["source"]["resolution"]
+        assert big4k["maps"]["normal"]["width"] == 4096 and res["target_px"] == 4096 and res["source_px"] == 64
+        assert res["upscaler"] == "custom" and [p["scale"] for p in res["passes"]] == [4, 4, 4] and res["pre_resample_px"] == 64
+        assert all(p["wrap_padding_px"] > 0 and p["receipt"]["model"] == "sips-resize-test-stub" for p in res["passes"])
+        assert big4k["source"]["sha256"] == hashlib.sha256((resolution / "small.png").read_bytes()).hexdigest()
+        assert big4k["seam_metrics"]["albedo_value_delta"] < 0.02
+        # Not installed: a clear failure that names the missing upscaler, and no bundle.
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("MATERIAL_LAB_REALESRGAN")}
+        missing = subprocess.run([cli, "--input", str(resolution / "small.png"), "--resolution", "4096",
+                                  "--output", str(resolution / "missing")], text=True, capture_output=True, env=clean_env)
+        assert missing.returncode == 1 and "pinned Real-ESRGAN upscaler is not configured" in missing.stderr, missing.stderr
+        assert not (resolution / "missing.pbrmaterial").exists()
+        bad_root = subprocess.run([cli, "--input", str(resolution / "small.png"), "--resolution", "4096", "--upscaler-root",
+                                   str(resolution), "--output", str(resolution / "missing")], text=True, capture_output=True,
+                                  env=clean_env)
+        assert bad_root.returncode == 1 and "not installed" in bad_root.stderr, bad_root.stderr
+        # The pinned path, with the stub as the adapter.
+        vendor = resolution / "vendor"
+        (vendor / "script").mkdir(parents=True)
+        (vendor / "script" / "vendor_realesrgan.py").write_text("# fake vendor tree for tests\n")
+        pinned_env = dict(clean_env, MATERIAL_LAB_REALESRGAN_PYTHON=sys.executable, MATERIAL_LAB_REALESRGAN_ADAPTER=str(rstub))
+        textured_png(resolution / "mid.png", n=48)
+        pinned = subprocess.run([cli, "--input", str(resolution / "mid.png"), "--preset", "fabric", "--resolution", "4096",
+                                 "--upscaler-root", str(vendor), "--output", str(resolution / "pinned")],
+                                text=True, capture_output=True, env=pinned_env)
+        assert pinned.returncode == 0, pinned.stderr
+        pinned_res = json.loads((resolution / "pinned.pbrmaterial" / "manifest.json").read_text())["source"]["resolution"]
+        assert pinned_res["upscaler"] == "pinned_realesrgan" and pinned_res["pre_resample_px"] == 64
+        assert pinned_res["passes"][0]["arguments_template"][-4:] == ["--scale", "{scale}", "--device", "cpu"]
+        run(cli, "--validate", str(resolution / "pinned.pbrmaterial"))
+        run(cli, "--input", str(resolution / "small.png"), "--resolution", "2048", "--output", str(resolution / "x"),
+            expect_success=False)
+        run(cli, "--input", str(resolution / "small.png"), "--resolution", "4096", "--relief-mask-r8", str(resolution / "small.png"),
+            "--output", str(resolution / "x"), expect_success=False)
+        shutil.rmtree(resolution)
     print("Material Lab CLI smoke tests passed")
 
 
