@@ -639,7 +639,8 @@ final class CaptureStore {
 
     /// Writes "<label> material/" in a temporary folder: the .pbrmaterial bundle (validator-compatible, as from the
     /// Mac app and CLI) plus every chosen export target. Returns the folder for the Files exporter.
-    func makeMaterialExport() async throws -> URL {
+    /// `targets` overrides the remembered choice (for sharing one format); nil uses `exportTargets`.
+    func makeMaterialExport(targets chosen: Set<String>? = nil) async throws -> URL {
         let label = trimmedLabel
         guard !label.isEmpty else { throw CaptureError.missingLabel }
         guard let source, let derived, hasExportableMaps else {
@@ -648,7 +649,7 @@ final class CaptureStore {
         let category = category.trimmingCharacters(in: .whitespacesAndNewlines)
         let identity = MaterialBundleWriter.Identity(label: label, category: category.isEmpty ? "uncategorized" : category,
                                                      origin: source.origin, captureMode: source.captureMode(for: crop))
-        let targets = ExportTarget.named(exportTargets)
+        let targets = ExportTarget.named(chosen ?? exportTargets)
         let slug = Self.exportSlug(label)
         return try await Task.detached(priority: .userInitiated) {
             let fm = FileManager.default

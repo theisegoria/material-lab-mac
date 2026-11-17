@@ -605,6 +605,36 @@
         }
       }
     },
+    "Bundle and %lld formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルと%lld形式"
+          }
+        }
+      }
+    },
+    "Bundle and Chosen Formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルと選択した形式"
+          }
+        }
+      }
+    },
+    "Bundle only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルのみ"
+          }
+        }
+      }
+    },
     "CPU only": {
       "extractionState": "manual",
       "localizations": {
@@ -1326,6 +1356,16 @@
         }
       }
     },
+    "Drag to another app to copy the %@ PNG": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのアプリへドラッグすると%@のPNGをコピーできます"
+          }
+        }
+      }
+    },
     "Drag to move the light": {
       "localizations": {
         "ja": {
@@ -1505,6 +1545,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "マテリアルを書き出す…"
+          }
+        }
+      }
+    },
+    "Export or Share…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出しまたは共有…"
           }
         }
       }
@@ -2367,6 +2417,16 @@
         }
       }
     },
+    "Material Bundle Only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マテリアルバンドルのみ"
+          }
+        }
+      }
+    },
     "Material Capture": {
       "localizations": {
         "ja": {
@@ -2818,6 +2878,16 @@
         }
       }
     },
+    "One Format": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1つの形式"
+          }
+        }
+      }
+    },
     "Only the collection is removed. Its captures stay in the library.": {
       "localizations": {
         "ja": {
@@ -3146,6 +3216,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "写真を準備中…"
+          }
+        }
+      }
+    },
+    "Preparing…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備中…"
           }
         }
       }
@@ -3660,6 +3740,16 @@
         }
       }
     },
+    "Save to Files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“ファイル”に保存"
+          }
+        }
+      }
+    },
     "Saved recipes": {
       "localizations": {
         "ja": {
@@ -3676,6 +3766,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "写真と一緒に深度を保存し、表面の形状に使います。深度付きの写真ではConstant ColorとRAWは使われません。"
+          }
+        }
+      }
+    },
+    "Saves or shares the PBR maps with glTF, USDZ, Unreal, Unity and other formats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PBRマップをglTF、USDZ、Unreal、Unityなどの形式で保存または共有します"
           }
         }
       }
@@ -3777,6 +3877,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "この写真と一緒に計測した深度から、実際の深さで表面の形状を作ります。学習ジオメトリもオンの場合は、大きな形状をLiDARが、細かなディテールを学習ジオメトリが担当します。"
+          }
+        }
+      }
+    },
+    "Shares the bundle or one format with AirDrop, Mail, Messages or another app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バンドルまたは1つの形式をAirDrop、メール、メッセージ、ほかのアプリで共有します"
+          }
+        }
+      }
+    },
+    "Share…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有…"
+          }
+        }
+      }
+    },
+    "Sharing sends folders, such as the .pbrmaterial bundle, as .zip archives. Save to Files keeps them as folders.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有では、.pbrmaterialバンドルなどのフォルダを.zipアーカイブとして送ります。“ファイル”に保存するとフォルダのまま保存されます。"
           }
         }
       }

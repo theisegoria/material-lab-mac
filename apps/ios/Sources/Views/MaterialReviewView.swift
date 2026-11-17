@@ -358,12 +358,12 @@ struct MaterialReviewView: View {
                         showExportTargets = true
                     }
                 } label: {
-                    Label("Export Material…", systemImage: "square.and.arrow.up.on.square")
+                    Label("Export or Share…", systemImage: "square.and.arrow.up.on.square")
                         .frame(maxWidth: .infinity, minHeight: 30)
                 }
                 .buttonStyle(.glassProminent)
                 .accessibilityIdentifier("export-material")
-                .accessibilityHint("Saves the PBR maps with glTF, USDZ, Unreal, Unity and other formats to Files")
+                .accessibilityHint("Saves or shares the PBR maps with glTF, USDZ, Unreal, Unity and other formats")
 
                 Button {
                     Task { await exportCapture() }
@@ -443,6 +443,38 @@ struct MaterialReviewView: View {
 }
 
 // MARK: - Components
+
+/// A full-resolution map PNG dragged out of the preview (to Files, Photos, Mail or another app).
+struct MapPNGTransfer: Transferable {
+    let png: Data
+    let filename: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { $0.png }
+            .suggestedFileName { $0.filename }
+    }
+}
+
+/// Makes the map preview draggable once full-resolution maps exist (live previews have no PNG to give).
+private struct MapDragSource: ViewModifier {
+    let map: DerivedMap
+    let label: String
+
+    func body(content: Content) -> some View {
+        if map.png.isEmpty {
+            content
+        } else {
+            content
+                .draggable(MapPNGTransfer(png: map.png, filename: CaptureStore.exportSlug(label) + "_" + map.kind.exportedName + ".png")) {
+                    Image(decorative: map.previewImage, scale: 1)
+                        .resizable()
+                        .frame(width: 120, height: 120)
+                        .clipShape(.rect(cornerRadius: 14))
+                }
+                .accessibilityHint("Drag to another app to copy the \(map.kind.title) PNG")
+        }
+    }
+}
 
 struct Card<Content: View>: View {
     let title: String
@@ -626,6 +658,7 @@ struct MaterialPreviewPane: View {
                 .interpolation(.medium)
                 .aspectRatio(1, contentMode: .fit)
                 .accessibilityLabel("\(map.kind.title) map preview")
+                .modifier(MapDragSource(map: map, label: store.trimmedLabel))
         case .tiled:
             GeometryReader { geometry in
                 let tile = geometry.size.width / 3

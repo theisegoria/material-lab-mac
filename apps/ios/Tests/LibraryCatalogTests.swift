@@ -128,9 +128,11 @@ final class LibraryCatalogTests: XCTestCase {
         XCTAssertEqual(fresh.catalog.collections.first?.members, [])
         XCTAssertEqual(CaptureLibrary(root: root).loadCatalog(), fresh.catalog)
 
-        // An unreadable catalog loses only the organisation.
-        try Data("not json".utf8).write(to: library.catalogURL)
-        XCTAssertEqual(library.loadCatalog(), LibraryCatalog())
+        // An unreadable catalog loses only the organisation (a library no store is using, so nothing rewrites it).
+        let other = CaptureLibrary(root: root.appending(path: "unreadable"))
+        try FileManager.default.createDirectory(at: other.root, withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: other.catalogURL)
+        XCTAssertEqual(other.loadCatalog(), LibraryCatalog())
     }
 
     private static func swatch(_ color: UIColor) -> Data? {
