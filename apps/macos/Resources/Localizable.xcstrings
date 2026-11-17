@@ -4,6 +4,16 @@
     "": {
       "shouldTranslate": false
     },
+    " Double-click the name to reset.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前をダブルクリックするとリセットされます。"
+          }
+        }
+      }
+    },
     "%@": {
       "shouldTranslate": false
     },
@@ -3388,6 +3398,26 @@
         }
       }
     },
+    "Reset": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット"
+          }
+        }
+      }
+    },
+    "Reset %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@をリセット"
+          }
+        }
+      }
+    },
     "Reset Device Trust…": {
       "localizations": {
         "ja": {
@@ -3444,6 +3474,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "レシピをリセット"
+          }
+        }
+      }
+    },
+    "Reset this section to the material's defaults": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセクションをマテリアルの初期値に戻す"
+          }
+        }
+      }
+    },
+    "Reset to %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に戻す"
           }
         }
       }
