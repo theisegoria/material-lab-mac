@@ -57,6 +57,13 @@ targets:
       - path: ../../core/src/tools/ExportAPI.mm
         group: Core
         compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
+      # Layered materials, variants and large tiles (core 1.6); compute-bound like the derivation kernel.
+      - path: ../../core/src/MaterialOps.cpp
+        group: Core
+        compilerFlags: ['-std=c++23', '-O3']
+      - path: ../../core/src/tools/Compose.mm
+        group: Core
+        compilerFlags: ['-std=c++23', '-fobjc-arc', '-O2']
     dependencies:
       - sdk: libz.tbd
       - target: QuickLookThumbnail

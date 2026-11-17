@@ -9,11 +9,16 @@
 /* Begin PBXBuildFile section */
 		09288B0689BC3E4B89DFCFD9 /* RecipeInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */; };
 		14BCE9DC4DCB9160AE7D8B08 /* Material3DPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */; };
+		16128C81D88EC2756D4A0945 /* PreviewSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6885483C796A042FF3CF4066 /* PreviewSurface.swift */; };
+		1B7AE3C5867CD8F2885DCD35 /* WatchFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94A2E6E7BD1BBD977F5DF6C /* WatchFolder.swift */; };
 		1F2AA18C6653842BCE01AA55 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */; };
 		21ABA37C8CF69CF3E5EBC6D7 /* ScreenshotTour.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59E9FD366566E306E61AA0C /* ScreenshotTour.swift */; };
 		28F95681C42B7D2918D06505 /* BatchQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */; };
+		2A0062B163215514404B4605 /* MaterialOps.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 70DF2D2EEC8C21D7D4355BE5 /* MaterialOps.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
+		2ADF9503F92231415A31FC50 /* MaterialTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28047ED4823F44A05A51A527 /* MaterialTransfer.swift */; };
 		302ACAF2C41B2388D548BFAE /* LearnedModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */; };
 		328DAAFE4AAA764E2F881B33 /* Export.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0F84A55BBFFB4DC4F624D8C3 /* Export.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
+		336501F0F2B204984C97B452 /* Compose.mm in Sources */ = {isa = PBXBuildFile; fileRef = FD213DD02796502A05AA2EBB /* Compose.mm */; settings = {COMPILER_FLAGS = "-std=c++23 -fobjc-arc -O2"; }; };
 		377AEB2E8E85B9AE4D30FB75 /* LearnedGeometrySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */; };
 		3869000D0685AD5D07CB5F73 /* MaterialPresets.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */; settings = {COMPILER_FLAGS = "-std=c++23"; }; };
 		3909686981BF3FC49A29DA6C /* CameraInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84A592B49E87949F8BA5097B /* CameraInboxView.swift */; };
@@ -22,14 +27,17 @@
 		4C93C43554B0B609DFA5B09E /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6758FAD6D3C2154DF25800D3 /* ThumbnailProvider.swift */; };
 		4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */; };
 		4F631B50B1047E283B6B70B6 /* QuickLookThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D89B498975A3DB7C5AC96C9A /* QuickLookThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		516F3330D07DA2B8AE22BDFE /* LibraryHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B296C9141D20490EB2AF193 /* LibraryHomeView.swift */; };
 		53231A0BDAB9AC7C75F9F659 /* IntentEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */; };
 		53F9FF8B892521BEC4C687B1 /* MaterialDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */; };
+		5768A74FAC995DA06D289F68 /* MaterialLabStore+Library.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632B4C8743ED45A85D993F51 /* MaterialLabStore+Library.swift */; };
 		5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */; };
 		6156F7E603FA155138FA4186 /* MaterialBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */; };
 		659C861E4676D4EDE26E37C2 /* MaterialIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624746825B3FECEFAC38539B /* MaterialIntents.swift */; };
 		68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */; };
 		70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O3"; }; };
 		8E06BDBD76612297F89C0426 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CF607F4F493784D4D315BCAF /* Localizable.xcstrings */; };
+		9150C715B46D6E76912A8A9D /* MaterialLabStore+WatchFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9BDA38641187A32A21E2BF5 /* MaterialLabStore+WatchFolder.swift */; };
 		96A1CADE0F16F92E793AF4A2 /* MapPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A271E5FC88FE7679F2223DA /* MapPreview.swift */; };
 		AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */; };
 		ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */; };
@@ -38,6 +46,7 @@
 		B9C90F4748D1E4D248A66D62 /* PNGWriter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 72ECE96D123BC4D49738E240 /* PNGWriter.cpp */; settings = {COMPILER_FLAGS = "-std=c++23 -O2"; }; };
 		C12228384A8E7F4E5F723864 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F73D3BDB4E4D8F486452DC /* PairingView.swift */; };
 		CA9D6616D33EAA2678DF79B5 /* LocalLinkService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */; };
+		CD027A7FED0EB52BB14352C8 /* LibraryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8914AED0E6392A1D904E7BC4 /* LibraryMetadata.swift */; };
 		CE10299CB6DBC377765A0549 /* SourceMetadataEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */; };
 		D545A219FE36BCD0B06B3CAC /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 3DD46F61818DC500B7D63D65 /* libz.tbd */; };
 		D5C14405C39A559D709B6F9C /* MaterialPresetLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6913B08BB51A9CA03642885 /* MaterialPresetLibrary.swift */; };
@@ -91,12 +100,14 @@
 		1A271E5FC88FE7679F2223DA /* MapPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPreview.swift; sourceTree = "<group>"; };
 		1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedGeometrySettings.swift; sourceTree = "<group>"; };
 		1ECA09FDF7A177A77FBB2D1E /* BatchQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchQueueView.swift; sourceTree = "<group>"; };
+		28047ED4823F44A05A51A527 /* MaterialTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialTransfer.swift; sourceTree = "<group>"; };
 		2BBCE5C1D67F7B4F62E43B34 /* MaterialLabApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLabApp.swift; sourceTree = "<group>"; };
 		2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ExportAPI.mm; path = ../../core/src/tools/ExportAPI.mm; sourceTree = "<group>"; };
 		2DDE3F620C74E70B006A36EC /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
 		2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedModelStore.swift; sourceTree = "<group>"; };
 		3549B9661DF3E8CA564F01B2 /* MaterialLabUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaterialLabUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		367C9D0A8E3D1FD3F888F627 /* MaterialLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MaterialLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3B296C9141D20490EB2AF193 /* LibraryHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryHomeView.swift; sourceTree = "<group>"; };
 		3DAF581A370F7CFB20B154C5 /* Common.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Common.mm; path = ../../core/src/tools/Common.mm; sourceTree = "<group>"; };
 		3DD46F61818DC500B7D63D65 /* libz.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libz.tbd; path = usr/lib/libz.tbd; sourceTree = SDKROOT; };
 		4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceSidebar.swift; sourceTree = "<group>"; };
@@ -105,13 +116,17 @@
 		55F0C74ED5D3904198A685BA /* ExportTargets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportTargets.swift; sourceTree = "<group>"; };
 		60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportSheet.swift; sourceTree = "<group>"; };
 		624746825B3FECEFAC38539B /* MaterialIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialIntents.swift; sourceTree = "<group>"; };
+		632B4C8743ED45A85D993F51 /* MaterialLabStore+Library.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MaterialLabStore+Library.swift"; sourceTree = "<group>"; };
 		63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialLibrary.swift; sourceTree = "<group>"; };
 		6758FAD6D3C2154DF25800D3 /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
+		6885483C796A042FF3CF4066 /* PreviewSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSurface.swift; sourceTree = "<group>"; };
+		70DF2D2EEC8C21D7D4355BE5 /* MaterialOps.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MaterialOps.cpp; path = ../../core/src/MaterialOps.cpp; sourceTree = "<group>"; };
 		72ECE96D123BC4D49738E240 /* PNGWriter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PNGWriter.cpp; path = ../../core/src/PNGWriter.cpp; sourceTree = "<group>"; };
 		7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MaterialPresets.cpp; path = ../../core/src/MaterialPresets.cpp; sourceTree = "<group>"; };
 		8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalLinkService.swift; sourceTree = "<group>"; };
 		8407276244378E56CC5A5B04 /* MaterialModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialModels.swift; sourceTree = "<group>"; };
 		84A592B49E87949F8BA5097B /* CameraInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraInboxView.swift; sourceTree = "<group>"; };
+		8914AED0E6392A1D904E7BC4 /* LibraryMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryMetadata.swift; sourceTree = "<group>"; };
 		8DF84EA66166884D7CA69C2A /* SourceViewerWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceViewerWindow.swift; sourceTree = "<group>"; };
 		9BB5DA8C5074FBE94906175B /* MaterialEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialEngine.swift; sourceTree = "<group>"; };
 		9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Material3DPreview.swift; sourceTree = "<group>"; };
@@ -127,11 +142,14 @@
 		DAA1BA77F4C1CACF17DEDDB3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceMetadataEditor.swift; sourceTree = "<group>"; };
 		E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialBundle.swift; sourceTree = "<group>"; };
+		E9BDA38641187A32A21E2BF5 /* MaterialLabStore+WatchFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MaterialLabStore+WatchFolder.swift"; sourceTree = "<group>"; };
 		EA5058D46F890FFB587F7556 /* QuickLookThumbnail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookThumbnail.entitlements; sourceTree = "<group>"; };
 		EC4EF5D29ECD1219A7EC7515 /* IntentEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentEntities.swift; sourceTree = "<group>"; };
 		EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnedNormalEstimator.swift; sourceTree = "<group>"; };
+		F94A2E6E7BD1BBD977F5DF6C /* WatchFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchFolder.swift; sourceTree = "<group>"; };
 		FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBRMaterialLab.cpp; path = ../../core/src/PBRMaterialLab.cpp; sourceTree = "<group>"; };
 		FBC6F1BAB4C0A53D888005C8 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
+		FD213DD02796502A05AA2EBB /* Compose.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = Compose.mm; path = ../../core/src/tools/Compose.mm; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,11 +168,14 @@
 			isa = PBXGroup;
 			children = (
 				EC7D95EE0699FDF8C88EA2B3 /* LearnedNormalEstimator.swift */,
+				8914AED0E6392A1D904E7BC4 /* LibraryMetadata.swift */,
 				19220A821856FD4AEB627121 /* LocalLinkIdentity.swift */,
 				8357FE5B9B0ED58DB471CA1D /* LocalLinkService.swift */,
 				E019AAE47AAB47ECBF675431 /* MaterialBundle.swift */,
 				9BB5DA8C5074FBE94906175B /* MaterialEngine.swift */,
 				63B8B7DAC2C1056306D20198 /* MaterialLibrary.swift */,
+				28047ED4823F44A05A51A527 /* MaterialTransfer.swift */,
+				F94A2E6E7BD1BBD977F5DF6C /* WatchFolder.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -209,8 +230,10 @@
 			isa = PBXGroup;
 			children = (
 				3DAF581A370F7CFB20B154C5 /* Common.mm */,
+				FD213DD02796502A05AA2EBB /* Compose.mm */,
 				0F84A55BBFFB4DC4F624D8C3 /* Export.mm */,
 				2DA4FA54D593184BB0D29A36 /* ExportAPI.mm */,
+				70DF2D2EEC8C21D7D4355BE5 /* MaterialOps.cpp */,
 				7CCD936034215F8C32E10FBE /* MaterialPresets.cpp */,
 				FA9CA2C9EDCF1CC6DFE07B99 /* PBRMaterialLab.cpp */,
 				72ECE96D123BC4D49738E240 /* PNGWriter.cpp */,
@@ -239,6 +262,8 @@
 			children = (
 				2F6DF441A2F0B33EF6FEDF7B /* LearnedModelStore.swift */,
 				D1012C4416C8FB563A4BE511 /* MaterialLabStore.swift */,
+				632B4C8743ED45A85D993F51 /* MaterialLabStore+Library.swift */,
+				E9BDA38641187A32A21E2BF5 /* MaterialLabStore+WatchFolder.swift */,
 			);
 			path = Stores;
 			sourceTree = "<group>";
@@ -300,10 +325,12 @@
 				B3BAEA2F90BDD94770BFDA3E /* ContentView.swift */,
 				60071830D2C9454E7CF9A4B6 /* ExportSheet.swift */,
 				1A8D7AC9BA83701C9C9D4042 /* LearnedGeometrySettings.swift */,
+				3B296C9141D20490EB2AF193 /* LibraryHomeView.swift */,
 				1A271E5FC88FE7679F2223DA /* MapPreview.swift */,
 				9BB85AE1FD65D2BDD3DDC05E /* Material3DPreview.swift */,
 				14154EBCA21F8FAC8CC6FC50 /* MaterialDetail.swift */,
 				B1F73D3BDB4E4D8F486452DC /* PairingView.swift */,
+				6885483C796A042FF3CF4066 /* PreviewSurface.swift */,
 				D23EFC463DDB4CB73A408A66 /* RecipeInspector.swift */,
 				DE05E65A28741A68B26C4BBC /* SourceMetadataEditor.swift */,
 				4B92E2B1BA263E3A13DDA417 /* SourceSidebar.swift */,
@@ -457,6 +484,7 @@
 				28F95681C42B7D2918D06505 /* BatchQueueView.swift in Sources */,
 				3909686981BF3FC49A29DA6C /* CameraInboxView.swift in Sources */,
 				FD69F1DD4C70ADEB1712D423 /* Common.mm in Sources */,
+				336501F0F2B204984C97B452 /* Compose.mm in Sources */,
 				1F2AA18C6653842BCE01AA55 /* ContentView.swift in Sources */,
 				328DAAFE4AAA764E2F881B33 /* Export.mm in Sources */,
 				E5875DB1FE2DD84759A39788 /* ExportAPI.mm in Sources */,
@@ -466,6 +494,8 @@
 				377AEB2E8E85B9AE4D30FB75 /* LearnedGeometrySettings.swift in Sources */,
 				302ACAF2C41B2388D548BFAE /* LearnedModelStore.swift in Sources */,
 				4C93F2EBC61BBB31C3568999 /* LearnedNormalEstimator.swift in Sources */,
+				516F3330D07DA2B8AE22BDFE /* LibraryHomeView.swift in Sources */,
+				CD027A7FED0EB52BB14352C8 /* LibraryMetadata.swift in Sources */,
 				AC27F10C0CE5D8AD014FB83A /* LocalLinkIdentity.swift in Sources */,
 				CA9D6616D33EAA2678DF79B5 /* LocalLinkService.swift in Sources */,
 				DEDC96903BD512AF16225253 /* Localization.swift in Sources */,
@@ -476,20 +506,26 @@
 				F4A458B384258F3CAB6CB081 /* MaterialEngine.swift in Sources */,
 				659C861E4676D4EDE26E37C2 /* MaterialIntents.swift in Sources */,
 				68B4B5B1D944EE67871AA63F /* MaterialLabApp.swift in Sources */,
+				5768A74FAC995DA06D289F68 /* MaterialLabStore+Library.swift in Sources */,
+				9150C715B46D6E76912A8A9D /* MaterialLabStore+WatchFolder.swift in Sources */,
 				5A121A4AD3106935F697FB1C /* MaterialLabStore.swift in Sources */,
 				ADF4C13A893229D8760867ED /* MaterialLibrary.swift in Sources */,
 				B989527D7884F0BF3B5EA9BE /* MaterialModels.swift in Sources */,
+				2A0062B163215514404B4605 /* MaterialOps.cpp in Sources */,
 				D5C14405C39A559D709B6F9C /* MaterialPresetLibrary.swift in Sources */,
 				3869000D0685AD5D07CB5F73 /* MaterialPresets.cpp in Sources */,
+				2ADF9503F92231415A31FC50 /* MaterialTransfer.swift in Sources */,
 				70683B18C9EF3F61E07334DA /* PBRMaterialLab.cpp in Sources */,
 				B9C90F4748D1E4D248A66D62 /* PNGWriter.cpp in Sources */,
 				C12228384A8E7F4E5F723864 /* PairingView.swift in Sources */,
 				FF4DA80ECD747267C51A8BD4 /* PreviewEnvironment.swift in Sources */,
+				16128C81D88EC2756D4A0945 /* PreviewSurface.swift in Sources */,
 				09288B0689BC3E4B89DFCFD9 /* RecipeInspector.swift in Sources */,
 				AED01BA2FFED40B4D4E376FD /* SnapshotHarness.swift in Sources */,
 				CE10299CB6DBC377765A0549 /* SourceMetadataEditor.swift in Sources */,
 				E9AC9BC36181EAD505A3B17F /* SourceSidebar.swift in Sources */,
 				D63F8CC835D4B9B83939279D /* SourceViewerWindow.swift in Sources */,
+				1B7AE3C5867CD8F2885DCD35 /* WatchFolder.swift in Sources */,
 				EB83E411DB8B05A06DD93673 /* WelcomeSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
